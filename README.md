@@ -18,3 +18,5 @@ You can either a create a pull request on github (check github help for more inf
 or email me to become a contributor.
 
 ## TODO
+
+- Update Policy Banner
