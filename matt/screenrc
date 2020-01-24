@@ -1,0 +1,9 @@
+
+escape ^pp
+termcapinfo xterm* ti@:te@
+altscreen on
+startup_message off
+vbell off
+bell_msg ""
+msgwait 0
+
