@@ -56,7 +56,6 @@ unset safe_term match_lhs sh
 alias cp="cp -i"                          # confirm before overwriting something
 alias df='df -h'                          # human-readable sizes
 alias free='free -m'                      # show sizes in MB
-alias np='nano -w PKGBUILD'
 alias more=less
 
 complete -cf sudo
@@ -67,11 +66,11 @@ alias la='ls -A'
 alias l='ls -CF'
 
 # TODO
-# source /home/matthew/bin/screen.sh
+source ${HOME}/bin/screen.sh
 
 # TODO
 # Add /home/matthew/bin/ to the path, for useful scripts on my path
-# PATH=/home/matthew/bin/:/home/matthew/.cargo/bin:$PATH
+PATH=${HOME}/bin/
 
 # shell completion for cargo
 # complete -C /home/matthew/Documents/shell_completion/target/debug/_cargo_completion cargo
@@ -80,5 +79,5 @@ alias l='ls -CF'
 export VIRTUAL_ENV_DISABLE_PROMPT=1
 
 # TODO
-# source /home/matthew/bin/prompt.sh
+source ${HOME}/bin/prompt.sh
 
