@@ -35,3 +35,6 @@ sudo iptables -t filter -A INPUT -p tcp --dport 443 -j ACCEPT
 
 # NTP (server time)
 sudo iptables -t filter -A OUTPUT -p udp --dport 123 -j ACCEPT
+
+# Allow SQL database
+sudo iptables -t filter -A OUTPUT -p tcp --dport 3306 -j ACCEPT
