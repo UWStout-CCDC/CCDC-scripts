@@ -19,11 +19,12 @@ sudo iptables -t filter -A OUTPUT -o lo -j ACCEPT
 sudo iptables -t filter -A INPUT -p icmp -j ACCEPT
 sudo iptables -t filter -A OUTPUT -p icmp -j ACCEPT
 
-# DNS (Needed for curl?)
+# DNS (Needed for curl, and updates)
 sudo iptables -t filter -A OUTPUT -p tcp --dport 53 -j ACCEPT
 sudo iptables -t filter -A OUTPUT -p udp --dport 53 -j ACCEPT
-sudo iptables -t filter -A INPUT -p tcp --dport 53 -j ACCEPT
-sudo iptables -t filter -A INPUT -p udp --dport 53 -j ACCEPT
+# Maybe don't allow people to make DNS requests to this server
+#sudo iptables -t filter -A INPUT -p tcp --dport 53 -j ACCEPT
+#sudo iptables -t filter -A INPUT -p udp --dport 53 -j ACCEPT
 
 # HTTP (apache)
 sudo iptables -t filter -A OUTPUT -p tcp --dport 80 -j ACCEPT
