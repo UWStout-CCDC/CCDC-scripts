@@ -12,6 +12,12 @@ and files for easy download from VMs, via `curl` or similar untility.
 - `linux`: Files for Linux Boxes
 - `general`: Files for all Boxes, e.g. banners
 
+## Curl
+
+Using curl, or a similar utility, files can be downloaded onto any machine.
+
+`curl https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts-2020/master/<file>`
+
 ## Contributing
 
 You can either a create a pull request on github (check github help for more info),
