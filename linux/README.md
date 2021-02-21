@@ -8,5 +8,14 @@ Scripts to configure various parts of the Linux boxes
 - `log_state.sh`: logs the state of the machine to the `/ccdc` directory
 - `iptables.sh`: iptables rules
 - `ssh.sh`: configures ssh servers
+- `users.sh`: Configures user accounts
 - `splunk.sh`: installs and configures splunk forwarder
 - `packages.py`: configres packages - updates & remove blacklisted packages
+- `services.py`: configure services - DNS, Apache, Mail
+
+## Other files
+
+Most files not explicitly mentioned above are used by one of the scripts.
+Exceptions are listed below
+
+- `old/`: Old scripts
