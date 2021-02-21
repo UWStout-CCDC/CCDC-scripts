@@ -9,7 +9,7 @@
 # 
 # Note: only handles single line comments (and it has to be the only thing on the line)
 
-if [ ! -f $1 ]
+if [ ! -f "$1" -o -z "$1" ]
 then
   echo "Usage: ./prepare.sh [file]"
 else
