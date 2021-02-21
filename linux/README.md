@@ -19,3 +19,7 @@ Most files not explicitly mentioned above are used by one of the scripts.
 Exceptions are listed below
 
 - `old/`: Old scripts
+
+## Credits
+
+- `splunk.sh`: Adapted from `makeforwarder.sh` found in UCI-CCDC/CCDC2021
