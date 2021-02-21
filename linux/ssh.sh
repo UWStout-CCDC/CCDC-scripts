@@ -8,6 +8,7 @@
 # Configure installed SSH server
 
 # Edit config file to only allow key based auth
+# Config file is `ssh_config`
 
 # Move old keys to `/ccdc/ssh`
 
