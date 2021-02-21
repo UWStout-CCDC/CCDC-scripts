@@ -16,7 +16,7 @@ and files for easy download from VMs, via `curl` or similar untility.
 
 Using curl, or a similar utility, files can be downloaded onto any machine.
 
-`curl https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts-2020/master/<file>`
+`wget https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts-2020/master/<file>`
 
 ## Contributing
 
