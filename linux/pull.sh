@@ -7,8 +7,12 @@
 #
 # Download scirpts from github
 
-curl https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts-2020/master/linux/log_state.sh
-curl https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts-2020/master/linux/iptables.sh
-curl https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts-2020/master/linux/ssh.sh
-curl https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts-2020/master/linux/splunk.sh
-#curl https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts-2020/master/linux/iptables.sh
+# Quck function to grab a script from the repo
+get() {
+  wget https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts-2020/master/$1 -O $1
+}
+
+get linux/log_state.sh
+get linux/iptables.sh
+get linux/ssh.sh
+get linux/splunk.sh
