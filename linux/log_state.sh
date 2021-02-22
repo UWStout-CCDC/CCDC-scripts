@@ -7,6 +7,12 @@
 # 
 # Script to export the current state of the machine to some files
 
+if [[ $EUID -ne 0 ]]
+then
+  printf 'Must be run as root, exiting!\n'
+  exit 1
+fi
+
 # All exported info will go here
 EXPORT_DIR="/ccdc"
 

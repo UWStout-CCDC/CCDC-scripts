@@ -5,7 +5,7 @@
 #
 # Distributed under terms of the MIT license.
 #
-# Download scirpts from github
+# Download scripts from github
 
 # Quck function to grab a script from the repo
 DOWNLOAD_DIR="/ccdc/scripts"

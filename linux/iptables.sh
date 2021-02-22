@@ -1,4 +1,17 @@
 #!/bin/sh
+#
+# iptables.sh
+# Copyright (C) 2021 matthew <matthew@matthew-ubuntu>
+#
+# Distributed under terms of the MIT license.
+# 
+# Script to set iptables rules
+
+if [[ $EUID -ne 0 ]]
+then
+  printf 'Must be run as root, exiting!\n'
+  exit 1
+fi
 
 # Empty all rules
 iptables -t filter -F

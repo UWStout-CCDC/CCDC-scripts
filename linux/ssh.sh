@@ -17,7 +17,6 @@ EXPORT_DIR="/ccdc/ssh"
 
 mkdir -p $EXPORT_DIR
 
-# Edit config file to only allow key based auth
 # Config file is `sshd_config`
 cp /etc/ssh/sshd_config $EXPORT_DIR
 cp /ccdc/scripts/linux/sshd_config /etc/ssh/sshd_config
