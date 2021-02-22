@@ -23,6 +23,13 @@ Exceptions are listed below
 
 - `old/`: Old scripts
 
+## TODO
+
+- User configs
+- Package configs
+- Service configs
+- fakeshell?
+
 ## Credits
 
 - `splunk.sh`: Adapted from `makeforwarder.sh` found in UCI-CCDC/CCDC2021
