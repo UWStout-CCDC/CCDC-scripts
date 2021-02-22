@@ -35,7 +35,7 @@ awk -F':' '{
 
 # Export Service status
 echo "Services"
-systemctl list-unit-files > $EXPORT_DIR/installed_services
+systemctl list-unit-files --type service > $EXPORT_DIR/installed_services
 systemctl list-units > $EXPORT_DIR/running_services
 
 # Export Ip configuration, DNS servers, NTP
@@ -60,3 +60,16 @@ cp /etc/login.defs $EXPORT_DIR/login.defs
 # Export package lists
 echo "Package lists"
 apt list --installed | grep -v ",automatic" > $EXPORT_DIR/packages
+
+# TODO
+echo "System info"
+touch $EXPORT_DIR/system_info
+echo "Uname" >> $EXPORT_DIR/system_info
+uname -a >> $EXPORT_DIR/system_info
+echo "LSB" >> $EXPORT_DIR/system_info
+lsb_release -a >> $EXPORT_DIR/system_info
+echo "Version" >> $EXPORT_DIR/system_info
+cat /proc/version >> $EXPORT_DIR/system_info
+
+echo "Sudoers"
+cp /etc/sudoers $EXPORT_DIR/sudoers
