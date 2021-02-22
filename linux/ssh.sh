@@ -20,9 +20,9 @@ mkdir -p $EXPORT_DIR
 # Edit config file to only allow key based auth
 # Config file is `sshd_config`
 cp /etc/ssh/sshd_config $EXPORT_DIR
-cp /ccdc/scripts/linux/sshd_config /etc/ssh/
+cp /ccdc/scripts/linux/sshd_config /etc/ssh/sshd_config
 
-# Disable all keys - sshd_config set the server to check this file
+# Disable all keys - sshd_config will set the server to check this file
 touch /ccdc/ssh/authorized_keys
 
 # Restart service
