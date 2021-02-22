@@ -29,7 +29,7 @@ awk -F':' '{
   else printf("\t%s", $7)
   printf("\t%s", $6)
   username = $1
-  sprintf("grep %s shadow", username) | getline
+  sprintf("grep %s /etc/shadow", username) | getline
   if ($2 ~ "\!\!?|\*") printf("\tlocked")
   else printf("\t-")
   sprintf("groups %s", username) | getline
@@ -37,7 +37,7 @@ awk -F':' '{
   gsub("[\t ]+", ",", groups)
   printf("\t%s", substr(groups, 2))
   print("")
-}' passwd > $EXPORT_DIR/users
+}' /etc/passwd > $EXPORT_DIR/users
 
 # Export Service status
 echo "Services"
@@ -50,18 +50,18 @@ ip addr > $EXPORT_DIR/ip_addr
 ip route > $EXPORT_DIR/ip_route
 
 # Export SSH server settings
-cp /etc/ssh/sshd_config $EXPORT_DIR/sshd_config
+cp --no-preserve=mode,ownership,timestamps /etc/ssh/sshd_config $EXPORT_DIR/sshd_config
 
 # Export Password complexity settings
 if [ -f "/etc/pam.d/system-auth" ]
 then
-  cp /etc/pam.d/system-auth $EXPORT_DIR/system-auth
+  cp --no-preserve=mode,ownership,timestamps /etc/pam.d/system-auth $EXPORT_DIR/system-auth
 fi
 if [ -f "/etc/pam.d/common-password" ]
 then
-  cp /etc/pam.d/common-password $EXPORT_DIR/common-password
+  cp --no-preserve=mode,ownership,timestamps /etc/pam.d/common-password $EXPORT_DIR/common-password
 fi
-cp /etc/login.defs $EXPORT_DIR/login.defs
+cp --no-preserve=mode,ownership,timestamps /etc/login.defs $EXPORT_DIR/login.defs
 
 # Export package lists
 echo "Package lists"
@@ -70,12 +70,19 @@ apt list --installed | grep -v ",automatic" > $EXPORT_DIR/packages
 # TODO
 echo "System info"
 touch $EXPORT_DIR/system_info
-echo "Uname" >> $EXPORT_DIR/system_info
+echo "# Uname" >> $EXPORT_DIR/system_info
 uname -a >> $EXPORT_DIR/system_info
-echo "LSB" >> $EXPORT_DIR/system_info
+echo "# LSB" >> $EXPORT_DIR/system_info
 lsb_release -a >> $EXPORT_DIR/system_info
-echo "Version" >> $EXPORT_DIR/system_info
+echo "# Version" >> $EXPORT_DIR/system_info
 cat /proc/version >> $EXPORT_DIR/system_info
 
 echo "Sudoers"
 cp /etc/sudoers $EXPORT_DIR/sudoers
+
+echo "Cleaning up"
+# change owner to root
+chown root:root $EXPORT_DIR/*
+# set read only permissions for all of them
+chmod ugoa=r $EXPORT_DIR/*
+
