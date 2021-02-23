@@ -16,6 +16,17 @@ details about it.
 - `packages.py`: configres packages - updates & remove blacklisted packages
 - `services.py`: configure services - DNS, Apache, Mail
 
+## Log state dumps
+
+For a number of the machines, an example dump from a fresh install has been created,
+for potential diffing with the current state of the machines in the competition
+
+- `debian8`: Debian 8.11 - 2021 Qualifier has a Debian 8.5
+- `ubuntu14`: Ubuntu 14.04
+- `centos6`: CentOS 6 - labeled Splunk
+- `centos7`: CentOS 7
+- `fedora21`: Fedora 21
+
 ## Other files
 
 Most files not explicitly mentioned above are used by one of the scripts.

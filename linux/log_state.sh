@@ -41,8 +41,13 @@ awk -F':' '{
 
 # Export Service status
 echo "Services"
-systemctl list-unit-files --type service > $EXPORT_DIR/installed_services
-systemctl list-units > $EXPORT_DIR/running_services
+if type systemctl
+then
+  systemctl list-unit-files --type service > $EXPORT_DIR/installed_services
+  systemctl list-units > $EXPORT_DIR/running_services
+else
+  service --status-all 2&>1 > $EXPORT_DIR/services
+fi
 
 # Export Ip configuration, DNS servers, NTP
 echo "IP config"
@@ -65,7 +70,13 @@ cp --no-preserve=mode,ownership,timestamps /etc/login.defs $EXPORT_DIR/login.def
 
 # Export package lists
 echo "Package lists"
-apt list --installed | grep -v ",automatic" > $EXPORT_DIR/packages
+if type apt
+then
+  apt list --installed | grep -v ",automatic" > $EXPORT_DIR/packages
+elif type rpm
+then
+  rpm -qa > $EXPORT_DIR/packages
+fi
 
 # TODO
 echo "System info"

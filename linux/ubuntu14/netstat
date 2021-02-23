@@ -1,0 +1,9 @@
+Active Internet connections (only servers)
+Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name
+tcp        0      0 127.0.0.1:3306          0.0.0.0:*               LISTEN      987/mysqld      
+tcp        0      0 0.0.0.0:22              0.0.0.0:*               LISTEN      873/sshd        
+tcp6       0      0 :::80                   :::*                    LISTEN      1071/apache2    
+tcp6       0      0 :::22                   :::*                    LISTEN      873/sshd        
+udp        0      0 0.0.0.0:54478           0.0.0.0:*                           474/dhclient    
+udp        0      0 0.0.0.0:68              0.0.0.0:*                           474/dhclient    
+udp6       0      0 :::33456                :::*                                474/dhclient    
