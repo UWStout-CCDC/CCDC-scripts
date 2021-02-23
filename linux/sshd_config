@@ -18,12 +18,20 @@ AddressFamily any
 ListenAddress 0.0.0.0
 ListenAddress ::
 
+# COMP: take a look at these
 #HostKey /etc/ssh/ssh_host_rsa_key
 #HostKey /etc/ssh/ssh_host_ecdsa_key
 #HostKey /etc/ssh/ssh_host_ed25519_key
 
 # Ciphers and keying
 #RekeyLimit default none
+Ciphers aes128-ctr,aes192-ctr,aes256-ctr
+HostKeyAlgorithms ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,ssh-rsa,ssh-dss
+# In a real business, this line may break things - however, since there is no required SSH access,
+# no one will try to use a key type not on this list
+PubkeyAcceptedKeyTypes ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,ssh-rsa,ssh-dss
+KexAlgorithms ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521,diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha256
+MACs hmac-sha2-256,hmac-sha2-512,hmac-sha1
 
 # Logging
 #SyslogFacility AUTH
@@ -37,33 +45,13 @@ StrictModes yes
 MaxAuthTries 2
 MaxSessions 10
 
+# Authentication types
+# Every option but publickey should be disabled
 PubkeyAuthentication yes
 
-# Force publickey
-AuthenticationMethods publickey
-
-# Expect .ssh/authorized_keys2 to be disregarded by default in future.
-AuthorizedKeysFile /ccdc/ssh/authorized_keys
-
-#AuthorizedPrincipalsFile none
-
-#AuthorizedKeysCommand none
-#AuthorizedKeysCommandUser nobody
-
-# For this to work you will also need host keys in /etc/ssh/ssh_known_hosts
-#HostbasedAuthentication no
-# Change to yes if you don't trust ~/.ssh/known_hosts for
-# HostbasedAuthentication
-#IgnoreUserKnownHosts no
-# Don't read the user's ~/.rhosts and ~/.shosts files
-#IgnoreRhosts yes
-
-# To disable tunneled clear text passwords, change to no here!
 PasswordAuthentication no
 PermitEmptyPasswords no
 
-# Change to yes to enable challenge-response passwords (beware issues with
-# some PAM modules and threads)
 ChallengeResponseAuthentication no
 
 # Kerberos options
@@ -77,6 +65,27 @@ GSSAPIAuthentication no
 #GSSAPICleanupCredentials yes
 #GSSAPIStrictAcceptorCheck yes
 #GSSAPIKeyExchange no
+# Force publickey - we should already be
+AuthenticationMethods publickey
+
+# This file is set by the ssh.sh script, and doesn't actually contain any keys
+AuthorizedKeysFile /ccdc/ssh/authorized_keys
+
+#AuthorizedPrincipalsFile none
+
+#AuthorizedKeysCommand none
+#AuthorizedKeysCommandUser nobody
+
+# For this to work you will also need host keys in /etc/ssh/ssh_known_hosts
+HostbasedAuthentication no
+# Change to yes if you don't trust ~/.ssh/known_hosts for
+# HostbasedAuthentication
+#IgnoreUserKnownHosts no
+# Don't read the user's ~/.rhosts and ~/.shosts files
+#IgnoreRhosts yes
+
+# To disable tunneled clear text passwords, change to no here!
+
 
 # Set this to 'yes' to enable PAM authentication, account processing,
 # and session processing. If this is enabled, PAM authentication will
@@ -91,6 +100,7 @@ UsePAM yes
 
 AllowAgentForwarding no
 AllowTcpForwarding no
+AllowStreamLocalForwarding no
 #GatewayPorts no
 X11Forwarding no
 #X11DisplayOffset 10
@@ -117,7 +127,8 @@ Banner None
 #AcceptEnv LANG LC_*
 
 # override default of no subsystems
-Subsystem	sftp	/usr/lib/openssh/sftp-server
+# Do we really want to be running an sftp server?
+#Subsystem sftp /usr/lib/openssh/sftp-server
 
 # Example of overriding settings on a per-user basis
 #Match User anoncvs
