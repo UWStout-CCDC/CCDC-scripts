@@ -54,16 +54,20 @@ iptables -t filter -A INPUT -p tcp --dport 53 -j ACCEPT
 iptables -t filter -A INPUT -p udp --dport 53 -j ACCEPT
 
 # SMTP
-sudo iptables -t filter -A OUTPUT -p tcp --dport 25 -j ACCEPT
-sudo iptables -t filter -A INPUT -p tcp --dport 25 -j ACCEPT
+iptables -t filter -A OUTPUT -p tcp --dport 25 -j ACCEPT
+iptables -t filter -A INPUT -p tcp --dport 25 -j ACCEPT
 
 # POP3
-sudo iptables -t filter -A OUTPUT -p tcp --dport 110 -j ACCEPT
-sudo iptables -t filter -A INPUT -p tcp --dport 110 -j ACCEPT
+iptables -t filter -A OUTPUT -p tcp --dport 110 -j ACCEPT
+iptables -t filter -A INPUT -p tcp --dport 110 -j ACCEPT
 
 # IMAP
-sudo iptables -t filter -A OUTPUT -p tcp --dport 143 -j ACCEPT
-sudo iptables -t filter -A INPUT -p tcp --dport 143 -j ACCEPT
+iptables -t filter -A OUTPUT -p tcp --dport 143 -j ACCEPT
+iptables -t filter -A INPUT -p tcp --dport 143 -j ACCEPT
+
+# SSH
+iptables -A INPUT -p tcp --dport 22 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+iptables -A OUTPUT -p tcp --sport 22 -m conntrack --ctstate ESTABLISHED -j ACCEPT
 
 # Allow SQL database
 #iptables -t filter -A OUTPUT -p tcp --dport 3306 -j ACCEPT
