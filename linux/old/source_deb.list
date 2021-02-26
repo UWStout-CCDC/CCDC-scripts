@@ -1,0 +1,11 @@
+deb http://archive.debian.org/debian/ wheezy main contrib
+deb-src http://archive.debian.org/debian/ wheezy main contrib
+
+deb http://archive.debian.org/debian-security wheezy/updates main contrib
+
+deb http://archive.debian.org/ wheezy/updates main contrib
+deb-src http://archive.debian.org/ wheezy/updates main contrib
+
+# wheezy-updates, previously known as 'volatile'
+deb http://archive.debian.org/debian/ wheezy-updates main contrib
+deb-src http://archive.debian.org/debian/ wheezy-updates main contrib

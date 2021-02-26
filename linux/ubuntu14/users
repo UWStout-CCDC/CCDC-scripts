@@ -1,0 +1,25 @@
+0	root	/bin/bash	/root	locked	root
+1	daemon	nologin	/usr/sbin	locked	daemon
+2	bin	nologin	/bin	locked	bin
+3	sys	nologin	/dev	locked	sys
+4	sync	/bin/sync	/bin	locked	nogroup
+5	games	nologin	/usr/games	locked	games
+6	man	nologin	/var/cache/man	locked	man
+7	lp	nologin	/var/spool/lpd	locked	lp
+8	mail	nologin	/var/mail	locked	mail
+9	news	nologin	/var/spool/news	locked	news
+10	uucp	nologin	/var/spool/uucp	locked	uucp
+13	proxy	nologin	/bin	locked	proxy
+33	www-data	nologin	/var/www	locked	www-data
+34	backup	nologin	/var/backups	locked	backup
+38	list	nologin	/var/list	locked	list
+39	irc	nologin	/var/run/ircd	locked	irc
+41	gnats	nologin	/var/lib/gnats	locked	gnats
+65534	nobody	nologin	/nonexistent	locked	nogroup
+100	libuuid		/var/lib/libuuid	locked	libuuid
+101	syslog	nologin	/home/syslog	locked	syslog,adm
+102	mysql	nologin	/nonexistent	locked	mysql
+103	messagebus	nologin	/var/run/dbus	locked	messagebus
+104	landscape	nologin	/var/lib/landscape	locked	landscape
+105	sshd	nologin	/var/run/sshd	locked	nogroup
+1000	sysadmin	/bin/bash	/home/sysadmin	-	sysadmin,adm,cdrom,sudo,dip,plugdev,lpadmin,sambashare
