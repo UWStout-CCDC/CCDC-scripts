@@ -1,0 +1,94 @@
+
+
+AnnounceComment                 : 
+AnnounceServer                  : False
+AsynchronousCredits             : 512
+AuditSmb1Access                 : False
+AutoDisconnectTimeout           : 15
+AutoShareServer                 : True
+AutoShareWorkstation            : True
+CachedOpenLimit                 : 10
+DurableHandleV2TimeoutInSeconds : 180
+EnableAuthenticateUserSharing   : False
+EnableDownlevelTimewarp         : False
+EnableForcedLogoff              : True
+EnableLeasing                   : True
+EnableMultiChannel              : True
+EnableOplocks                   : True
+EnableSecuritySignature         : False
+EnableSMB1Protocol              : True
+EnableSMB2Protocol              : True
+EnableStrictNameChecking        : True
+EncryptData                     : False
+IrpStackSize                    : 15
+KeepAliveTime                   : 2
+MaxChannelPerSession            : 32
+MaxMpxCount                     : 50
+MaxSessionPerConnection         : 16384
+MaxThreadsPerQueue              : 20
+MaxWorkItems                    : 1
+NullSessionPipes                : 
+NullSessionShares               : 
+OplockBreakWait                 : 35
+PendingClientTimeoutInSeconds   : 120
+RejectUnencryptedAccess         : True
+RequireSecuritySignature        : False
+ServerHidden                    : True
+Smb2CreditsMax                  : 8192
+Smb2CreditsMin                  : 512
+SmbServerNameHardeningLevel     : 0
+TreatHostAsStableStorage        : False
+ValidateAliasNotCircular        : True
+ValidateShareScope              : True
+ValidateShareScopeNotAliased    : True
+ValidateTargetName              : True
+
+
+
+
+
+AnnounceComment                 : 
+AnnounceServer                  : False
+AsynchronousCredits             : 512
+AuditSmb1Access                 : False
+AutoDisconnectTimeout           : 15
+AutoShareServer                 : True
+AutoShareWorkstation            : True
+CachedOpenLimit                 : 10
+DurableHandleV2TimeoutInSeconds : 180
+EnableAuthenticateUserSharing   : False
+EnableDownlevelTimewarp         : False
+EnableForcedLogoff              : True
+EnableLeasing                   : True
+EnableMultiChannel              : True
+EnableOplocks                   : True
+EnableSecuritySignature         : False
+EnableSMB1Protocol              : False
+EnableSMB2Protocol              : True
+EnableStrictNameChecking        : True
+EncryptData                     : False
+IrpStackSize                    : 15
+KeepAliveTime                   : 2
+MaxChannelPerSession            : 32
+MaxMpxCount                     : 50
+MaxSessionPerConnection         : 16384
+MaxThreadsPerQueue              : 20
+MaxWorkItems                    : 1
+NullSessionPipes                : 
+NullSessionShares               : 
+OplockBreakWait                 : 35
+PendingClientTimeoutInSeconds   : 120
+RejectUnencryptedAccess         : True
+RequireSecuritySignature        : False
+ServerHidden                    : True
+Smb2CreditsMax                  : 8192
+Smb2CreditsMin                  : 512
+SmbServerNameHardeningLevel     : 0
+TreatHostAsStableStorage        : False
+ValidateAliasNotCircular        : True
+ValidateShareScope              : True
+ValidateShareScopeNotAliased    : True
+ValidateTargetName              : True
+
+
+

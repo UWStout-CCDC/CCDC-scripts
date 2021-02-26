@@ -1,0 +1,148 @@
+ 
+Change RegisteredOwner: 
+
+HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion
+    RegisteredOwner    REG_SZ    ccdc
+
+
+HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion
+    RegisteredOwner    REG_SZ    blueteam
+
+UAC: 
+
+HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System
+    EnableLUA    REG_DWORD    0x1
+
+
+HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System
+    EnableLUA    REG_DWORD    0x1
+
+
+HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon
+    AutoAdminLogon    REG_SZ    0
+
+
+HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon
+    AutoAdminLogon    REG_DWORD    0x0
+
+Windows Updates: 
+
+HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Policies\WindowsUpdate
+    DisableWindowsUpdateAccess    REG_DWORD    0x0
+
+
+HKEY_LOCAL_MACHINE\Software\Policies\Microsoft\Windows\WindowsUpdate
+    DisableWindowsUpdateAccess    REG_DWORD    0x0
+
+
+HKEY_LOCAL_MACHINE\SYSTEM\Internet Communication Management\Internet Communication
+    DisableWindowsUpdateAccess    REG_DWORD    0x0
+
+
+HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer
+    NoWindowsUpdate    REG_DWORD    0x0
+
+Clear remote registry paths 
+
+HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\SecurePipeServers\winreg\AllowedExactPaths
+    Machine    REG_MULTI_SZ    System\CurrentControlSet\Control\ProductOptions\0System\CurrentControlSet\Control\Server Applications\0Software\Microsoft\Windows NT\CurrentVersion
+
+
+HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\SecurePipeServers\winreg\AllowedExactPaths
+    Machine    REG_MULTI_SZ    
+
+
+HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\SecurePipeServers\winreg\AllowedPaths
+    Machine    REG_MULTI_SZ    System\CurrentControlSet\Control\Print\Printers\0System\CurrentControlSet\Services\Eventlog\0Software\Microsoft\OLAP Server\0Software\Microsoft\Windows NT\CurrentVersion\Print\0Software\Microsoft\Windows NT\CurrentVersion\Windows\0System\CurrentControlSet\Control\ContentIndex\0System\CurrentControlSet\Control\Terminal Server\0System\CurrentControlSet\Control\Terminal Server\UserConfig\0System\CurrentControlSet\Control\Terminal Server\DefaultUserConfiguration\0Software\Microsoft\Windows NT\CurrentVersion\Perflib\0System\CurrentControlSet\Services\SysmonLog
+
+
+HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\SecurePipeServers\winreg\AllowedPaths
+    Machine    REG_MULTI_SZ    
+
+Re-enable task manager: 
+Re-enable task manager 2: 
+Re-enable cmd prompt: 
+Re-enable Windows Defender: 
+
+
+Unhide files: 
+
+HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced
+    Hidden    REG_DWORD    0x2
+
+
+HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced
+    Hidden    REG_DWORD    0x1
+
+unhide system files: 
+
+HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced
+    ShowSuperHidden    REG_DWORD    0x0
+
+
+HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced
+    ShowSuperHidden    REG_DWORD    0x1
+
+Restrictanonymous: 
+
+HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\LSA
+    restrictanonymous    REG_DWORD    0x0
+
+
+HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\LSA
+    restrictanonymous    REG_DWORD    0x1
+
+Restrictanonymoussam: 
+
+HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\LSA
+    restrictanonymoussam    REG_DWORD    0x1
+
+
+HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\LSA
+    restrictanonymoussam    REG_DWORD    0x1
+
+Change everyone includes anonymous: 
+
+HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\LSA
+    everyoneincludesanonymous    REG_DWORD    0x0
+
+
+HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\LSA
+    everyoneincludesanonymous    REG_DWORD    0x0
+
+Get rid of the ridiculous store plaintext passwords: 
+
+HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\services\LanmanWorkstation\Parameters
+    EnablePlainTextPassword    REG_DWORD    0x0
+
+Turn off Local Machine Hash: 
+
+HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\LSA
+    NoLMHash    REG_DWORD    0x1
+
+
+HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\LSA
+    NoLMHash    REG_DWORD    0x1
+
+delete use machine id: 
+
+
+Change notification packages: 
+
+HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\LSA
+    Notification Packages    REG_MULTI_SZ    scecli
+
+
+HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\LSA
+    Notification Packages    REG_MULTI_SZ    scecli
+
+Show hidden users in gui: 
+Disable possible backdoors 
+
+HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\utilman.exe
+    Debugger    REG_SZ    systray.exe
+
+
+HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\osk.exe
+    Debugger    REG_SZ    systray.exe
+
