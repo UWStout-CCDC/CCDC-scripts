@@ -21,7 +21,7 @@ details about it.
 For a number of the machines, an example dump from a fresh install has been created,
 for potential diffing with the current state of the machines in the competition
 
-- `debian8`: Debian 8.11 - 2021 Qualifier has a Debian 8.5
+- `debian8`: Debian 8.11 - 2021 Qualifier has a Debian 8.5 (TODO)
 - `ubuntu14`: Ubuntu 14.04
 - `centos6`: CentOS 6 - labeled Splunk
 - `centos7`: CentOS 7

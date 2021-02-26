@@ -18,4 +18,5 @@ get linux/log_state.sh
 get linux/iptables.sh
 get linux/ssh.sh
   get linux/sshd_config
+  get general/legal_banner.txt
 get linux/splunk.sh

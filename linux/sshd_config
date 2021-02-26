@@ -121,7 +121,7 @@ UseDNS no
 #VersionAddendum none
 
 # TODO banner path
-Banner None
+Banner /ccdc/scripts/general/legal_banner.txt
 
 # Allow client to pass locale environment variables
 #AcceptEnv LANG LC_*
