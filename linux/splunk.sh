@@ -13,7 +13,7 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 if [[ $# -lt 1 ]]; then
-	printf 'Must specify a forward-server! (This is the server Splunk-enterprise is on)\nex: sudo ./makeforwarder.sh 192.168.0.5'
+	printf 'Must specify a forward-server! (This is the server Splunk-enterprise is on)\nex: sudo ./splunk.sh 192.168.0.5'
 	exit 1
 fi
 
@@ -40,8 +40,17 @@ monitor() {
 # Add files to log
 monitor /var/log/syslog
 monitor /var/log/messages
+# Apache
 monitor /var/log/apache/access.log
 monitor /var/log/apache/error.log
+# SSH
+monitor /var/log/auth.log
+monitor /var/log/secure
+
+#monitor /var/log/httpd/*_log
+#watch /var/log/https/modsec_*.log
+monitor /var/log/mysql.log
+monitor /var/log/mysqld.log
 # TODO: add more files
 
 # == Configure options ==
