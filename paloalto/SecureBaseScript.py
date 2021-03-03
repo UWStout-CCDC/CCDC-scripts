@@ -11,75 +11,79 @@
 
 #remember to put rule in to deny all external to PA NAT IP before removing NothingIn rule
 
-import sys
-
-
-if len(sys.argv) > 2:
-  print(f"Usage: {sys.argv[0]} [debug]")
-  sys.exit(0)
-
 permitted_ip = "172.20.241.0/24"
-team_num = "16"
-
-arg = "comp"
-if len(sys.argv) == 2:
-  arg = sys.argv[1]
-
-if arg.startswith("debug"):
-  permitted_ip = "192.168.1.0/24"
-elif not arg.startswith("comp"):
-  print(f"Usage: {sys.argv[0]} [debug]")
-  sys.exit(0)
-
+team_num = input("Please input a team number (for third octet, add 20 to team#): ")
+team_num = str(team_num)
 
 with open("PAConfig.txt", "w") as command_file:
   commands="""
 configure
-
 set deviceconfig system permitted-ip """+permitted_ip+"""
-
+set deviceconfig system dns-setting servers primary 9.9.9.9
+set deviceconfig system dns-setting servers secondary 149.112.112.112
+delete mgt-config users administrator
+set mgt-config users admin password
 set deviceconfig system service disable-telnet yes
 set deviceconfig system service disable-http yes
 set deviceconfig system service disable-https no
 set deviceconfig system login-banner AuthorizedAccessOnly
-
 set network profiles zone-protection-profile Default discard-overlapping-tcp-segment-mismatch yes discard-unknown-option yes tcp-reject-non-syn yes flood tcp-syn enable yes syn-cookies maximal-rate 500
 set network profiles zone-protection-profile Default flood icmp enable yes
 set network profiles zone-protection-profile Default flood udp enable yes
 set network profiles zone-protection-profile Default flood other-ip enable yes
 set network profiles zone-protection-profile Default flood icmpv6 enable yes
-
 set network profiles interface-management-profile none
-
 set network interface ethernet ethernet1/3 layer3 interface-management-profile none
 set network interface ethernet ethernet1/2 layer3 interface-management-profile none
 set network interface ethernet ethernet1/1 layer3 interface-management-profile none
 
 delete rulebase security
+set rulebase security rules ScoreMail action allow from External to Public source any destination 172.25."""+team_num+""".39 profile-setting profiles spyware strict virus default vulnerability strict
+set rulebase security rules ScoreMail application pop3 service application-default
+set rulebase security rules ScoreMail application smtp
+set rulebase security rules ScoreMail disabled yes
+set rulebase security rules ScoreEcomm action allow from External to Public source any destination 172.25."""+team_num+""".11 profile-setting profiles spyware strict virus default vulnerability strict
+set rulebase security rules ScoreEcomm application any service service-http
+set rulebase security rules ScoreEcomm service service-https
+set rulebase security rules ScoreEcomm disabled yes
+set rulebase security rules ScoreDNS action allow from External to Internal source any destination 172.25."""+team_num+""".20 profile-setting profiles spyware strict virus default vulnerability strict
+set rulebase security rules ScoreDNS application dns service application-default
+set rulebase security rules ScoreDNS disabled yes
+set service splunkweb protocol tcp port 8000
+set rulebase security rules ScoreSplunk action allow from External to Public source any destination 172.25."""+team_num+""".9 profile-setting profiles spyware strict virus default vulnerability strict
+set rulebase security rules ScoreSplunk application any service splunkweb
+set rulebase security rules ScoreSplunk disabled yes
 
 set rulebase security rules NothingIN action deny from External to Internal source any destination any profile-setting profiles spyware strict virus default vulnerability strict
 set rulebase security rules NothingIN to User
 set rulebase security rules NothingIN to Public
 set rulebase security rules NothingIN application any service application-default
-
 set rulebase security rules Quad9DNS action allow from Internal to External source any destination 9.9.9.9 profile-setting profiles spyware strict virus default vulnerability strict
 set rulebase security rules Quad9DNS from User
 set rulebase security rules Quad9DNS from Public
 set rulebase security rules Quad9DNS application dns service application-default
-
 set rulebase security rules DenyOtherDNS action deny from Internal to External source any destination any profile-setting profiles spyware strict virus default vulnerability strict
 set rulebase security rules DenyOtherDNS from User
 set rulebase security rules DenyOtherDNS from Public
 set rulebase security rules DenyOtherDNS application dns service application-default
-
-
 set rulebase security rules AllOut action allow from Internal to External source any destination any profile-setting profiles spyware strict virus default vulnerability strict
 set rulebase security rules AllOut from User
 set rulebase security rules AllOut from Public
 set rulebase security rules AllOut application any service application-default
 
-commit
 
+set rulebase security rules AllowPublic2UserDNS action allow from Public to User source any destination 172.20.242.200 profile-setting profiles spyware strict virus default vulnerability strict
+set rulebase security rules AllowPublic2UserDNS application dns service application-default
+set rulebase security rules AllowPublic2InternalDNS action allow from Public to Internal source any destination 172.20.240.20 profile-setting profiles spyware strict virus default vulnerability strict
+set rulebase security rules AllowPublic2InternalDNS application dns service application-default
+set rulebase security rules AllowUser2InternalDNS action allow from User to Internal source any destination 172.20.242.200 profile-setting profiles spyware strict virus default vulnerability strict
+set rulebase security rules AllowUser2InternalDNS application dns service application-default
+set rulebase security rules AllowLDAPFromPublic2User action allow from Public to User source 172.20.242.150 destination 172.20.242.200 profile-setting profiles spyware strict virus default vulnerability strict
+set rulebase security rules AllowLDAPFromPublic2User application ldap service application-default
+set rulebase security rules AllowSplunkTraffic action allow from Internal to Public source any destination 172.20.242.10 profile-setting profiles spyware strict virus default vulnerability strict
+set rulebase security rules AllowSplunkTraffic from User
+set rulebase security rules AllowSplunkTraffic application splunk service application-default
+commit
 """
   command_file.write(commands)
   print("File is written to PAConfig.txt")
