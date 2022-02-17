@@ -18,8 +18,8 @@ if [[ $# -lt 1 ]]; then
 fi
 
 # Install Splunk
-wget -O splunkforwarder-8.0.2-a7f645ddaf91-Linux-x86_64.tgz 'https://www.splunk.com/bin/splunk/DownloadActivityServlet?architecture=x86_64&platform=linux&version=8.0.2&product=universalforwarder&filename=splunkforwarder-8.0.2-a7f645ddaf91-Linux-x86_64.tgz&wget=true'
-tar -xzvf splunkforwarder-8.0.2-a7f645ddaf91-Linux-x86_64.tgz -C /opt
+wget -O splunkforwarder-8.2.5-77015bc7a462-Linux-x86_64.tgz "https://download.splunk.com/products/universalforwarder/releases/8.2.5/linux/splunkforwarder-8.2.5-77015bc7a462-Linux-x86_64.tgz"
+tar -xzvf splunkforwarder-8.0.2-77015bc7a462-Linux-x86_64.tgz -C /opt
 cd /opt/splunkforwarder/bin
 
 # Start the splunk forwarder, and automatically accept the license
