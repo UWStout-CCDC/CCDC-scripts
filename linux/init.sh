@@ -25,6 +25,20 @@ then
 fi
 EOF
 
+printf 'Package installer type for update (yum/apt)\n'
+read updatetype
+
+if [[$updatetype = yum]]
+then
+  printf 'yum selected, upgrading\n'
+  yum update && yum upgrade -y
+elif [[$updatetype = apt]]
+  printf 'apt selected, upgrading\n'
+  apt-get update && apt upgrade -y
+else
+  printf 'Invalid type\n'
+fi
+
 #removes the ability to log on of rogue users
 awk -F: '{ print "usermod -s /sbin/nologin " $1 }' /etc/passwd >> output.sh
 echo "usermod -s /bin/bash $username" >> output.sh
