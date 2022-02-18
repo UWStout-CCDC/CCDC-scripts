@@ -354,7 +354,7 @@ EXIT /B 0
 
 :2016Docker
 ::firewall_configs
-netsh advfirewall firewall add rule name="DNS Out to AD" dir=out action=allow enable=yes profile=any remoteport=53 remoteip=%ADDNS% protocol=udp
+netsh advfirewall firewall add rule name="DNS Out to AD" dir=out action=allow enable=yes profile=any remoteport=53 remoteip=%ADDNS%,9.9.9.9 protocol=udp
 netsh advfirewall firewall add rule name="Backup DNS Out to DNS/NTP" dir=out action=allow enable=yes profile=any remoteport=53 remoteip=%DNSNTP% protocol=udp
 netsh advfirewall firewall add rule name="LDAP OUT UDP to AD" dir=out action=allow enable=yes profile=any remoteport=389,3268,3269 remoteip=%ADDNS% protocol=udp
 netsh advfirewall firewall add rule name="LDAP OUT TCP to AD" dir=out action=allow enable=yes profile=any remoteport=389,3268,3269 remoteip=%ADDNS% protocol=tcp
