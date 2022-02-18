@@ -8,7 +8,7 @@ set Good_host = "false"
 
 :Host_Check
 set /p box="Please type your box as follows: [ 2012ad 2016Docker Win10]: "
-(for %%a in (2012ad Win10) do (
+(for %%a in (2012ad 2016Docker Win10) do (
 	if "%box%" == "%%a" (
 	   GOTO :Passed
 	)
@@ -420,8 +420,8 @@ netsh advfirewall firewall set rule group="Kerberos Key Distribution Center (TCP
 netsh advfirewall firewall set rule group="Kerberos Key Distribution Center (UDP-In)" new enable=yes
 
 :: DNS 53
-netsh advfirewall firewall add rule name="DNS Out UDP" dir=out action=allow enable=yes profile=any remoteport=53 remoteip=%DNSNTP%,8.8.8.8 protocol=udp
-netsh advfirewall firewall add rule name="DNS Out TCP" dir=out action=allow enable=yes profile=any remoteport=53 remoteip=%DNSNTP%,8.8.8.8 protocol=tcp
+netsh advfirewall firewall add rule name="DNS Out UDP" dir=out action=allow enable=yes profile=any remoteport=53 remoteip=%DNSNTP%,9.9.9.9 protocol=udp
+netsh advfirewall firewall add rule name="DNS Out TCP" dir=out action=allow enable=yes profile=any remoteport=53 remoteip=%DNSNTP%,9.9.9.9 protocol=tcp
 netsh advfirewall firewall add rule name="DNS In TCP" dir=in action=allow enable=yes profile=any localport=53 protocol=tcp remoteip=%UbuntuWkst%,%WebMail%,%Splunk%,%EComm%,%DNSNTP%,%PAMI%,%UbuntuWeb% 
 netsh advfirewall firewall add rule name="DNS In UDP from Internal" dir=in action=allow enable=yes profile=any localport=53  protocol=udp remoteip=%UbuntuWkst%,%WebMail%,%Splunk%,%EComm%,%DNSNTP%,%PAMI%,%UbuntuWeb%
 netsh advfirewall firewall add rule name="DNS In UDP from ANY" dir=in action=allow enable=no profile=any localport=53  protocol=udp
