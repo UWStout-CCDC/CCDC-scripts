@@ -25,15 +25,15 @@ then
 fi
 EOF
 
-printf 'Package installer type for update (yum/apt)\n'
+echo 'Package installer type for update (yum/apt)\n'
 read updatetype
 
 if [[$updatetype = yum]]
 then
-  printf 'yum selected, upgrading\n'
+  echo 'yum selected, upgrading'
   yum update && yum upgrade -y
 elif [[$updatetype = apt]]
-  printf 'apt selected, upgrading\n'
+ echo 'apt selected, upgrading'
   apt-get update && apt upgrade -y
 else
   printf 'Invalid type\n'
