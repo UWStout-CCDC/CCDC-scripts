@@ -34,6 +34,9 @@ groupadd wheel
 groupadd sudo
 useradd -G wheel,sudo -m -s /bin/bash -U $username
 
+echo "Set $username's password"
 passwd $username
+echo "Set root password"
+passwd root
 
-#bash output.sh
+bash output.sh
