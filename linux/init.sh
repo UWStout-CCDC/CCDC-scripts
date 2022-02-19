@@ -29,9 +29,9 @@ if type yum
 then
   echo 'yum selected, upgrading'
   yum update && yum upgrade -y
-elif type apt
+elif type apt-get
  echo 'apt selected, upgrading'
-  apt-get update && apt upgrade -y
+  apt-get update && apt-get upgrade -y
 else
   printf 'No package manager found'
 fi
