@@ -25,18 +25,15 @@ then
 fi
 EOF
 
-echo 'Package installer type for update (yum/apt)\n'
-read updatetype
-
-if [[$updatetype = yum]]
+if type yum
 then
   echo 'yum selected, upgrading'
   yum update && yum upgrade -y
-elif [[$updatetype = apt]]
+elif type apt
  echo 'apt selected, upgrading'
   apt-get update && apt upgrade -y
 else
-  printf 'Invalid type\n'
+  printf 'No package manager found'
 fi
 
 #removes the ability to log on of rogue users
