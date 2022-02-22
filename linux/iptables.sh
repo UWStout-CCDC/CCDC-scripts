@@ -65,11 +65,12 @@ then
   iptables -t filter -A INPUT -p tcp --dport 443 -j ACCEPT
 fi
 
-if prompt "DNS"
+if prompt "DNS / NTP"
 then
   # DNS (bind)
   iptables -t filter -A INPUT -p tcp --dport 53 -j ACCEPT
   iptables -t filter -A INPUT -p udp --dport 53 -j ACCEPT
+  iptables -t filter -A INPUT -p udp --dport 123 -j ACCEPT
 fi
 
 if prompt "Mail"
