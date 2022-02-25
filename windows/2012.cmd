@@ -19,16 +19,15 @@ set  UbuntuWeb=172.20.240.20
 ::set /P Windows10="ENTER WINDOWS 10 IP: "
 set  UbuntuWkst=172.20.242.100
 set  Internal=%Ecomm%,%DNSNTP%,%WebMail%,%Splunk%,%ADDNS%,%UbuntuWkst%,%PAMI%,%2016Docker%,%UbuntuWeb%
-Echo "E-Commerce Ip is now %EComm%"
-Echo "DNS/NTP IP is now %DNSNTP%"
-Echo "WebMail IP is now %WebMail%"
-Echo "Splunk ip is now %Splunk%"
-Echo :AD/DNS box ip is now %ADDNS%
-Echo "UbuntuWeb IP is now %UbuntuWeb%"
-::Echo Windows10 Ip is now %Windows10%
-Echo "UbuntuWkst is now %UbuntuWkst%"
-Echo 'PA MI is now %PAMI%'
-Echo "2016Docker is now %2016Docker%"
+Echo E-Commerce Ip is now %EComm%
+Echo DNS/NTP IP is now %DNSNTP%
+Echo WebMail IP is now %WebMail%
+Echo Splunk ip is now %Splunk%
+Echo AD/DNS box ip is now %ADDNS%
+Echo UbuntuWeb IP is now %UbuntuWeb%
+Echo UbuntuWkst is now %UbuntuWkst%
+Echo PA MI is now %PAMI%
+Echo Docker2016 is now %2016Docker%
 
 :: Set Firewall
 netsh advfirewall export %ccdcpath%\firewall.old
@@ -161,15 +160,17 @@ DISM /online /disable-feature /featurename:"RemoteAccessMgmtTools"
 DISM /online /disable-feature /featurename:"RemoteAccessPowerShell"
 DISM /online /disable-feature /featurename:"BitLocker-RemoteAdminTool"
 DISM /online /disable-feature /featurename:"RemoteAssistance"
+DISM /online /disable-feature /featurename:"Remote-Desktop-Services"
 
 :: Disable SMB
 DISM /online /disable-feature /featurename:"SmbDirect"
-DISM /online /disable-feature /featurename:"Remote-Desktop-Services"
-DISM /online /disable-feature /featurename:"SBMgr-UI"
 DISM /online /disable-feature /featurename:"SMB1Protocol"
 DISM /online /disable-feature /featurename:"SMBBW"
 DISM /online /disable-feature /featurename:"SmbWitness"
 DISM /online /disable-feature /featurename:"SMBHashGeneration"
+
+:: TODO?
+:: DISM /online /disable-feature /featurename:"SBMgr-UI"
 
 DISM /online /disable-feature /featurename:"SNMP"
 
@@ -190,136 +191,146 @@ DISM /online /disable-feature /featurename:"AS-Incoming-Trans"
 DISM /online /disable-feature /featurename:"AS-Outgoing-Trans"
 DISM /online /disable-feature /featurename:"AS-WS-Atomic"
 
+:: Registry
+
+echo Editing Registry...
+echo. > %ccdcpath%\Proof\regproof.txt
+
+:: Just a name thing, but I don't like "redteam" being owner...
+echo Change RegisteredOwner: >> %ccdcpath%\Proof\regproof.txt
+call :RegEdit add "HKLM\Software\Microsoft\Windows NT\CurrentVersion" /v RegisteredOwner /t REG_SZ /d blueteam /f
+
+:: Turn on User account control
+echo UAC: >> %ccdcpath%\Proof\regproof.txt
+set K="HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+call :RegEdit add %K /v EnableLUA /t REG_DWORD /d 1
+
+:: Disable admin autologon
+set K="HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
+call :RegEdit add %K /v AutoAdminLogon /t REG_DWORD /d 0
+
+echo Legal Banner: >> %ccdcpath%\Proof\regproof.txt
+set K="HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\system"
+call :RegEdit add %K /v legalnoticecaption /t Reg_SZ /d "Team 12 Legal Notice"
+call :RegEdit add %K /v legalnoticetext /t Reg_SZ /d "UNAUTHORIZED ACCESS TO THIS DEVICE IS PROHIBITED"
+
+:: Windows Updates
+:: echo Windows Updates: >> %ccdcpath%\Proof\regproof.txt
+:: TODO: Doesn't exist in 2012?
+:: set K="HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\WindowsUpdate"
+:: call :RegEdit add %K /v DisableWindowsUpdateAccess /t Reg_DWORD /d 0
+:: set K="HKLM\Software\Policies\Microsoft\Windows\WindowsUpdate"
+:: call :RegEdit add %K /v DisableWindowsUpdateAccess /t Reg_DWORD /d 0
+
+:: TODO: Doesn't exist in 2012?
+:: set K="HKLM\SYSTEM\Internet Communication Management\Internet Communication"
+:: call :RegEdit add %K /v DisableWindowsUpdateAccess /t Reg_DWORD /d 0
+
+:: TODO: I'm not sure what this does
+:: set K="HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"
+:: call :RegEdit add %K /v NoWindowsUpdate /t Reg_DWORD /d 0
+
+::Autoupdates
+echo Windows Auto Updates: >> %ccdcpath%\Proof\regproof.txt
+set K="HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update"
+call :RegEdit add %K /v AUOptions /t REG_DWORD /d 3
+call :RegEdit add %K /v IncludeRecommendedUpdates /t REG_DWORD /d 1
+
+::Clear remote registry paths
+echo Clear remote registry paths >> %ccdcpath%\Proof\regproof.txt
+set K="HKLM\SYSTEM\CurrentControlSet\Control\SecurePipeServers\winreg\AllowedExactPaths"
+call :RegEdit add %K /v Machine /t REG_MULTI_SZ /d ""
+
+set K="HKLM\SYSTEM\CurrentControlSet\Control\SecurePipeServers\winreg\AllowedPaths"
+call :RegEdit add %K /v Machine /t REG_MULTI_SZ /d ""
+
+:: Delete the image hijack that kills taskmanager
+echo Re-enable task manager: >> %ccdcpath%\Proof\regproof.txt
+set K="HKLM\Software\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\taskmgr.exe"
+call :RegEdit delete %K /v Debugger
+
+echo Re-enable task manager 2: >> %ccdcpath%\Proof\regproof.txt
+set K="HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\System"
+call :RegEdit delete %K /v DisableTaskMgr
+
+:: THIS PROBABLY HAS TO BE DONE MANUALLY if cmd is disabled, but who does that?!?!?!?!?!
+echo Re-enable cmd prompt: >> %ccdcpath%\Proof\regproof.txt
+set K="HKCU\Software\Policies\Microsoft\Windows\System"
+call :RegEdit delete %K /v DisableCMD
+
+::Enable Windows Defender
+echo Re-enable Windows Defender: >> %ccdcpath%\Proof\regproof.txt
+set K="HKLM\SOFTWARE\Policies\Microsoft\Windows Defender"
+call :RegEdit delete %K /v DisableAntiSpyware
+
+:: Unhide Files
+echo Unhide files: >> %ccdcpath%\Proof\regproof.txt
+set K="HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
+call :RegEdit add %K /v Hidden /t REG_DWORD /d 1
+
+echo unhide system files: >> %ccdcpath%\Proof\regproof.txt
+set K="HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
+call :RegEdit add %K /v ShowSuperHidden /t REG_DWORD /d 1
+
+:: Fix Local Security Authority(LSA)
+echo Restrictanonymous: >> %ccdcpath%\Proof\regproof.txt
+set K="HKLM\SYSTEM\CurrentControlSet\Control\LSA"
+call :RegEdit add %K /v restrictanonymous /t REG_DWORD /d 1
+
+echo Restrictanonymoussam: >> %ccdcpath%\Proof\regproof.txt
+set K="HKLM\SYSTEM\CurrentControlSet\Control\LSA"
+call :RegEdit add %K /v restrictanonymoussam /t REG_DWORD /d 1
+
+echo Change everyone includes anonymous: >> %ccdcpath%\Proof\regproof.txt
+set K="HKLM\SYSTEM\CurrentControlSet\Control\LSA"
+call :RegEdit add %K /v everyoneincludesanonymous /t REG_DWORD /d 0
+
+echo Get rid of the ridiculous store plaintext passwords: >> %ccdcpath%\Proof\regproof.txt
+set K="HKLM\SYSTEM\CurrentControlSet\services\LanmanWorkstation\Parameters"
+call :RegEdit add %K /v EnablePlainTextPassword /t REG_DWORD /d 0
+
+:: LMHash is weak
+echo Turn off Local Machine Hash: >> %ccdcpath%\Proof\regproof.txt
+set K="HKLM\SYSTEM\CurrentControlSet\Control\LSA"
+call :RegEdit add %K /v NoLMHash /t REG_DWORD /d 1
+
+echo delete use machine id: >> %ccdcpath%\Proof\regproof.txt
+set K="HKLM\SYSTEM\CurrentControlSet\Control\LSA"
+call :RegEdit delete %K /v UseMachineID
+
+echo Change notification packages: >> %ccdcpath%\Proof\regproof.txt
+set K="HKLM\SYSTEM\CurrentControlSet\Control\LSA"
+call :RegEdit add %K /v "Notification Packages" /t REG_MULTI_SZ /d "scecli"
+
+echo Show hidden users in gui: >> %ccdcpath%\Proof\regproof.txt
+:: TODO
+set K="HKLM\Software\Microsoft\WindowsNT\CurrentVersion\Winlogon\SpecialAccounts"
+::call :RegEdit delete %K
+
+echo Disable possible backdoors >> %ccdcpath%\Proof\regproof.txt
+set K="HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\utilman.exe"
+call :RegEdit add %K /v "Debugger" /t REG_SZ /d "systray.exe"
+
+set K="HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\osk.exe"
+call :RegEdit add %K /v Debugger /t REG_SZ /d "systray.exe"
+
 EXIT /B 0
 :: TODO
 
-:: Registry
-ECHO Editing Registry...
-echo. > %ccdcpath%\Proof\regproof.txt
-:: Just a name thing, but I don't like "redteam" being owner...
-ECHO Change RegisteredOwner: >> %ccdcpath%\Proof\regproof.txt
-REG query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion" /v RegisteredOwner >> %ccdcpath%\Proof\regproof.txt
-REG add "HKLM\Software\Microsoft\Windows NT\CurrentVersion" /v RegisteredOwner /t REG_SZ /d blueteam /f
-REG query "HKLM\Software\Microsoft\Windows NT\CurrentVersion" /v RegisteredOwner >> %ccdcpath%\Proof\regproof.txt
+:: RegEdit <action> <registry> /v <entry> /t <type> /d <value>
+:: %~0     %~1      %~2       %~3 %~4    %~5 %~6   %~7 %~8
+:RegEdit
+if %~3 != /v ( EXIT /B 1 )
 
-:: Turn on User account control
-ECHO UAC: >> %ccdcpath%\Proof\regproof.txt
-REG query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v EnableLUA >> %ccdcpath%\Proof\regproof.txt
-REG add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v EnableLUA /t REG_DWORD /d 1 /f
-REG query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v EnableLUA >> %ccdcpath%\Proof\regproof.txt
+REG query %~2 /v %~4 >> %ccdcpath%\Proof\regproof.txt
+if %~1 == add (
+  if %~5 != /t ( EXIT /B 1 )
+  if %~7 != /d ( EXIT /B 1 )
+  REG add %~2 /v %~4 /t %~6 /d %~8 /f
+) else if %~1 == delete (
+  REG delete %~2 /v %~4 /f
+)
+REG query %~2 /v %~4 >> %ccdcpath%\Proof\regproof.txt
 
-:: Disable admin autologon
-REG query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v AutoAdminLogon >> %ccdcpath%\Proof\regproof.txt
-REG add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v AutoAdminLogon /t REG_DWORD /d 0 /f
-REG query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v AutoAdminLogon >> %ccdcpath%\Proof\regproof.txt
+EXIT /B 0
 
-:: Windows Updates
-ECHO Windows Updates: >> %ccdcpath%\Proof\regproof.txt
-REG query "HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\WindowsUpdate" /v DisableWindowsUpdateAccess >> %ccdcpath%\Proof\regproof.txt
-REG add "HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\WindowsUpdate" /v DisableWindowsUpdateAccess /t Reg_DWORD /d 0 /f
-REG query "HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\WindowsUpdate" /v DisableWindowsUpdateAccess >> %ccdcpath%\Proof\regproof.txt
-
-REG query "HKLM\Software\Policies\Microsoft\Windows\WindowsUpdate" /v DisableWindowsUpdateAccess >> %ccdcpath%\Proof\regproof.txt
-REG add "HKLM\Software\Policies\Microsoft\Windows\WindowsUpdate" /v DisableWindowsUpdateAccess /t Reg_DWORD /d 0 /f
-REG query "HKLM\Software\Policies\Microsoft\Windows\WindowsUpdate" /v DisableWindowsUpdateAccess  >> %ccdcpath%\Proof\regproof.txt
-
-REG query "HKLM\SYSTEM\Internet Communication Management\Internet Communication" /v DisableWindowsUpdateAccess >> %ccdcpath%\Proof\regproof.txt
-REG add "HKLM\SYSTEM\Internet Communication Management\Internet Communication" /v DisableWindowsUpdateAccess /t Reg_DWORD /d 0 /f
-REG query "HKLM\SYSTEM\Internet Communication Management\Internet Communication" /v DisableWindowsUpdateAccess >> %ccdcpath%\Proof\regproof.txt
-
-REG query "HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer" >> %ccdcpath%\Proof\regproof.txt
-REG add "HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer" /v NoWindowsUpdate /t Reg_DWORD /d 0 /f
-REG query "HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer" >> %ccdcpath%\Proof\regproof.txt
-
-::Autoupdates
-::REG query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update" /v AUOptions >> %ccdcpath%\Proof\regproof.txt
-::REG add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update" /v AUOptions /t REG_DWORD /d 3 /f
-::REG query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update" /v AUOptions >> %ccdcpath%\Proof\regproof.txt
-
-::Clear remote registry paths
-ECHO Clear remote registry paths >> %ccdcpath%\Proof\regproof.txt
-REG query "HKLM\SYSTEM\CurrentControlSet\Control\SecurePipeServers\winreg\AllowedExactPaths" /v Machine >> %ccdcpath%\Proof\regproof.txt
-REG add "HKLM\SYSTEM\CurrentControlSet\Control\SecurePipeServers\winreg\AllowedExactPaths" /v Machine /t REG_MULTI_SZ /d "" /f
-REG query "HKLM\SYSTEM\CurrentControlSet\Control\SecurePipeServers\winreg\AllowedExactPaths" /v Machine >> %ccdcpath%\Proof\regproof.txt
-
-REG query "HKLM\SYSTEM\CurrentControlSet\Control\SecurePipeServers\winreg\AllowedPaths" /v Machine >> %ccdcpath%\Proof\regproof.txt
-REG add "HKLM\SYSTEM\CurrentControlSet\Control\SecurePipeServers\winreg\AllowedPaths" /v Machine /t REG_MULTI_SZ /d "" /f
-REG query "HKLM\SYSTEM\CurrentControlSet\Control\SecurePipeServers\winreg\AllowedPaths" /v Machine >> %ccdcpath%\Proof\regproof.txt
-
-:: Delete the image hijack that kills taskmanager
-ECHO Re-enable task manager: >> %ccdcpath%\Proof\regproof.txt
-REG query "HKLM\Software\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\taskmgr.exe" /v Debugger >> %ccdcpath%\Proof\regproof.txt
-REG delete "HKLM\Software\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\taskmgr.exe" /f /v Debugger
-
-ECHO Re-enable task manager 2: >> %ccdcpath%\Proof\regproof.txt
-REG query "HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\System" /v DisableTaskMgr >> %ccdcpath%\Proof\regproof.txt
-REG delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\System" /v DisableTaskMgr /f
-
-:: THIS PROBABLY HAS TO BE DONE MANUALLY if cmd is disabled, but who does that?!?!?!?!?!
-ECHO Re-enable cmd prompt: >> %ccdcpath%\Proof\regproof.txt
-REG query "HKCU\Software\Policies\Microsoft\Windows\System" /v DisableCMD >> %ccdcpath%\Proof\regproof.txt
-REG delete "HKCU\Software\Policies\Microsoft\Windows\System" /v DisableCMD /f
-
-::Enable Windows Defender
-ECHO Re-enable Windows Defender: >> %ccdcpath%\Proof\regproof.txt
-REG query "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender" /v DisableAntiSpyware >> %ccdcpath%\Proof\regproof.txt
-REG delete "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender" /v DisableAntiSpyware /f
-
-:: Unhide Files
-ECHO Unhide files: >> %ccdcpath%\Proof\regproof.txt
-REG query "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v Hidden >> %ccdcpath%\Proof\regproof.txt
-REG add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v Hidden /t REG_DWORD /d 1 /f
-REG query "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v Hidden >> %ccdcpath%\Proof\regproof.txt
-
-ECHO unhide system files: >> %ccdcpath%\Proof\regproof.txt
-REG query "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v ShowSuperHidden >> %ccdcpath%\Proof\regproof.txt
-REG add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v ShowSuperHidden /t REG_DWORD /d 1 /f
-REG query "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v ShowSuperHidden >> %ccdcpath%\Proof\regproof.txt
-
-:: Fix Local Security Authority(LSA)
-ECHO Restrictanonymous: >> %ccdcpath%\Proof\regproof.txt
-REG query "HKLM\SYSTEM\CurrentControlSet\Control\LSA" /v restrictanonymous >> %ccdcpath%\Proof\regproof.txt
-REG add "HKLM\SYSTEM\CurrentControlSet\Control\LSA" /v restrictanonymous /t REG_DWORD /d 1 /f
-REG query "HKLM\SYSTEM\CurrentControlSet\Control\LSA" /v restrictanonymous >> %ccdcpath%\Proof\regproof.txt
-
-ECHO Restrictanonymoussam: >> %ccdcpath%\Proof\regproof.txt
-REG query "HKLM\SYSTEM\CurrentControlSet\Control\LSA" /v restrictanonymoussam >> %ccdcpath%\Proof\regproof.txt
-REG add "HKLM\SYSTEM\CurrentControlSet\Control\LSA" /v restrictanonymoussam /t REG_DWORD /d 1 /f
-REG query "HKLM\SYSTEM\CurrentControlSet\Control\LSA" /v restrictanonymoussam >> %ccdcpath%\Proof\regproof.txt
-
-ECHO Change everyone includes anonymous: >> %ccdcpath%\Proof\regproof.txt
-REG query "HKLM\SYSTEM\CurrentControlSet\Control\LSA" /v everyoneincludesanonymous >> %ccdcpath%\Proof\regproof.txt
-REG add "HKLM\SYSTEM\CurrentControlSet\Control\LSA" /v everyoneincludesanonymous /t REG_DWORD /d 0 /f
-REG query "HKLM\SYSTEM\CurrentControlSet\Control\LSA" /v everyoneincludesanonymous >> %ccdcpath%\Proof\regproof.txt
-
-ECHO Get rid of the ridiculous store plaintext passwords: >> %ccdcpath%\Proof\regproof.txt
-REG query "HKLM\SYSTEM\CurrentControlSet\services\LanmanWorkstation\Parametersn" /v EnablePlainTextPassword >> %ccdcpath%\Proof\regproof.txt
-REG add "HKLM\SYSTEM\CurrentControlSet\services\LanmanWorkstation\Parameters" /v EnablePlainTextPassword /t REG_DWORD /d 0 /f
-REG query "HKLM\SYSTEM\CurrentControlSet\services\LanmanWorkstation\Parameters" /v EnablePlainTextPassword >> %ccdcpath%\Proof\regproof.txt
-
-ECHO Turn off Local Machine Hash: >> %ccdcpath%\Proof\regproof.txt
-REG query "HKLM\SYSTEM\CurrentControlSet\Control\LSA" /v NoLMHash >> %ccdcpath%\Proof\regproof.txt
-REG add "HKLM\SYSTEM\CurrentControlSet\Control\LSA" /v NoLMHash /t REG_DWORD /d 1 /f
-REG query "HKLM\SYSTEM\CurrentControlSet\Control\LSA" /v NoLMHash  >> %ccdcpath%\Proof\regproof.txt
-
-ECHO delete use machine id: >> %ccdcpath%\Proof\regproof.txt
-REG query "HKLM\SYSTEM\CurrentControlSet\Control\LSA" /v UseMachineID >> %ccdcpath%\Proof\regproof.txt
-REG delete "HKLM\SYSTEM\CurrentControlSet\Control\LSA" /v UseMachineID /f
-
-ECHO Change notification packages: >> %ccdcpath%\Proof\regproof.txt
-REG query "HKLM\SYSTEM\CurrentControlSet\Control\LSA" /v "Notification Packages"  >> %ccdcpath%\Proof\regproof.txt
-REG add "HKLM\SYSTEM\CurrentControlSet\Control\LSA" /v "Notification Packages" /t REG_MULTI_SZ /d "scecli" /f
-REG query "HKLM\SYSTEM\CurrentControlSet\Control\LSA" /v "Notification Packages"  >> %ccdcpath%\Proof\regproof.txt
-
-ECHO Show hidden users in gui: >> %ccdcpath%\Proof\regproof.txt
-REG query "HKLM\Software\Microsoft\WindowsNT\CurrentVersion\Winlogon\SpecialAccounts" >> %ccdcpath%\Proof\regproof.txt
-Reg delete "HKLM\Software\Microsoft\WindowsNT\CurrentVersion\Winlogon\SpecialAccounts" /f
-
-ECHO Disable possible backdoors >> %ccdcpath%\Proof\regproof.txt
-REG query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\utilman.exe" /v "Debugger" >> %ccdcpath%\Proof\regproof.txt
-REG add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\utilman.exe" /v "Debugger" /t REG_SZ /d "systray.exe" /f
-REG query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\utilman.exe" /v "Debugger" >> %ccdcpath%\Proof\regproof.txt
-
-REG query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\osk.exe" /v Debugger >> %ccdcpath%\Proof\regproof.txt
-REG add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\osk.exe" /v Debugger /t REG_SZ /d "systray.exe" /f
-REG query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\osk.exe" /v Debugger >> %ccdcpath%\Proof\regproof.txt
