@@ -314,8 +314,17 @@ call :RegEdit add %K /v "Debugger" /t REG_SZ /d "systray.exe"
 set K="HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\osk.exe"
 call :RegEdit add %K /v Debugger /t REG_SZ /d "systray.exe"
 
+:: TODO set dns forward server to 9.9.9.9
+:: netsh interface ipv4 set dnsservers "<?>" static 9.9.9.9 primary
+
+:: TODO set NTP server
+:: TODO splunk forwarding
+:: TODO Disable remote access
+:: TODO Restrict Powershell
+:: TODO Update
+:: TODO Windows Defender
+
 EXIT /B 0
-:: TODO
 
 :: RegEdit <action> <registry> /v <entry> /t <type> /d <value>
 :: %~0     %~1      %~2       %~3 %~4    %~5 %~6   %~7 %~8
