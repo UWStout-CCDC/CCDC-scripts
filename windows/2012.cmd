@@ -323,6 +323,12 @@ call :RegEdit add %K /v Debugger /t REG_SZ /d "systray.exe"
 :: TODO Restrict Powershell
 :: TODO Update
 :: TODO Windows Defender
+:: TODO Remove Roles and Features
+:: TODO Manage AD users
+::
+:: TODO Backup DNS
+:: dnscmd.exe /ZoneExport <ZoneName> <ZoneBackupFilename>
+:: https://docs.microsoft.com/en-us/windows-server/administration/windows-commands/dnscmd
 
 EXIT /B 0
 
