@@ -195,6 +195,12 @@ fi
 get linux/splunk.sh
 bash $DOWNLOAD_DIR/linux/splunk.sh 172.20.241.20
 
+get general/legal_banner.txt
+
+mkdir -p $CCDC_DIR/
+cp /etc/motd $CCDC_DIR/motd.old
+cp $DOWNLOAD_DIR/general/legal_banner.txt /etc/motd
+
 # Current IP address. We should assume this to be correct
 IP_ADDR=$(ip addr | grep -Po "inet \K172\.\d+\.\d+\.\d+")
 
@@ -223,5 +229,6 @@ EOF
 # There are multiple ways to do NTP. We need to check what each server uses.
 #server 172.20.240.20
 # timedatectl status
+
 
 # Now restart the machine to guarntee all changes apply.
