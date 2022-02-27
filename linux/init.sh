@@ -178,12 +178,16 @@ EOF
 fi
 
 
-if prompt "DNS Server?" n
+if prompt "DNS/NTP Server?" n
 then
   cat <<-EOF >> $IPTABLES_SCRIPT
   # DNS (bind)
   iptables -t filter -A INPUT -p tcp --dport 53 -j ACCEPT
   iptables -t filter -A INPUT -p udp --dport 53 -j ACCEPT
+
+  # NTP
+  iptables -t filter -A INPUT -p tcp --dport 123 -j ACCEPT
+  iptables -t filter -A INPUT -p udp --dport 123 -j ACCEPT
 
 EOF
 fi
@@ -202,16 +206,6 @@ then
   # IMAP
   iptables -t filter -A OUTPUT -p tcp --dport 143 -j ACCEPT
   iptables -t filter -A INPUT -p tcp --dport 143 -j ACCEPT
-
-EOF
-fi
-
-if prompt "NTP Server?" n
-then
-  cat <<-EOF >> $IPTABLES_SCRIPT
-  # NTP
-  iptables -t filter -A INPUT -p tcp --dport 123 -j ACCEPT
-  iptables -t filter -A INPUT -p udp --dport 123 -j ACCEPT
 
 EOF
 fi
@@ -245,7 +239,7 @@ chown -hR $username:$username $CCDC_DIR
 chown root:root /etc/group
 chmod a=r,u=rw /etc/group
 chown root:root /etc/sudoers
-chmod a=r,u=rw /etc/sudoers
+chmod a=,ug=r /etc/sudoers
 chown root:root /etc/passwd
 chmod a=r,u=rw /etc/passwd
 if [ $(getent group shadow) ]; then
@@ -253,7 +247,7 @@ if [ $(getent group shadow) ]; then
 else
   chown root:root /etc/shadow
 fi
-chmod a=r,u=rw /etc/shadow
+chmod a=,u=rw,g=r /etc/shadow
 
 
 # We might be able to get away with installing systemd on centos 6 to make every server the same
