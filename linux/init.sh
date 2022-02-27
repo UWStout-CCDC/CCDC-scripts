@@ -30,8 +30,8 @@ cd $CCDC_DIR
 # Defaults to YES
 prompt() {
   case "$2" in 
-    y) def="[y/N]" ;;
-    n) def="[Y/n]" ;;
+    y) def="[Y/n]" ;;
+    n) def="[y/N]" ;;
     *) echo "INVALID PARAMETER!!!!"; exit ;;
   esac
   read -p "$1 $def" ans
@@ -100,6 +100,7 @@ IP_ADDR=$(ip addr | grep -Po "inet \K172\.\d+\.\d+\.\d+")
 
 if prompt "Is $IP_ADDR the correct IP address?" y
 then
+  echo "Configuring network interfaces"
 else
   read -p "Enter the correct IP address: " IP_ADDR
 fi
