@@ -15,12 +15,10 @@ fi
 
 # Definitions
 CCDC_DIR="/ccdc"
-DOWNLOAD_DIR="$CCDC_DIR/downloads"
 SCRIPT_DIR="$CCDC_DIR/scripts"
 
 # make directories and set current directory
 mkdir -p $CCDC_DIR
-mkdir -p $DOWNLOAD_DIR
 mkdir -p $SCRIPT_DIR
 cd $CCDC_DIR
 
@@ -45,11 +43,11 @@ prompt() {
 # get <file>
 get() {
   # only download if the file doesn't exist
-  if [[ ! -f "$DOWNLOAD_DIR/$1" ]]
+  if [[ ! -f "$SCRIPT_DIR/$1" ]]
   then
-    mkdir -p $(dirname "$DOWNLOAD_DIR/$1")
+    mkdir -p $(dirname "$SCRIPT_DIR/$1")
     BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts-2020/master"
-    wget "$BASE_URL/$1" -O "$DOWNLOAD_DIR/$1"
+    wget "$BASE_URL/$1" -O "$SCRIPT_DIR/$1"
   fi
 }
 
@@ -58,13 +56,13 @@ replace() {
   get $3
   mkdir -p $CCDC_DIR/$(dirname $2)
   cp $1/$2 $CCDC_DIR/$2.old
-  cp $DOWNLOAD_DIR/$3 $1/$2
+  cp $SCRIPT_DIR/$3 $1/$2
 }
 
 # Grab script so it's guarnteed to be in /ccdc/scripts/linux
 get linux/init.sh
 
-get linux/log_state.sh && bash $DOWNLOAD_DIR/linux/log_state.sh
+get linux/log_state.sh && bash $SCRIPT_DIR/linux/log_state.sh
 
 #gets wanted username
 echo "What would you like the admin account to be named?"
@@ -221,7 +219,7 @@ bash $IPTABLES_SCRIPT
 
 # Create systemd unit for the firewall
 mkdir -p /etc/systemd/system/
-cat << EOF > /etc/systemd/system/ccdc_firewall.service
+cat <<-EOF > /etc/systemd/system/ccdc_firewall.service
 [Unit]
 Description=ZDSFirewall
 After=syslog.target network.target
@@ -241,6 +239,8 @@ replace /etc motd general/legal_banner.txt
 replace /etc issue general/legal_banner.txt
 replace /etc issue.net general/legal_banner.txt
 
+# Set permissions
+chown -hR $username:$username $CCDC_DIR
 # Fix permissions (just in case)
 chown root:root /etc/group
 chmod a=r,u=rw /etc/group
@@ -312,7 +312,7 @@ else
 fi
 
 # Splunk forwarder
-get linux/splunk.sh && bash $DOWNLOAD_DIR/linux/splunk.sh 172.20.241.20
+get linux/splunk.sh && bash $SCRIPT_DIR/linux/splunk.sh 172.20.241.20
 
 
 echo "Now restart the machine to guarntee all changes apply"

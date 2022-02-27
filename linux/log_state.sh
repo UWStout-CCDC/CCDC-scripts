@@ -14,7 +14,7 @@ then
 fi
 
 # All exported info will go here
-EXPORT_DIR="/ccdc"
+EXPORT_DIR="/ccdc/state"
 
 mkdir -p $EXPORT_DIR
 
@@ -92,8 +92,6 @@ echo "Sudoers"
 cp /etc/sudoers $EXPORT_DIR/sudoers
 
 echo "Cleaning up"
-# change owner to root
-chown root:root $EXPORT_DIR/*
 # set read only permissions for all of them
 chmod ugoa=r $EXPORT_DIR/*
 
