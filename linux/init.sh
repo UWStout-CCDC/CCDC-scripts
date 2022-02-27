@@ -89,7 +89,7 @@ EOF
 chmod a=rx $NOLOGIN
 
 #removes the ability to log on of rogue users
-awk -F: "{ print 'usermod -s $NOLOGIN ' \$1 }" /etc/passwd >> $PASSWD_SH
+awk -F: "{ print \"usermod -s $NOLOGIN \" \$1 }" /etc/passwd >> $PASSWD_SH
 echo "usermod -s /bin/bash $username" >> $PASSWD_SH
 echo "usermod -s /bin/bash root" >> $PASSWD_SH
 
