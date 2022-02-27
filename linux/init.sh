@@ -47,9 +47,9 @@ get() {
   # only download if the file doesn't exist
   if [[ ! -f "$SCRIPT_DIR/$1" ]]
   then
-    mkdir -p $(dirname "$SCRIPT_DIR/$1")
+    mkdir -p $(dirname "$SCRIPT_DIR/$1") 1>&2
     BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts-2020/master"
-    wget "$BASE_URL/$1" -O "$SCRIPT_DIR/$1"
+    wget "$BASE_URL/$1" -O "$SCRIPT_DIR/$1" 1>&2
   fi
   echo "$SCRIPT_DIR/$1"
 }
