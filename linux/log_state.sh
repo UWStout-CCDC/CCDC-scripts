@@ -46,7 +46,7 @@ then
   systemctl list-unit-files --type service > $EXPORT_DIR/installed_services
   systemctl list-units > $EXPORT_DIR/running_services
 else
-  service --status-all 2&>1 > $EXPORT_DIR/services
+  service --status-all 2>&1 > $EXPORT_DIR/services
 fi
 
 # Export Ip configuration, DNS servers, NTP
