@@ -15,10 +15,12 @@ fi
 
 # Definitions
 CCDC_DIR="/ccdc"
+CCDC_ETC="$CCDC_DIR/etc"
 SCRIPT_DIR="$CCDC_DIR/scripts"
 
 # make directories and set current directory
 mkdir -p $CCDC_DIR
+mkdir -p $CCDC_ETC
 mkdir -p $SCRIPT_DIR
 cd $CCDC_DIR
 
@@ -49,20 +51,21 @@ get() {
     BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts-2020/master"
     wget "$BASE_URL/$1" -O "$SCRIPT_DIR/$1"
   fi
+  echo "$SCRIPT_DIR/$1"
 }
 
 # replace <dir> <file> <new file>
 replace() {
   get $3
-  mkdir -p $CCDC_DIR/$(dirname $2)
-  cp $1/$2 $CCDC_DIR/$2.old
+  mkdir -p $CCDC_ETC/$(dirname $2)
+  cp $1/$2 $CCDC_ETC/$2.old
   cp $SCRIPT_DIR/$3 $1/$2
 }
 
 # Grab script so it's guarnteed to be in /ccdc/scripts/linux
 get linux/init.sh
 
-get linux/log_state.sh && bash $SCRIPT_DIR/linux/log_state.sh
+bash $(get linux/log_state.sh)
 
 #gets wanted username
 echo "What would you like the admin account to be named?"
@@ -77,13 +80,45 @@ then
 fi
 EOF
 
+# Create custom nologin script, nologin has been replaced with a login shell in some systems
+NOLOGIN=$SCRIPT_DIR/linux/nologin.sh
+cat <<EOF > $NOLOGIN
+#!/bin/bash
+echo "This account is unavailable."
+EOF
+chmod a=rx $NOLOGIN
+
 #removes the ability to log on of rogue users
-awk -F: '{ print "usermod -s /sbin/nologin " $1 }' /etc/passwd >> $PASSWD_SH
+awk -F: "{ print 'usermod -s $NOLOGIN ' \$1 }" /etc/passwd >> $PASSWD_SH
 echo "usermod -s /bin/bash $username" >> $PASSWD_SH
 echo "usermod -s /bin/bash root" >> $PASSWD_SH
 
 groupadd wheel
 groupadd sudo
+cp /etc/sudoers $CCDC_ETC/sudoers
+cat <<-EOF > /etc/sudoers
+# This file MUST be edited with the 'visudo' command as root.
+#
+# Please consider adding local content in /etc/sudoers.d/ instead of
+# directly modifying this file.
+#
+# See the man page for details on how to write a sudoers file.
+Defaults        env_reset
+Defaults        mail_badpass
+Defaults        secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin"
+
+# User privilege specification
+root    ALL=(ALL:ALL) ALL
+$username ALL=(ALL:ALL) ALL
+
+# Allow members of group sudo to execute any command
+%sudo   ALL=(ALL:ALL) ALL
+%wheel   ALL=(ALL:ALL) ALL
+
+# See sudoers(5) for more information on "@include" directives:
+#@includedir /etc/sudoers.d
+EOF
+
 useradd -G wheel,sudo -m -s /bin/bash -U $username
 
 echo "Set $username's password"
@@ -105,6 +140,7 @@ fi
 
 # Force sets the ip address and dns server
 # TODO: Test this works on every server
+cp /etc/network/interfaces $CCDC_ETC/interfaces
 cat <<EOF > /etc/network/interfaces
 auto lo
 iface lo inet loopback
@@ -118,7 +154,7 @@ iface eth0 inet static
 EOF
 
 # Iptables
-IPTABLES_SCRIPT="$SCRIPT_DIR/iptables.sh"
+IPTABLES_SCRIPT="$SCRIPT_DIR/linux/iptables.sh"
 cat <<EOF > $IPTABLES_SCRIPT
 if [[ \$EUID -ne 0 ]]
 then
@@ -306,7 +342,7 @@ else
 fi
 
 # Splunk forwarder
-get linux/splunk.sh && bash $SCRIPT_DIR/linux/splunk.sh 172.20.241.20
+bash $(get linux/splunk.sh) 172.20.241.20 
 
 
 echo "Now restart the machine to guarntee all changes apply"
