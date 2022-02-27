@@ -69,7 +69,7 @@ echo "What would you like the admin account to be named?"
 read username
 
 PASSWD_SH=$SCRIPT_DIR/linux/passwd.sh
-cat << EOF > $PASSWD_SH
+cat <<EOF > $PASSWD_SH
 if [[ \$EUID -ne 0 ]]
 then
   printf 'Must be run as root, exiting!\n'
@@ -105,7 +105,7 @@ fi
 
 # Force sets the ip address and dns server
 # TODO: Test this works on every server
-cat << EOF > /etc/network/interfaces
+cat <<EOF > /etc/network/interfaces
 auto lo
 iface lo inet loopback
 
@@ -174,7 +174,7 @@ then
   # HTTP/HTTPS (apache) iptables -t filter -A INPUT -p tcp --dport 80 -j ACCEPT
   iptables -t filter -A INPUT -p tcp --dport 443 -j ACCEPT
 
-  EOF
+EOF
 fi
 
 
@@ -185,7 +185,7 @@ then
   iptables -t filter -A INPUT -p tcp --dport 53 -j ACCEPT
   iptables -t filter -A INPUT -p udp --dport 53 -j ACCEPT
 
-  EOF
+EOF
 fi
 
 if prompt "MAIL Server?" n
@@ -203,7 +203,7 @@ then
   iptables -t filter -A OUTPUT -p tcp --dport 143 -j ACCEPT
   iptables -t filter -A INPUT -p tcp --dport 143 -j ACCEPT
 
-  EOF
+EOF
 fi
 
 if prompt "NTP Server?" n
@@ -213,7 +213,7 @@ then
   iptables -t filter -A INPUT -p tcp --dport 123 -j ACCEPT
   iptables -t filter -A INPUT -p udp --dport 123 -j ACCEPT
 
-  EOF
+EOF
 fi
 bash $IPTABLES_SCRIPT
 
