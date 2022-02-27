@@ -1,5 +1,8 @@
 @echo off
 
+:: Notes: This file needs to be copied and pasted into notepad, rather than saving the webpage as
+:: text.
+
 set ccdcpath="c:\ccdc"
 mkdir %ccdcpath% >NUL
 icacls %ccdcpath% /inheritancelevel:e >NUL
