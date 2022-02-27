@@ -43,6 +43,7 @@ prompt() {
 }
 
 # get <file>
+# prints the name of the file downloaded
 get() {
   # only download if the file doesn't exist
   if [[ ! -f "$SCRIPT_DIR/$1" ]]
@@ -56,10 +57,9 @@ get() {
 
 # replace <dir> <file> <new file>
 replace() {
-  get $3
   mkdir -p $CCDC_ETC/$(dirname $2)
   cp $1/$2 $CCDC_ETC/$2.old
-  cp $SCRIPT_DIR/$3 $1/$2
+  cp $(get $3) $1/$2
 }
 
 # Grab script so it's guarnteed to be in /ccdc/scripts/linux
@@ -291,6 +291,7 @@ chmod a=,u=rw,g=r /etc/shadow
 # TODO: There are multiple ways to do NTP. We need to check what each server uses.
 #server 172.20.240.20
 # timedatectl status
+# !!!TODO: We need to make this actually work!
 replace /etc ntp.conf linux/ntp.conf
 
 # SSH Server config
