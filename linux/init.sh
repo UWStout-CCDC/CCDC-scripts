@@ -48,7 +48,8 @@ get() {
   if [[ ! -f "$DOWNLOAD_DIR/$1" ]]
   then
     mkdir -p $(dirname "$DOWNLOAD_DIR/$1")
-    wget "https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts-2020/master/$1" -O "$DOWNLOAD_DIR/$1"
+    BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts-2020/master"
+    wget "$BASE_URL/$1" -O "$DOWNLOAD_DIR/$1"
   fi
 }
 
@@ -268,6 +269,7 @@ chmod a=r,u=rw /etc/shadow
 # TODO: There are multiple ways to do NTP. We need to check what each server uses.
 #server 172.20.240.20
 # timedatectl status
+replace /etc ntp.conf linux/ntp.conf
 
 # SSH Server config
 replace /etc ssh/sshd_config linux/sshd_config
@@ -276,32 +278,45 @@ touch /ccdc/ssh/authorized_keys
 
 # !! DO LAST !! These will take a while
 
-# Restart service
+if type yum
+then
+  echo 'yum selected, upgrading'
+  yum update && yum upgrade -y
+  yum install -y ntp screen openssh-client
+elif type apt-get
+then
+  echo 'apt selected, upgrading'
+  apt-get update && apt-get upgrade -y
+  apt-get install -y ntp screen openssh-client
+else
+  echo 'No package manager found'
+fi
+
+# Restart services
 if type systemctl
 then
   systemctl restart sshd
+  systemctl restart iptables
+  # TODO: Verify service name
+  systemctl restart ntp
 
   # Disable other firewalls
+  # (--now also runs a start/stop with the enable/disable)
   systemctl disable --now firewalld
   systemctl disable --now ufw
 
   # Automatically apply IPTABLES_SCRIPT on boot
   systemctl enable --now ccdc_firewall.service
-else
-  service sshd restart
-  # On non-systemd systems, the firewall will need to be reapplied in another way
-fi
 
-if type yum
-then
-  echo 'yum selected, upgrading'
-  yum update && yum upgrade -y
-elif type apt-get
-then
- echo 'apt selected, upgrading'
-  apt-get update && apt-get upgrade -y
+  # We want to use ntpd?
+  systemctl disable --now systemd-timesyncd.service
+  systemctl disable --now chronyd
 else
-  printf 'No package manager found'
+  echo "!! non systemd systems are not supported !!"
+  #exit
+  #service sshd restart
+  #service iptables restart
+  # On non-systemd systems, the firewall will need to be reapplied in another way
 fi
 
 # Splunk forwarder
