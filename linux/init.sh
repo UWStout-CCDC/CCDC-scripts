@@ -72,7 +72,7 @@ read username
 
 PASSWD_SH=$SCRIPT_DIR/linux/passwd.sh
 cat << EOF > $PASSWD_SH
-if [[ $EUID -ne 0 ]]
+if [[ \$EUID -ne 0 ]]
 then
   printf 'Must be run as root, exiting!\n'
   exit 1
@@ -121,7 +121,7 @@ EOF
 # Iptables
 IPTABLES_SCRIPT="$SCRIPT_DIR/iptables.sh"
 cat <<EOF > $IPTABLES_SCRIPT
-if [[ $EUID -ne 0 ]]
+if [[ \$EUID -ne 0 ]]
 then
   printf 'Must be run as root, exiting!\n'
   exit 1
@@ -168,15 +168,6 @@ iptables -A OUTPUT -p tcp --sport 22 -m conntrack --ctstate ESTABLISHED -j ACCEP
 ######## OUTBOUND SERVICES ###############
 
 EOF
-
-if prompt "SSH Server?" n
-then
-  cat <<-EOF >> $IPTABLES_SCRIPT
-  # SSH
-  iptables -A INPUT -p tcp --dport 22 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
-
-  EOF
-fi
 
 if prompt "HTTP(S) Server?" n
 then
@@ -282,12 +273,12 @@ if type yum
 then
   echo 'yum selected, upgrading'
   yum update && yum upgrade -y
-  yum install -y ntp screen openssh-client
+  yum install -y ntp screen openssh-client netcat
 elif type apt-get
 then
   echo 'apt selected, upgrading'
   apt-get update && apt-get upgrade -y
-  apt-get install -y ntp screen openssh-client
+  apt-get install -y ntp screen openssh-client netcat
 else
   echo 'No package manager found'
 fi
