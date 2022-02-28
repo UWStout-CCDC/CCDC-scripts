@@ -59,6 +59,7 @@ get() {
 replace() {
   mkdir -p $CCDC_ETC/$(dirname $2)
   cp $1/$2 $CCDC_ETC/$2.old
+  mkdir -p $(dirname $1/$2)
   cp $(get $3) $1/$2
 }
 
@@ -141,17 +142,17 @@ fi
 # Force sets the ip address and dns server
 # TODO: Test this works on every server
 cp /etc/network/interfaces $CCDC_ETC/interfaces
-cat <<EOF > /etc/network/interfaces
-auto lo
-iface lo inet loopback
+#cat <<EOF > /etc/network/interfaces
+#auto lo
+#iface lo inet loopback
 
-auto eth0
-iface eth0 inet static
-  address ${IP_ADDR}
-  netmask 255.255.255.0
-  gateway ${IP_ADDR%.*}.254
-  dns-nameserver 172.20.240.20 172.20.242.200 9.9.9.9
-EOF
+#auto eth0
+#iface eth0 inet static
+  #address ${IP_ADDR}
+  #netmask 255.255.255.0
+  #gateway ${IP_ADDR%.*}.254
+  #dns-nameserver 172.20.240.20 172.20.242.200 9.9.9.9
+#EOF
 
 # Iptables
 IPTABLES_SCRIPT="$SCRIPT_DIR/linux/iptables.sh"
@@ -206,6 +207,7 @@ EOF
 
 if prompt "HTTP(S) Server?" n
 then
+  IS_HTTP_SERVER="y"
   cat <<-EOF >> $IPTABLES_SCRIPT
   # HTTP/HTTPS (apache) iptables -t filter -A INPUT -p tcp --dport 80 -j ACCEPT
   iptables -t filter -A INPUT -p tcp --dport 443 -j ACCEPT
@@ -216,6 +218,8 @@ fi
 
 if prompt "DNS/NTP Server?" n
 then
+  IS_DNS_SERVER="y"
+  IS_NTP_SERVER="y"
   cat <<-EOF >> $IPTABLES_SCRIPT
   # DNS (bind)
   iptables -t filter -A INPUT -p tcp --dport 53 -j ACCEPT
@@ -230,6 +234,7 @@ fi
 
 if prompt "MAIL Server?" n
 then
+  IS_MAIL_SERVER="y"
   cat <<-EOF >> $IPTABLES_SCRIPT
   # SMTP
   iptables -t filter -A OUTPUT -p tcp --dport 25 -j ACCEPT
@@ -288,31 +293,52 @@ chmod a=,u=rw,g=r /etc/shadow
 
 # We might be able to get away with installing systemd on centos 6 to make every server the same
 
-# TODO: There are multiple ways to do NTP. We need to check what each server uses.
-#server 172.20.240.20
-# timedatectl status
-# !!!TODO: We need to make this actually work!
-replace /etc ntp.conf linux/ntp.conf
-
-# SSH Server config
-replace /etc ssh/sshd_config linux/sshd_config
-# Disable all keys - sshd_config will set the server to check this file
-touch /ccdc/ssh/authorized_keys
-
 # !! DO LAST !! These will take a while
 
 if type yum
 then
   echo 'yum selected, upgrading'
   yum update && yum upgrade -y
-  yum install -y ntp screen openssh-client netcat
+  yum install -y ntp ntpdate screen openssh-client netcat
 elif type apt-get
 then
   echo 'apt selected, upgrading'
   apt-get update && apt-get upgrade -y
-  apt-get install -y ntp screen openssh-client netcat
+  apt-get install -y ntp ntpdate screen openssh-client netcat
 else
   echo 'No package manager found'
+fi
+
+if [[ ! -z "$IS_NTP_SERVER" ]] && type systemctl && type apt-get
+then
+  # TODO: There are multiple ways to do NTP. We need to check what each server uses.
+  #server 172.20.240.20
+  # timedatectl status
+  apt-get install ntp-server
+  replace /etc ntp.conf linux/ntp.conf
+elif [[ ! -z "$IS_NTP_SERVER" ]]
+then
+  echo "NTP Servers are only supported on Debian"
+else
+  cp /etc/ntp.conf $CCDC_ETC/ntp.conf
+  echo "
+driftfile /var/lib/ntp/npt.drift
+logfile /var/log/ntp.log
+
+server 172.20.240.20 iburst
+
+# Set hw clock as low priority
+server 127.127.1.0
+fudge 127.127.1.0 stratum 10
+restrict -4 default kob notrap nomodify nopeer limited noquery noserve
+restrict -6 default kob notrap nomodify nopeer limited noquery noserve
+
+restrict 127.0.0.1
+restrict ::1
+
+tinker panic 0
+tos maxdist 30
+" > /etc/ntp.conf
 fi
 
 # Restart services
@@ -322,6 +348,7 @@ then
   systemctl restart iptables
   # TODO: Verify service name
   systemctl restart ntp
+  systemctl enable ntp
 
   # Disable other firewalls
   # (--now also runs a start/stop with the enable/disable)
@@ -341,6 +368,11 @@ else
   #service iptables restart
   # On non-systemd systems, the firewall will need to be reapplied in another way
 fi
+
+# SSH Server config
+replace /etc ssh/sshd_config linux/sshd_config
+# Disable all keys - sshd_config will set the server to check this file
+touch /ccdc/ssh/authorized_keys
 
 # Splunk forwarder
 bash $(get linux/splunk.sh) 172.20.241.20 
