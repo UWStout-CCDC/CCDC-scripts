@@ -309,6 +309,12 @@ else
   echo 'No package manager found'
 fi
 
+# SSH Server config
+replace /etc ssh/sshd_config linux/sshd_config
+# Disable all keys - sshd_config will set the server to check this file
+mkdir -p /ccdc/ssh/
+touch /ccdc/ssh/authorized_keys
+
 if [[ ! -z "$IS_NTP_SERVER" ]] && type systemctl && type apt-get
 then
   # TODO: There are multiple ways to do NTP. We need to check what each server uses.
@@ -369,12 +375,8 @@ else
   # On non-systemd systems, the firewall will need to be reapplied in another way
 fi
 
-# SSH Server config
-replace /etc ssh/sshd_config linux/sshd_config
-# Disable all keys - sshd_config will set the server to check this file
-touch /ccdc/ssh/authorized_keys
-
 # Splunk forwarder
+# We need to check to make sure this actually applies... the get sometimes fails
 bash $(get linux/splunk.sh) 172.20.241.20 
 
 
