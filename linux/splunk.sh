@@ -22,12 +22,10 @@ wget -O splunkforwarder-8.2.5-77015bc7a462-Linux-x86_64.tgz "https://download.sp
 tar -xzvf splunkforwarder-8.2.5-77015bc7a462-Linux-x86_64.tgz -C /opt
 cd /opt/splunkforwarder/bin
 
-# Start the splunk forwarder, and automatically accept the license
-./splunk start --accept-license --answer-yes --auto-ports --no-prompt # User will have to input creds here
-
 read -p "Create splunk user password: " PASSWD
-./splunk add user splunk -password $PASSWD -role admin
 
+# Start the splunk forwarder, and automatically accept the license
+./splunk start --accept-license --answer-yes --auto-ports --no-prompt --seed-password $PASSWD
 # Add the server to forward to (ip needs to be the first param)
 ./splunk add forward-server "$1":9997 # User will have to input the same creds here
 # Server to poll updates from (same as above, but a different port)
