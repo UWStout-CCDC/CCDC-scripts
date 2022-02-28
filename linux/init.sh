@@ -130,7 +130,7 @@ passwd root
 bash $PASSWD_SH
 
 # Current IP address. We should assume this to be correct
-IP_ADDR=$(ip addr | grep -Po "inet \K172\.\d+\.\d+\.\d+")
+IP_ADDR=$(ip addr show dev eth0 | grep -Po "inet \K\d+\.\d+\.\d+\.\d+")
 
 if prompt "Is $IP_ADDR the correct IP address?" y
 then
@@ -142,17 +142,17 @@ fi
 # Force sets the ip address and dns server
 # TODO: Test this works on every server
 cp /etc/network/interfaces $CCDC_ETC/interfaces
-#cat <<EOF > /etc/network/interfaces
-#auto lo
-#iface lo inet loopback
+cat <<EOF > /etc/network/interfaces
+auto lo
+iface lo inet loopback
 
-#auto eth0
-#iface eth0 inet static
-  #address ${IP_ADDR}
-  #netmask 255.255.255.0
-  #gateway ${IP_ADDR%.*}.254
-  #dns-nameserver 172.20.240.20 172.20.242.200 9.9.9.9
-#EOF
+auto eth0
+iface eth0 inet static
+  address ${IP_ADDR}
+  netmask 255.255.255.0
+  gateway ${IP_ADDR%.*}.254
+  dns-nameserver 172.20.240.20 172.20.242.200 9.9.9.9
+EOF
 
 # Iptables
 IPTABLES_SCRIPT="$SCRIPT_DIR/linux/iptables.sh"
