@@ -8,13 +8,14 @@
 # Install and configure the splunk forwarder
 
 if [[ $EUID -ne 0 ]]; then
-	printf 'Must be run as root, exiting!\n'
-	exit 1
+  echo 'Must be run as root, exiting!'
+  exit 1
 fi
 
 if [[ $# -lt 1 ]]; then
-	printf 'Must specify a forward-server! (This is the server Splunk-enterprise is on)\nex: sudo ./splunk.sh 192.168.0.5'
-	exit 1
+  echo 'Must specify a forward-server! (This is the server Splunk-enterprise is on)'
+  echo 'ex: sudo ./splunk.sh 192.168.0.5'
+  exit 1
 fi
 
 # Install Splunk
@@ -22,13 +23,14 @@ wget -O splunkforwarder-8.2.5-77015bc7a462-Linux-x86_64.tgz "https://download.sp
 tar -xzvf splunkforwarder-8.2.5-77015bc7a462-Linux-x86_64.tgz -C /opt
 cd /opt/splunkforwarder/bin
 
+# Request and confirm password
 PASSWD_CONFIRM='!'
 while [[ "$PASSWD" != "$PASSWD_CONFIRM" || -z "$PASSWD" ]]
 do
-    read -sr -p "Create splunk user password: " PASSWD
-    echo ""
-    read -sr -p "Confirm password: " PASSWD_CONFIRM
-    echo ""
+  read -sr -p "Create splunk user password: " PASSWD
+  echo ""
+  read -sr -p "Confirm password: " PASSWD_CONFIRM
+  echo ""
 done
 
 # Start the splunk forwarder, and automatically accept the license
@@ -40,10 +42,10 @@ done
 
 # Quick function to check if a file exists, and monitor it
 monitor() {
-    if [ -f $1 ]
-    then
-	./splunk add monitor $1
-    fi
+  if [ -f $1 ]
+  then
+    ./splunk add monitor $1
+  fi
 }
 
 # Add files to log
