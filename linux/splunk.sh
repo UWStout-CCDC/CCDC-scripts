@@ -22,7 +22,14 @@ wget -O splunkforwarder-8.2.5-77015bc7a462-Linux-x86_64.tgz "https://download.sp
 tar -xzvf splunkforwarder-8.2.5-77015bc7a462-Linux-x86_64.tgz -C /opt
 cd /opt/splunkforwarder/bin
 
-read -p "Create splunk user password: " PASSWD
+PASSWD_CONFIRM='!'
+while [[ "$PASSWD" != "$PASSWD_CONFIRM" || -z "$PASSWD" ]]
+do
+    read -sr -p "Create splunk user password: " PASSWD
+    echo ""
+    read -sr -p "Confirm password: " PASSWD_CONFIRM
+    echo ""
+done
 
 # Start the splunk forwarder, and automatically accept the license
 ./splunk start --accept-license --answer-yes --auto-ports --no-prompt --seed-password $PASSWD
