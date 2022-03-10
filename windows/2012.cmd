@@ -207,10 +207,6 @@ echo. > %ccdcpath%\Proof\regproof.txt
 echo Change RegisteredOwner: >> %ccdcpath%\Proof\regproof.txt
 call :RegEdit add "HKLM\Software\Microsoft\Windows NT\CurrentVersion" /v RegisteredOwner /t REG_SZ /d blueteam /f
 
-:: Turn on User account control
-echo UAC: >> %ccdcpath%\Proof\regproof.txt
-set PA="HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
-call :RegEdit add %PA% /v EnableLUA /t REG_DWORD /d 1
 
 :: Disable admin autologon
 set PA="HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
@@ -220,6 +216,11 @@ echo Legal Banner: >> %ccdcpath%\Proof\regproof.txt
 set PA="HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\system"
 call :RegEdit add %PA% /v legalnoticecaption /t Reg_SZ /d "Team 12 Legal Notice"
 call :RegEdit add %PA% /v legalnoticetext /t Reg_SZ /d "UNAUTHORIZED ACCESS TO THIS DEVICE IS PROHIBITED"
+
+:: Turn on User account control
+echo UAC: >> %ccdcpath%\Proof\regproof.txt
+set PA="HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+call :RegEdit add %PA% /v EnableLUA /t REG_DWORD /d 1
 
 :: Windows Updates
 :: echo Windows Updates: >> %ccdcpath%\Proof\regproof.txt
@@ -274,23 +275,22 @@ call :RegEdit delete %PA% /v DisableAntiSpyware
 echo Unhide files: >> %ccdcpath%\Proof\regproof.txt
 set PA="HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
 call :RegEdit add %PA% /v Hidden /t REG_DWORD /d 1
-
 echo unhide system files: >> %ccdcpath%\Proof\regproof.txt
-set PA="HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
 call :RegEdit add %PA% /v ShowSuperHidden /t REG_DWORD /d 1
 
 :: Fix Local Security Authority(LSA)
+set PA="HKLM\SYSTEM\CurrentControlSet\Control\LSA"
+call :RegEdit add %PA% /v RunAsPPL /t REG_DWORD /d 1
 echo Restrictanonymous: >> %ccdcpath%\Proof\regproof.txt
-set PA="HKLM\SYSTEM\CurrentControlSet\Control\LSA"
 call :RegEdit add %PA% /v restrictanonymous /t REG_DWORD /d 1
-
 echo Restrictanonymoussam: >> %ccdcpath%\Proof\regproof.txt
-set PA="HKLM\SYSTEM\CurrentControlSet\Control\LSA"
 call :RegEdit add %PA% /v restrictanonymoussam /t REG_DWORD /d 1
-
 echo Change everyone includes anonymous: >> %ccdcpath%\Proof\regproof.txt
-set PA="HKLM\SYSTEM\CurrentControlSet\Control\LSA"
 call :RegEdit add %PA% /v everyoneincludesanonymous /t REG_DWORD /d 0
+echo delete use machine id: >> %ccdcpath%\Proof\regproof.txt
+call :RegEdit delete %PA% /v UseMachineID
+echo Change notification packages: >> %ccdcpath%\Proof\regproof.txt
+call :RegEdit add %PA% /v "Notification Packages" /t REG_MULTI_SZ /d "scecli"
 
 echo Get rid of the ridiculous store plaintext passwords: >> %ccdcpath%\Proof\regproof.txt
 set PA="HKLM\SYSTEM\CurrentControlSet\services\LanmanWorkstation\Parameters"
@@ -300,14 +300,6 @@ call :RegEdit add %PA% /v EnablePlainTextPassword /t REG_DWORD /d 0
 echo Turn off Local Machine Hash: >> %ccdcpath%\Proof\regproof.txt
 set PA="HKLM\SYSTEM\CurrentControlSet\Control\LSA"
 call :RegEdit add %PA% /v NoLMHash /t REG_DWORD /d 1
-
-echo delete use machine id: >> %ccdcpath%\Proof\regproof.txt
-set PA="HKLM\SYSTEM\CurrentControlSet\Control\LSA"
-call :RegEdit delete %PA% /v UseMachineID
-
-echo Change notification packages: >> %ccdcpath%\Proof\regproof.txt
-set PA="HKLM\SYSTEM\CurrentControlSet\Control\LSA"
-call :RegEdit add %PA% /v "Notification Packages" /t REG_MULTI_SZ /d "scecli"
 
 echo Show hidden users in gui: >> %ccdcpath%\Proof\regproof.txt
 :: TODO
@@ -325,12 +317,23 @@ set PA="HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\LanmanServer\Parame
 call :RegEdit add %PA% /v SMB1 /t REG_DWORD /d 0
 call :RegEdit add %PA% /v SMB2 /t REG_DWORD /d 0
 
+:: Require Ctrl-Alt-Del on login
+set PA="HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+call :RegEdit add %PA% /v "DisableCAD" /t REG_DWORD /d 0
+
+:: # Disable Internet Explorer Enhanced Security Configuration (IE ESC)
+:: Function DisableIEEnhancedSecurity {
+:: 	Write-Output "Disabling Internet Explorer Enhanced Security Configuration (IE ESC)..."
+:: 	Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A7-37EF-4b3f-8CFC-4F3A74704073}" -Name "IsInstalled" -Type DWord -Value 0
+:: 	Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A8-37EF-4b3f-8CFC-4F3A74704073}" -Name "IsInstalled" -Type DWord -Value 0
+:: }
+
 :: Set NTP server
 :: The first 3 commands stop the ntp client, and reset it to default config
 net stop w32time
 w32tm /unregister
 w32tm /register
-w32tm /config /manualpeerlist:"172.20.240.20 0.pool.ntp.org 1.pool.ntp.org",0x8 /syncfromflags:MANUAL
+w32tm /config /manualpeerlist:"172.20.240.20 time.nist.gov",0x8 /syncfromflags:MANUAL
 w32tm /config /reliable:yes
 net start w32time
 
@@ -341,8 +344,8 @@ powershell -Command "Disable-PSRemoting -Force"
 :: Restrict Powershell
 :: PS> New-PSSessionConfigurationFile –ModulesToImport ActiveDirectory –VisibleCmdLets @() –LanguageMode 'NoLanguage' –SessionType 'RestrictedRemoteServer' –Path 'c:\ccdc\remote.pssc'
 :: PS> 
- powershell -EncodedCommand ""
- :: powershell -Command "wget url"
+::powershell -EncodedCommand ""
+:: powershell -Command "wget url"
 
 
 :: TODO set dns forward server to 9.9.9.9
