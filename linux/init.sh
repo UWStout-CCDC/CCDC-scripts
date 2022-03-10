@@ -67,6 +67,7 @@ replace() {
 get linux/init.sh
 
 bash $(get linux/log_state.sh)
+SPLUNK_SCRIPT=$(get linux/splunk.sh)
 
 #gets wanted username
 echo "What would you like the admin account to be named?"
@@ -209,7 +210,8 @@ if prompt "HTTP(S) Server?" n
 then
   IS_HTTP_SERVER="y"
   cat <<-EOF >> $IPTABLES_SCRIPT
-  # HTTP/HTTPS (apache) iptables -t filter -A INPUT -p tcp --dport 80 -j ACCEPT
+  # HTTP/HTTPS (apache)
+  iptables -t filter -A INPUT -p tcp --dport 80 -j ACCEPT
   iptables -t filter -A INPUT -p tcp --dport 443 -j ACCEPT
 
 EOF
@@ -377,7 +379,7 @@ fi
 
 # Splunk forwarder
 # We need to check to make sure this actually applies... the get sometimes fails
-bash $(get linux/splunk.sh) 172.20.241.20 
+bash $SPLUNK_SCRIPT 172.20.241.20 
 
 
 echo "Now restart the machine to guarntee all changes apply"
