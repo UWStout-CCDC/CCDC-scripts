@@ -57,7 +57,8 @@ netsh advfirewall firewall add rule name="Allow Pings" dir=out action=allow enab
 netsh advfirewall firewall add rule name="Splunk OUT" dir=out action=allow enable=yes profile=any remoteip=%Splunk% remoteport=8000,8089,9997 protocol=tcp
 netsh advfirewall firewall add rule name="Web OUT" dir=out action=allow enable=yes profile=any remoteport=80,443 protocol=tcp
 netsh advfirewall firewall add rule name="DNS OUT" dir=out action=allow enable=yes profile=any remoteport=53 protocol=udp remoteip=%DNSNTP%,9.9.9.9
-netsh advfirewall firewall add rule name="DNS IN" dir=in action=allow enable=yes profile=any localport=53 protocol=udp
+netsh advfirewall firewall add rule name="DNS IN (UDP)" dir=in action=allow enable=yes profile=any localport=53 protocol=udp
+netsh advfirewall firewall add rule name="DNS IN (TDP)" dir=in action=allow enable=yes profile=any localport=53 protocol=tcp
 :: netsh advfirewall firewall add rule name="SSH in from any" dir=in action=allow enable=no profile=any localport=22 protocol=tcp
 netsh advfirewall firewall add rule name="NTP OUT" dir=out action=allow enable=yes profile=any remoteport=123 remoteip=%DNSNTP% protocol=udp
 :: netsh advfirewall firewall add rule name="WinSCP/SSH Out" dir=out action=allow enable=no profile=any remoteip=%WebMail%,%Splunk%,%DNSNTP%,%EComm%,%UbuntuWkst%,%ADDNS%,%UbuntuWkst% remoteport=22 protocol=tcp
@@ -350,11 +351,12 @@ powershell -Command "Disable-PSRemoting -Force"
 
 :: TODO set dns forward server to 9.9.9.9
 :: netsh interface ipv4 set dnsservers "<?>" static 9.9.9.9 primary
+::
+:: TODO Update (https://www.microsoft.com/en-us/download/details.aspx?id=43434, https://www.catalog.update.microsoft.com/Search.aspx?q=KB5010392)
 
 :: TODO splunk forwarding
 :: TODO Disable remote access
 :: TODO Restrict Powershell
-:: TODO Update
 :: TODO Windows Defender
 :: TODO Remove Roles and Features
 :: TODO Manage AD users
