@@ -195,12 +195,12 @@ iptables -t filter -A OUTPUT -p tcp --dport 80 -j ACCEPT
 iptables -t filter -A OUTPUT -p tcp --dport 443 -j ACCEPT
 
 # NTP (server time)
-iptables -t filter -a OUTPUT -p udp --dport 123 -j accept
+iptables -t filter -A OUTPUT -p udp --dport 123 -j ACCEPT
 
 # Splunk
-iptables -t filter -a OUTPUT -p tcp --dport 8000 -j accept
-iptables -t filter -a OUTPUT -p tcp --dport 8089 -j accept
-iptables -t filter -a OUTPUT -p tcp --dport 9997 -j accept
+iptables -t filter -A OUTPUT -p tcp --dport 8000 -j ACCEPT
+iptables -t filter -A OUTPUT -p tcp --dport 8089 -j ACCEPT
+iptables -t filter -A OUTPUT -p tcp --dport 9997 -j ACCEPT
 
 # SSH outbound
 iptables -A OUTPUT -p tcp --sport 22 -m conntrack --ctstate ESTABLISHED -j ACCEPT
