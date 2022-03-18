@@ -311,6 +311,7 @@ then
   apt-get update && apt-get upgrade -y
   apt-get install -y ntp ntpdate screen openssh-client netcat
 else
+Outbound firewall rules
   echo 'No package manager found'
 fi
 
@@ -382,7 +383,10 @@ fi
 
 # Splunk forwarder
 # We need to check to make sure this actually applies... the get sometimes fails
-bash $SPLUNK_SCRIPT 172.20.241.20 
+if prompt "Install Splunk Forwarder?" y
+then
+  bash $SPLUNK_SCRIPT 172.20.241.20 
+fi
 
 
 echo "Now restart the machine to guarntee all changes apply"
