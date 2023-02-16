@@ -66,6 +66,9 @@ replace() {
 # Grab script so it's guarnteed to be in /ccdc/scripts/linux
 get linux/init.sh
 
+# Grabs monitor.sh script for monitoring log, process, connections, etc
+get linux/monitor.sh
+
 bash $(get linux/log_state.sh)
 SPLUNK_SCRIPT=$(get linux/splunk.sh)
 
