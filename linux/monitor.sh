@@ -131,7 +131,10 @@ do
   	then
     		echo "AIDE:"
     		echo "-----------"
-    		aide --check
+		echo "If used on Splunk there will be noise from Splunk logs"
+    		aide --check > /aide_log.txt
+		head /aide_log.txt
+		echo "Use 'vi /aide_log.txt' to get more detailed info" 
    	fi
   
 done
