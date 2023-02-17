@@ -127,11 +127,11 @@ do
 	sleep 7
 	clear
   
-  if type aide > /dev/null
-  then
-    echo "AIDE:"
-    echo "-----------"
-    aide --check
-   fi
+  	if type aide > /dev/null
+  	then
+    		echo "AIDE:"
+    		echo "-----------"
+    		aide --check
+   	fi
   
 done
