@@ -135,6 +135,8 @@ do
     		aide --check > /aide_log.txt
 		head /aide_log.txt
 		echo "Use 'vi /aide_log.txt' to get more detailed info" 
+		sleep 7
+		clear
    	fi
   
 done
