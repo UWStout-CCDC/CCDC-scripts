@@ -15,6 +15,7 @@ details about it.
 - `users.py`: Configures user accounts
 - `packages.py`: configres packages - updates & remove blacklisted packages
 - `services.py`: configure services - DNS, Apache, Mail
+- `monitor.sh`: Monitors important things all in one command, check monitor.sh for more info
 
 ## Log state dumps
 
