@@ -45,3 +45,4 @@ Exceptions are listed below
 ## Credits
 
 - `splunk.sh`: Adapted from `makeforwarder.sh` found in UCI-CCDC/CCDC2021
+- `monitor.sh`: Adapted from `monpanel` found in JaminB/CCDC
