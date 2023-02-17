@@ -23,3 +23,4 @@ get linux/ssh.sh
 get linux/splunk.sh
 get linux/init.sh
 get linux/teler_config.yaml
+get linux/monitor.sh
