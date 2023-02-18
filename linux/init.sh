@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 # init.sh
 # Copyright (C) 2021 chibashr
@@ -50,7 +50,7 @@ get() {
   then
     mkdir -p $(dirname "$SCRIPT_DIR/$1") 1>&2
     BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts-2020/master"
-    wget "$BASE_URL/$1" -O "$SCRIPT_DIR/$1" 1>&2
+    wget --no-check-certificate "$BASE_URL/$1" -O "$SCRIPT_DIR/$1" 1>&2
   fi
   echo "$SCRIPT_DIR/$1"
 }
@@ -94,9 +94,11 @@ EOF
 chmod a=rx $NOLOGIN
 
 #removes the ability to log on of rogue users
-awk -F: "{ print \"usermod -s $NOLOGIN \" \$1 }" /etc/passwd >> $PASSWD_SH
+awk -F: "{ print \"usermod -s $NOLOGIN \" \$1; print \"passwd -l \" \$1 }" /etc/passwd >> $PASSWD_SH
 echo "usermod -s /bin/bash $username" >> $PASSWD_SH
+echo "passwd -u $username" >> $PASSWD_SH
 echo "usermod -s /bin/bash root" >> $PASSWD_SH
+echo "passwd -u root" >> $PASSWD_SH
 
 groupadd wheel
 groupadd sudo
@@ -134,7 +136,7 @@ passwd root
 bash $PASSWD_SH
 
 # Current IP address. We should assume this to be correct
-IP_ADDR=$(ip addr show dev eth0 | grep -Po "inet \K\d+\.\d+\.\d+\.\d+")
+IP_ADDR=$(ip addr show dev eth0 | grep -Po "inet \K172\.\d+\.\d+\.\d+")
 
 if prompt "Is $IP_ADDR the correct IP address?" y
 then
@@ -218,8 +220,8 @@ then
   iptables -t filter -A INPUT -p tcp --dport 443 -j ACCEPT
 
 EOF
+  # TODO: add mod_sec and secure apache
 fi
-
 
 if prompt "DNS/NTP Server?" n
 then
@@ -235,6 +237,7 @@ then
   iptables -t filter -A INPUT -p udp --dport 123 -j ACCEPT
 
 EOF
+  # TODO: secure bind / named
 fi
 
 if prompt "MAIL Server?" n
@@ -254,7 +257,23 @@ then
   iptables -t filter -A INPUT -p tcp --dport 143 -j ACCEPT
 
 EOF
+  # TODO: secure ?
 fi
+
+if prompt "Splunk Server?" n
+then
+  IS_SPLUNK_SERVER="y"
+  cat <<-EOF >> $IPTABLES_SCRIPT
+  # Splunk Web UI
+  iptables -t filter -A INPUT -p tcp --dport 8000 -j ACCEPT
+  # Splunk Forwarder
+  iptables -t filter -A INPUT -p tcp --dport 8089 -j ACCEPT
+  iptables -t filter -A INPUT -p tcp --dport 9997 -j ACCEPT
+  # Syslog (PA)
+  iptables -t filter -A INPUT -p tcp --dport 514 -j ACCEPT
+EOF
+fi
+
 bash $IPTABLES_SCRIPT
 
 # Create systemd unit for the firewall
@@ -383,10 +402,12 @@ fi
 
 # Splunk forwarder
 # We need to check to make sure this actually applies... the get sometimes fails
-if prompt "Install Splunk Forwarder?" y
+if [[ IS_SPLUNK_SERVER != "y" ]]
 then
-  bash $SPLUNK_SCRIPT 172.20.241.20 
+  if prompt "Install Splunk Forwarder?" y
+  then
+    bash $SPLUNK_SCRIPT 172.20.241.20 
+  fi
 fi
-
 
 echo "Now restart the machine to guarntee all changes apply"
