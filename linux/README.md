@@ -16,6 +16,7 @@ details about it.
 - `packages.py`: configres packages - updates & remove blacklisted packages
 - `services.py`: configure services - DNS, Apache, Mail
 - `monitor.sh`: Monitors important things all in one command, check monitor.sh for more info
+- `init-for-old-centos.sh`: init file for older centos machines without https/tls support
 
 ## Log state dumps
 
