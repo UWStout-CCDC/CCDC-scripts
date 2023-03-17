@@ -68,6 +68,7 @@ get linux/init.sh
 
 # Grabs monitor.sh script for monitoring log, process, connections, etc
 get linux/monitor.sh
+get linux/monitor2.sh
 
 bash $(get linux/log_state.sh)
 SPLUNK_SCRIPT=$(get linux/splunk.sh)
