@@ -78,12 +78,6 @@ usermod -a -G splunk splunk
 #which systemd && ./splunk enable boot-start -systemd-managed 1 -user splunk 
 chown -R splunk /opt/splunkforwarder
 
-# Edit system options
-#sed -i 's/"$SPLUNK_HOME\/bin\/splunk" start --no-prompt --answer-yes/su - splunk -c '\''"$SPLUNK_HOME\/bin\/splunk" start --no-prompt --answer-yes'\''/g' /etc/init.d/splunk
-#sed -i 's/"$SPLUNK_HOME\/bin\/splunk" stop/su - splunk -c '\''"$SPLUNK_HOME\/bin\/splunk" stop'\''/g' /etc/init.d/splunk
-#sed -i 's/"$SPLUNK_HOME\/bin\/splunk" restart/su - splunk -c '\''"$SPLUNK_HOME\/bin\/splunk" restart'\''/g' /etc/init.d/splunk
-#sed -i 's/"$SPLUNK_HOME\/bin\/splunk" status/su - splunk -c '\''"$SPLUNK_HOME\/bin\/splunk" status'\''/g' /etc/init.d/splunk
-
 # This doesn't always seem to be able to restart on it's own, so we just kill it
 killall splunkd
 /opt/splunkforwarder/bin/splunk restart

@@ -323,12 +323,12 @@ if type yum
 then
   echo 'yum selected, upgrading'
   yum update && yum upgrade -y
-  yum install -y ntp ntpdate screen openssh-client netcat
+  yum install -y ntp ntpdate screen openssh-client netcat aide
 elif type apt-get
 then
   echo 'apt selected, upgrading'
   apt-get update && apt-get upgrade -y
-  apt-get install -y ntp ntpdate screen openssh-client netcat
+  apt-get install -y ntp ntpdate screen openssh-client netcat aide
 else
 Outbound firewall rules
   echo 'No package manager found'
