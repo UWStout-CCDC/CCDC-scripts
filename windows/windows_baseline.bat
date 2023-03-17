@@ -76,6 +76,7 @@ dnscmd /Config /CacheLockingPercent 100
 ECHO "Disabling features..."
 DISM /online /disable-feature /featurename:"TelnetClient" /NoRestart
 DISM /online /disable-feature /featurename:"TelnetServer" /NoRestart
+:: TODO: Do we need a TFTP client?
 DISM /online /disable-feature /featurename:"TFTP" /NoRestart
 
 :: Disable IIS features
@@ -285,7 +286,7 @@ call :RegEdit add %PA% /v Debugger /t REG_SZ /d "systray.exe"
 
 set PA="HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters"
 call :RegEdit add %PA% /v SMB1 /t REG_DWORD /d 0
-call :RegEdit add %PA% /v SMB2 /t REG_DWORD /d 0
+:: call :RegEdit add %PA% /v SMB2 /t REG_DWORD /d 0
 
 :: Require Ctrl-Alt-Del on login
 set PA="HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
@@ -294,12 +295,12 @@ call :RegEdit add %PA% /v "DisableCAD" /t REG_DWORD /d 0
 
 :: Set NTP server
 :: The first 3 commands stop the ntp client, and reset it to default config
-net stop w32time
-w32tm /unregister
-w32tm /register
-w32tm /config /manualpeerlist:"172.20.240.20 time.nist.gov",0x8 /syncfromflags:MANUAL
-w32tm /config /reliable:yes
-net start w32time
+:: net stop w32time
+:: w32tm /unregister
+:: w32tm /register
+:: w32tm /config /manualpeerlist:"172.20.240.20 time.nist.gov",0x8 /syncfromflags:MANUAL
+:: w32tm /config /reliable:yes
+:: net start w32time
 
 :: Disable remote Powershell
 :: PS> Disable-PSRemoting -Force
