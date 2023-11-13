@@ -1,10 +1,10 @@
 # Install and configure Splunk forwarder
 
-#NOTE: Process is still manual but easier than editing the file now
+#NOTE: Process is still partially manual but easier than editing the file now
 
 #TODO:
 # - Add script to run on initial setup script
-# - Finish automations once IP and Ports are known
+# - Finish automations once IP is known
 
 # Add any MONITOR_PATH="<directory_path>" ` as needed (the '`' specifies a newline)
 # change <directory_path> to the file you want monitored
@@ -12,10 +12,10 @@
 $username = Read-Host -Prompt 'Enter username for new user to run Splunk Forwarder as'
 $password = Read-Host -Prompt 'Enter password for Splunk forwarder user'
 $server = Read-Host -Prompt 'Enter Splunk Server IP'
-$recievePort = Read-Host -Prompt 'Enter Splunk Server recieving index port'
-$deploymentPort = Read-Host -Prompt 'Enter Splunk Server deployment port'
+$forwardPort = 9997
+$deploymentPort = 8089
 
-$recieve = $server + ":" + $recievePort
+$recieve = $server + ":" + $forwardPort
 $deployment = $server + ":" + $deploymentPort
 
 #Used for testing inputs
