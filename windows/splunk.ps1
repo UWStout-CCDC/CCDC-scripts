@@ -1,10 +1,14 @@
 # Install and configure Splunk forwarder
 
+#For more on what the script is doing check here: 
+#https://docs.splunk.com/Documentation/Forwarder/9.1.1/Forwarder/InstallaWindowsuniversalforwarderfromaninstaller
+
 #NOTE: Process is still partially manual but easier than editing the file now
 
 #TODO:
 # - Add script to run on initial setup script
 # - Finish automations once IP is known
+# - Add files to monitor as soon as known
 
 # Add any MONITOR_PATH="<directory_path>" ` as needed (the '`' specifies a newline)
 # change <directory_path> to the file you want monitored
