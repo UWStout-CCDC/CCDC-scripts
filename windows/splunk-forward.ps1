@@ -13,7 +13,12 @@
 # Add any MONITOR_PATH="<directory_path>" ` as needed (the '`' specifies a newline)
 # change <directory_path> to the file you want monitored
 
-Invoke-WebRequest -Uri https://download.splunk.com/products/universalforwarder/releases/9.0.4/windows/splunkforwarder-9.0.4-de405f4a7979-x64-release.msi -OutFile splunkforwarder-9.0.4-de405f4a7979-x64-release.msi
+$url = https://download.splunk.com/products/universalforwarder/releases/9.0.4/windows/splunkforwarder-9.0.4-de405f4a7979-x64-release.msi
+
+Invoke-WebRequest -Uri $url -OutFile splunkforwarder-9.0.4-de405f4a7979-x64-release.msi
+
+Write-Host "If forwarder installed does not install, download forwarder from web browser at this site: $url"
+Write-Host "If installer does download, ignore the above."
 
 $username = Read-Host -Prompt 'Enter username for new user to run Splunk Forwarder as'
 $password = Read-Host -Prompt 'Enter password for Splunk forwarder user'
@@ -30,6 +35,6 @@ $deployment = $server + ":" + $deploymentPort
 msiexec.exe /i splunkforwarder-9.0.4-de405f4a7979-x64-release.msi  AGREETOLICENSE=Yes `
 LOGON_USERNAME="$username" LOGON_PASSWORD="$password" RECEIVING_INDEXER="$recieve" DEPLOYMENT_SERVER="$deployment" `
 WINEVENTLOG_APP_ENABLE=1 WINEVENTLOG_SEC_ENABLE=1 WINEVENTLOG_SYS_ENABLE=1 ENABLEADMON=1 `
-SPLUNKUSERNAME=$username SPLUNKPASSWORD=$password `
-MONITOR_PATH="<directory_path>" `
-MONITOR_PATH="<directory_path>"
+SPLUNKUSERNAME=$username SPLUNKPASSWORD=$password #`
+#MONITOR_PATH="<directory_path>" `
+#MONITOR_PATH="<directory_path>"
