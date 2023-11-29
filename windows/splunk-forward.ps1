@@ -29,7 +29,4 @@ $deployment = $server + ":" + $deploymentPort
 #Used for testing inputs
 #Write-Host "$username, $password, $server, $recievePort, $deploymentPort, $recieve, $deployment"
 
-msiexec.exe /i splunkforwarder-9.0.4-de405f4a7979-x64-release.msi  AGREETOLICENSE=Yes `
-LOGON_USERNAME="$username" LOGON_PASSWORD="$password" RECEIVING_INDEXER="$recieve" DEPLOYMENT_SERVER="$deployment" `
-WINEVENTLOG_APP_ENABLE=1 WINEVENTLOG_SEC_ENABLE=1 WINEVENTLOG_SYS_ENABLE=1 ENABLEADMON=1 `
-SPLUNKUSERNAME=$username SPLUNKPASSWORD=$password
+msiexec.exe /i splunkforwarder-9.0.4-de405f4a7979-x64-release.msi  AGREETOLICENSE=yes SPLUNKUSERNAME=$username SPLUNKPASSWORD=$password RECEIVING_INDEXER=$recieve DEPLOYMENT_SERVER=$deployment WINEVENTLOG_APP_ENABLE=1 WINEVENTLOG_SEC_ENABLE=1 WINEVENTLOG_SYS_ENABLE=1 ENABLEADMON=1 /quiet
