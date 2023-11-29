@@ -10,9 +10,6 @@
 # - Finish automations once IP is known
 # - Add files to monitor as soon as known
 
-# Add any MONITOR_PATH="<directory_path>" ` as needed (the '`' specifies a newline)
-# change <directory_path> to the file you want monitored
-
 $url = https://download.splunk.com/products/universalforwarder/releases/9.0.4/windows/splunkforwarder-9.0.4-de405f4a7979-x64-release.msi
 
 Invoke-WebRequest -Uri $url -OutFile splunkforwarder-9.0.4-de405f4a7979-x64-release.msi
@@ -35,6 +32,4 @@ $deployment = $server + ":" + $deploymentPort
 msiexec.exe /i splunkforwarder-9.0.4-de405f4a7979-x64-release.msi  AGREETOLICENSE=Yes `
 LOGON_USERNAME="$username" LOGON_PASSWORD="$password" RECEIVING_INDEXER="$recieve" DEPLOYMENT_SERVER="$deployment" `
 WINEVENTLOG_APP_ENABLE=1 WINEVENTLOG_SEC_ENABLE=1 WINEVENTLOG_SYS_ENABLE=1 ENABLEADMON=1 `
-SPLUNKUSERNAME=$username SPLUNKPASSWORD=$password #`
-#MONITOR_PATH="<directory_path>" `
-#MONITOR_PATH="<directory_path>"
+SPLUNKUSERNAME=$username SPLUNKPASSWORD=$password
