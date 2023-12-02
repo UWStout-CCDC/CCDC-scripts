@@ -10,9 +10,9 @@
 # - Finish automations once IP is known
 # - Add files to monitor as soon as known
 
-$url = https://download.splunk.com/products/universalforwarder/releases/9.0.4/windows/splunkforwarder-9.0.4-de405f4a7979-x64-release.msi
+$url = https://download.splunk.com/products/universalforwarder/releases/9.1.1/windows/splunkforwarder-9.1.1-64e843ea36b1-x86-release.msi
 
-Invoke-WebRequest -Uri $url -OutFile splunkforwarder-9.0.4-de405f4a7979-x64-release.msi
+Invoke-WebRequest -Uri $url -OutFile splunkforwarder-9.1.1-64e843ea36b1-x86-release.msi
 
 Write-Host "If forwarder installed does not install, download forwarder from web browser at this site: $url"
 Write-Host "If installer does download, ignore the above."
