@@ -2,7 +2,7 @@
 
 UW-Stout CCDC team repository.
 
-Created and maintained by Matthew Pomes.
+Created by Matthew Pomes. Maintained by the UW-Stout CCDC team.
 
 Most files are stored in our Google Folder. This repos is only used for storing scripts
 and files for easy download from VMs, via `curl` or similar untility.
@@ -16,7 +16,7 @@ and files for easy download from VMs, via `curl` or similar untility.
 
 Using curl, or a similar utility, files can be downloaded onto any machine.
 
-`wget https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts-2020/master/<file>`
+`wget https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master/<file>`
 
 ## Contributing
 
