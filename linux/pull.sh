@@ -12,7 +12,7 @@ DOWNLOAD_DIR="/ccdc/scripts"
 mkdir -p $DOWNLOAD_DIR/linux
 mkdir -p $DOWNLOAD_DIR/general
 get() {
-  wget "https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts-2020/master/$1" -O "$DOWNLOAD_DIR/$1"
+  wget "https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master/$1" -O "$DOWNLOAD_DIR/$1"
 }
 
 get linux/log_state.sh
