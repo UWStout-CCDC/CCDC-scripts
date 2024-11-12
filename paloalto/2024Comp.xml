@@ -1,0 +1,1728 @@
+<config version="10.1.0" urldb="paloaltonetworks" detail-version="10.1.9">
+<mgt-config>
+<users>
+<entry name="admin">
+<phash>$5$omdtlpxp$PNGABKGMJjvw/zeq6k8gvY1vvn4RhZz9nLPKWS/rwd1</phash>
+<permissions>
+<role-based>
+<superuser>yes</superuser>
+</role-based>
+</permissions>
+</entry>
+<entry name="Administrator">
+<permissions>
+<role-based>
+<superuser>yes</superuser>
+</role-based>
+</permissions>
+<phash>$5$cpycgnds$fLRyYcHUM39osDV.PSnZf.Q.91gWFncX/vtBRowMNFC</phash>
+</entry>
+</users>
+<password-complexity>
+<enabled>yes</enabled>
+<minimum-length>8</minimum-length>
+</password-complexity>
+</mgt-config>
+<shared>
+<application/>
+<application-group/>
+<service/>
+<service-group/>
+<botnet>
+<configuration>
+<http>
+<dynamic-dns>
+<enabled>yes</enabled>
+<threshold>5</threshold>
+</dynamic-dns>
+<malware-sites>
+<enabled>yes</enabled>
+<threshold>5</threshold>
+</malware-sites>
+<recent-domains>
+<enabled>yes</enabled>
+<threshold>5</threshold>
+</recent-domains>
+<ip-domains>
+<enabled>yes</enabled>
+<threshold>10</threshold>
+</ip-domains>
+<executables-from-unknown-sites>
+<enabled>yes</enabled>
+<threshold>5</threshold>
+</executables-from-unknown-sites>
+</http>
+<other-applications>
+<irc>yes</irc>
+</other-applications>
+<unknown-applications>
+<unknown-tcp>
+<destinations-per-hour>10</destinations-per-hour>
+<sessions-per-hour>10</sessions-per-hour>
+<session-length>
+<maximum-bytes>100</maximum-bytes>
+<minimum-bytes>50</minimum-bytes>
+</session-length>
+</unknown-tcp>
+<unknown-udp>
+<destinations-per-hour>10</destinations-per-hour>
+<sessions-per-hour>10</sessions-per-hour>
+<session-length>
+<maximum-bytes>100</maximum-bytes>
+<minimum-bytes>50</minimum-bytes>
+</session-length>
+</unknown-udp>
+</unknown-applications>
+</configuration>
+<report>
+<topn>100</topn>
+<scheduled>yes</scheduled>
+</report>
+</botnet>
+<admin-role>
+<entry name="HoneyPot 2.0">
+<description>Admin for N00b5 or R3d Team</description>
+<role>
+<device>
+<webui>
+<dashboard>enable</dashboard>
+</webui>
+<xmlapi/>
+<restapi/>
+</device>
+</role>
+</entry>
+</admin-role>
+</shared>
+<devices>
+<entry name="localhost.localdomain">
+<network>
+<interface>
+<ethernet>
+<entry name="ethernet1/1">
+<layer3>
+<ndp-proxy>
+<enabled>no</enabled>
+</ndp-proxy>
+<sdwan-link-settings>
+<upstream-nat>
+<enable>no</enable>
+<static-ip/>
+</upstream-nat>
+<enable>no</enable>
+</sdwan-link-settings>
+<ip>
+<entry name="Public"/>
+</ip>
+<lldp>
+<enable>no</enable>
+</lldp>
+<interface-management-profile>open-mgmt</interface-management-profile>
+</layer3>
+</entry>
+<entry name="ethernet1/2">
+<layer3>
+<ndp-proxy>
+<enabled>no</enabled>
+</ndp-proxy>
+<sdwan-link-settings>
+<upstream-nat>
+<enable>no</enable>
+<static-ip/>
+</upstream-nat>
+<enable>no</enable>
+</sdwan-link-settings>
+<ip>
+<entry name="internal-gw"/>
+</ip>
+<lldp>
+<enable>no</enable>
+</lldp>
+<interface-management-profile>open-mgmt</interface-management-profile>
+</layer3>
+<comment>Interface for internal network</comment>
+</entry>
+<entry name="ethernet1/3">
+<layer3>
+<ndp-proxy>
+<enabled>no</enabled>
+</ndp-proxy>
+<sdwan-link-settings>
+<upstream-nat>
+<enable>no</enable>
+<static-ip/>
+</upstream-nat>
+<enable>no</enable>
+</sdwan-link-settings>
+<ip>
+<entry name="external-gw"/>
+</ip>
+<lldp>
+<enable>no</enable>
+</lldp>
+<interface-management-profile>open-mgmt</interface-management-profile>
+</layer3>
+<comment>Interface to external network</comment>
+</entry>
+<entry name="ethernet1/4">
+<layer3>
+<ndp-proxy>
+<enabled>no</enabled>
+</ndp-proxy>
+<sdwan-link-settings>
+<upstream-nat>
+<enable>no</enable>
+<static-ip/>
+</upstream-nat>
+<enable>no</enable>
+</sdwan-link-settings>
+<ip>
+<entry name="dmz-gw"/>
+</ip>
+<lldp>
+<enable>no</enable>
+</lldp>
+<interface-management-profile>open-mgmt</interface-management-profile>
+</layer3>
+</entry>
+</ethernet>
+</interface>
+<profiles>
+<monitor-profile>
+<entry name="default">
+<interval>3</interval>
+<threshold>5</threshold>
+<action>wait-recover</action>
+</entry>
+</monitor-profile>
+<interface-management-profile>
+<entry name="open-mgmt">
+<http>yes</http>
+<https>yes</https>
+<http-ocsp>yes</http-ocsp>
+<ssh>yes</ssh>
+<snmp>yes</snmp>
+<userid-service>yes</userid-service>
+<userid-syslog-listener-ssl>yes</userid-syslog-listener-ssl>
+<userid-syslog-listener-udp>yes</userid-syslog-listener-udp>
+<ping>yes</ping>
+<response-pages>yes</response-pages>
+<telnet>yes</telnet>
+</entry>
+</interface-management-profile>
+<zone-protection-profile>
+<entry name="dmz-zone">
+<flood>
+<tcp-syn>
+<red>
+<alarm-rate>10000</alarm-rate>
+<activate-rate>10000</activate-rate>
+<maximal-rate>40000</maximal-rate>
+</red>
+<enable>yes</enable>
+</tcp-syn>
+<udp>
+<red>
+<alarm-rate>10000</alarm-rate>
+<activate-rate>10000</activate-rate>
+<maximal-rate>40000</maximal-rate>
+</red>
+<enable>yes</enable>
+</udp>
+<icmp>
+<red>
+<alarm-rate>10000</alarm-rate>
+<activate-rate>10000</activate-rate>
+<maximal-rate>40000</maximal-rate>
+</red>
+<enable>yes</enable>
+</icmp>
+<icmpv6>
+<red>
+<alarm-rate>10000</alarm-rate>
+<activate-rate>10000</activate-rate>
+<maximal-rate>40000</maximal-rate>
+</red>
+<enable>no</enable>
+</icmpv6>
+<other-ip>
+<red>
+<alarm-rate>10000</alarm-rate>
+<activate-rate>10000</activate-rate>
+<maximal-rate>40000</maximal-rate>
+</red>
+<enable>yes</enable>
+</other-ip>
+</flood>
+<scan>
+<entry name="8001">
+<action>
+<alert/>
+</action>
+<interval>2</interval>
+<threshold>100</threshold>
+</entry>
+<entry name="8003">
+<action>
+<alert/>
+</action>
+<interval>2</interval>
+<threshold>100</threshold>
+</entry>
+</scan>
+<discard-ip-spoof>yes</discard-ip-spoof>
+<discard-ip-frag>yes</discard-ip-frag>
+<strict-ip-check>no</strict-ip-check>
+<discard-unknown-option>yes</discard-unknown-option>
+<discard-malformed-option>yes</discard-malformed-option>
+<discard-tcp-split-handshake>yes</discard-tcp-split-handshake>
+<discard-overlapping-tcp-segment-mismatch>yes</discard-overlapping-tcp-segment-mismatch>
+<discard-icmp-ping-zero-id>yes</discard-icmp-ping-zero-id>
+<discard-icmp-frag>yes</discard-icmp-frag>
+<discard-icmp-large-packet>yes</discard-icmp-large-packet>
+<description>A zone protection policy for the dmz-zone</description>
+<discard-icmp-error>yes</discard-icmp-error>
+</entry>
+<entry name="public-zone">
+<flood>
+<tcp-syn>
+<red>
+<alarm-rate>10000</alarm-rate>
+<activate-rate>10000</activate-rate>
+<maximal-rate>40000</maximal-rate>
+</red>
+<enable>yes</enable>
+</tcp-syn>
+<udp>
+<red>
+<alarm-rate>10000</alarm-rate>
+<activate-rate>10000</activate-rate>
+<maximal-rate>40000</maximal-rate>
+</red>
+<enable>yes</enable>
+</udp>
+<icmp>
+<red>
+<alarm-rate>10000</alarm-rate>
+<activate-rate>10000</activate-rate>
+<maximal-rate>40000</maximal-rate>
+</red>
+<enable>yes</enable>
+</icmp>
+<icmpv6>
+<red>
+<alarm-rate>10000</alarm-rate>
+<activate-rate>10000</activate-rate>
+<maximal-rate>40000</maximal-rate>
+</red>
+<enable>no</enable>
+</icmpv6>
+<other-ip>
+<red>
+<alarm-rate>10000</alarm-rate>
+<activate-rate>10000</activate-rate>
+<maximal-rate>40000</maximal-rate>
+</red>
+<enable>yes</enable>
+</other-ip>
+</flood>
+<scan>
+<entry name="8001">
+<action>
+<alert/>
+</action>
+<interval>2</interval>
+<threshold>100</threshold>
+</entry>
+<entry name="8003">
+<action>
+<alert/>
+</action>
+<interval>2</interval>
+<threshold>100</threshold>
+</entry>
+</scan>
+<discard-ip-spoof>yes</discard-ip-spoof>
+<discard-ip-frag>yes</discard-ip-frag>
+<strict-ip-check>no</strict-ip-check>
+<discard-unknown-option>yes</discard-unknown-option>
+<discard-malformed-option>yes</discard-malformed-option>
+<discard-tcp-split-handshake>yes</discard-tcp-split-handshake>
+<discard-overlapping-tcp-segment-mismatch>yes</discard-overlapping-tcp-segment-mismatch>
+<discard-icmp-ping-zero-id>yes</discard-icmp-ping-zero-id>
+<discard-icmp-frag>yes</discard-icmp-frag>
+<discard-icmp-large-packet>yes</discard-icmp-large-packet>
+<description>A zone protection policy for the public-zone</description>
+<discard-icmp-error>yes</discard-icmp-error>
+</entry>
+<entry name="internal-zone">
+<flood>
+<tcp-syn>
+<red>
+<alarm-rate>10000</alarm-rate>
+<activate-rate>10000</activate-rate>
+<maximal-rate>40000</maximal-rate>
+</red>
+<enable>yes</enable>
+</tcp-syn>
+<udp>
+<red>
+<alarm-rate>10000</alarm-rate>
+<activate-rate>10000</activate-rate>
+<maximal-rate>40000</maximal-rate>
+</red>
+<enable>yes</enable>
+</udp>
+<icmp>
+<red>
+<alarm-rate>10000</alarm-rate>
+<activate-rate>10000</activate-rate>
+<maximal-rate>40000</maximal-rate>
+</red>
+<enable>yes</enable>
+</icmp>
+<icmpv6>
+<red>
+<alarm-rate>10000</alarm-rate>
+<activate-rate>10000</activate-rate>
+<maximal-rate>40000</maximal-rate>
+</red>
+<enable>no</enable>
+</icmpv6>
+<other-ip>
+<red>
+<alarm-rate>10000</alarm-rate>
+<activate-rate>10000</activate-rate>
+<maximal-rate>40000</maximal-rate>
+</red>
+<enable>yes</enable>
+</other-ip>
+</flood>
+<scan>
+<entry name="8001">
+<action>
+<alert/>
+</action>
+<interval>2</interval>
+<threshold>100</threshold>
+</entry>
+<entry name="8003">
+<action>
+<alert/>
+</action>
+<interval>2</interval>
+<threshold>100</threshold>
+</entry>
+</scan>
+<discard-ip-spoof>yes</discard-ip-spoof>
+<discard-ip-frag>yes</discard-ip-frag>
+<strict-ip-check>no</strict-ip-check>
+<discard-unknown-option>yes</discard-unknown-option>
+<discard-malformed-option>yes</discard-malformed-option>
+<discard-tcp-split-handshake>yes</discard-tcp-split-handshake>
+<discard-overlapping-tcp-segment-mismatch>yes</discard-overlapping-tcp-segment-mismatch>
+<discard-icmp-ping-zero-id>yes</discard-icmp-ping-zero-id>
+<discard-icmp-frag>yes</discard-icmp-frag>
+<discard-icmp-large-packet>yes</discard-icmp-large-packet>
+<description>A zone protection policy for the internal zone</description>
+<discard-icmp-error>yes</discard-icmp-error>
+</entry>
+<entry name="external-zone">
+<flood>
+<tcp-syn>
+<red>
+<alarm-rate>10000</alarm-rate>
+<activate-rate>10000</activate-rate>
+<maximal-rate>40000</maximal-rate>
+</red>
+<enable>yes</enable>
+</tcp-syn>
+<udp>
+<red>
+<alarm-rate>10000</alarm-rate>
+<activate-rate>10000</activate-rate>
+<maximal-rate>40000</maximal-rate>
+</red>
+<enable>yes</enable>
+</udp>
+<icmp>
+<red>
+<alarm-rate>10000</alarm-rate>
+<activate-rate>10000</activate-rate>
+<maximal-rate>40000</maximal-rate>
+</red>
+<enable>yes</enable>
+</icmp>
+<icmpv6>
+<red>
+<alarm-rate>10000</alarm-rate>
+<activate-rate>10000</activate-rate>
+<maximal-rate>40000</maximal-rate>
+</red>
+<enable>no</enable>
+</icmpv6>
+<other-ip>
+<red>
+<alarm-rate>10000</alarm-rate>
+<activate-rate>10000</activate-rate>
+<maximal-rate>40000</maximal-rate>
+</red>
+<enable>yes</enable>
+</other-ip>
+</flood>
+<scan>
+<entry name="8001">
+<action>
+<alert/>
+</action>
+<interval>2</interval>
+<threshold>100</threshold>
+</entry>
+<entry name="8003">
+<action>
+<alert/>
+</action>
+<interval>2</interval>
+<threshold>100</threshold>
+</entry>
+</scan>
+<discard-ip-spoof>yes</discard-ip-spoof>
+<discard-ip-frag>yes</discard-ip-frag>
+<strict-ip-check>no</strict-ip-check>
+<discard-unknown-option>yes</discard-unknown-option>
+<discard-malformed-option>yes</discard-malformed-option>
+<discard-tcp-split-handshake>yes</discard-tcp-split-handshake>
+<discard-overlapping-tcp-segment-mismatch>yes</discard-overlapping-tcp-segment-mismatch>
+<discard-icmp-ping-zero-id>yes</discard-icmp-ping-zero-id>
+<discard-icmp-frag>yes</discard-icmp-frag>
+<discard-icmp-large-packet>yes</discard-icmp-large-packet>
+<description>A zone protection policy for the internal zone</description>
+<discard-icmp-error>yes</discard-icmp-error>
+</entry>
+</zone-protection-profile>
+</profiles>
+<ike>
+<crypto-profiles>
+<ike-crypto-profiles>
+<entry name="default">
+<encryption>
+<member>aes-128-cbc</member>
+<member>3des</member>
+</encryption>
+<hash>
+<member>sha1</member>
+</hash>
+<dh-group>
+<member>group2</member>
+</dh-group>
+<lifetime>
+<hours>8</hours>
+</lifetime>
+</entry>
+<entry name="Suite-B-GCM-128">
+<encryption>
+<member>aes-128-cbc</member>
+</encryption>
+<hash>
+<member>sha256</member>
+</hash>
+<dh-group>
+<member>group19</member>
+</dh-group>
+<lifetime>
+<hours>8</hours>
+</lifetime>
+</entry>
+<entry name="Suite-B-GCM-256">
+<encryption>
+<member>aes-256-cbc</member>
+</encryption>
+<hash>
+<member>sha384</member>
+</hash>
+<dh-group>
+<member>group20</member>
+</dh-group>
+<lifetime>
+<hours>8</hours>
+</lifetime>
+</entry>
+</ike-crypto-profiles>
+<ipsec-crypto-profiles>
+<entry name="default">
+<esp>
+<encryption>
+<member>aes-128-cbc</member>
+<member>3des</member>
+</encryption>
+<authentication>
+<member>sha1</member>
+</authentication>
+</esp>
+<dh-group>group2</dh-group>
+<lifetime>
+<hours>1</hours>
+</lifetime>
+</entry>
+<entry name="Suite-B-GCM-128">
+<esp>
+<encryption>
+<member>aes-128-gcm</member>
+</encryption>
+<authentication>
+<member>none</member>
+</authentication>
+</esp>
+<dh-group>group19</dh-group>
+<lifetime>
+<hours>1</hours>
+</lifetime>
+</entry>
+<entry name="Suite-B-GCM-256">
+<esp>
+<encryption>
+<member>aes-256-gcm</member>
+</encryption>
+<authentication>
+<member>none</member>
+</authentication>
+</esp>
+<dh-group>group20</dh-group>
+<lifetime>
+<hours>1</hours>
+</lifetime>
+</entry>
+</ipsec-crypto-profiles>
+<global-protect-app-crypto-profiles>
+<entry name="default">
+<encryption>
+<member>aes-128-cbc</member>
+</encryption>
+<authentication>
+<member>sha1</member>
+</authentication>
+</entry>
+</global-protect-app-crypto-profiles>
+</crypto-profiles>
+</ike>
+<qos>
+<profile>
+<entry name="default">
+<class-bandwidth-type>
+<mbps>
+<class>
+<entry name="class1">
+<priority>real-time</priority>
+</entry>
+<entry name="class2">
+<priority>high</priority>
+</entry>
+<entry name="class3">
+<priority>high</priority>
+</entry>
+<entry name="class4">
+<priority>medium</priority>
+</entry>
+<entry name="class5">
+<priority>medium</priority>
+</entry>
+<entry name="class6">
+<priority>low</priority>
+</entry>
+<entry name="class7">
+<priority>low</priority>
+</entry>
+<entry name="class8">
+<priority>low</priority>
+</entry>
+</class>
+</mbps>
+</class-bandwidth-type>
+</entry>
+</profile>
+</qos>
+<virtual-router>
+<entry name="default">
+<protocol>
+<bgp>
+<enable>no</enable>
+<dampening-profile>
+<entry name="default">
+<cutoff>1.25</cutoff>
+<reuse>0.5</reuse>
+<max-hold-time>900</max-hold-time>
+<decay-half-life-reachable>300</decay-half-life-reachable>
+<decay-half-life-unreachable>900</decay-half-life-unreachable>
+<enable>yes</enable>
+</entry>
+</dampening-profile>
+<routing-options>
+<graceful-restart>
+<enable>yes</enable>
+</graceful-restart>
+</routing-options>
+</bgp>
+<rip>
+<enable>no</enable>
+</rip>
+<ospf>
+<enable>no</enable>
+</ospf>
+<ospfv3>
+<enable>no</enable>
+</ospfv3>
+</protocol>
+<interface>
+<member>ethernet1/1</member>
+<member>ethernet1/2</member>
+<member>ethernet1/3</member>
+<member>ethernet1/4</member>
+</interface>
+<ecmp>
+<algorithm>
+<ip-modulo/>
+</algorithm>
+</ecmp>
+<routing-table>
+<ip>
+<static-route>
+<entry name="default-route">
+<nexthop>
+<ip-address>172.31.40.1</ip-address>
+</nexthop>
+<bfd>
+<profile>None</profile>
+</bfd>
+<interface>ethernet1/3</interface>
+<metric>10</metric>
+<destination>any-net</destination>
+<route-table>
+<unicast/>
+</route-table>
+</entry>
+</static-route>
+</ip>
+</routing-table>
+</entry>
+</virtual-router>
+<dhcp>
+<interface>
+<entry name="ethernet1/4">
+<server>
+<option>
+<dns>
+<primary>8.8.8.8/32</primary>
+</dns>
+<lease>
+<unlimited/>
+</lease>
+<gateway>172.20.242.254</gateway>
+<subnet-mask>255.255.255.0</subnet-mask>
+</option>
+<ip-pool>
+<member>172.20.242.0/24</member>
+</ip-pool>
+<reserved>
+<entry name="172.20.242.10">
+<description>Ubuntu Web</description>
+</entry>
+<entry name="172.20.242.200">
+<description>Windows AD</description>
+</entry>
+<entry name="172.20.242.150">
+<description>PA mgmt</description>
+</entry>
+<entry name="172.20.242.254">
+<description>DF-GW</description>
+</entry>
+</reserved>
+<mode>enabled</mode>
+</server>
+</entry>
+</interface>
+</dhcp>
+</network>
+<deviceconfig>
+<system>
+<type>
+<static/>
+</type>
+<update-server>updates.paloaltonetworks.com</update-server>
+<update-schedule>
+<threats>
+<recurring>
+<weekly>
+<day-of-week>wednesday</day-of-week>
+<at>01:02</at>
+<action>download-only</action>
+</weekly>
+</recurring>
+</threats>
+</update-schedule>
+<timezone>US/Pacific</timezone>
+<service>
+<disable-telnet>yes</disable-telnet>
+<disable-http>yes</disable-http>
+<disable-https>no</disable-https>
+</service>
+<hostname>PA-VM</hostname>
+<ip-address>172.20.242.150</ip-address>
+<netmask>255.255.255.0</netmask>
+<default-gateway>172.20.242.254</default-gateway>
+<dns-setting>
+<servers>
+<primary>9.9.9.9</primary>
+</servers>
+</dns-setting>
+<device-telemetry>
+<device-health-performance>yes</device-health-performance>
+<product-usage>yes</product-usage>
+<threat-prevention>yes</threat-prevention>
+<region>Americas</region>
+</device-telemetry>
+<permitted-ip>
+<entry name="127.0.0.1"/>
+<entry name="172.20.242.1"/>
+</permitted-ip>
+</system>
+<setting>
+<config>
+<rematch>yes</rematch>
+</config>
+<management>
+<hostname-type-in-syslog>FQDN</hostname-type-in-syslog>
+<disable-predefined-reports>
+<member>spyware-infected-hosts</member>
+<member>top-application-categories</member>
+<member>top-technology-categories</member>
+<member>bandwidth-trend</member>
+<member>risk-trend</member>
+<member>threat-trend</member>
+<member>top-users</member>
+<member>top-attacker-sources</member>
+<member>top-attacker-destinations</member>
+<member>top-victim-sources</member>
+<member>top-victim-destinations</member>
+<member>top-attackers-by-source-countries</member>
+<member>top-attackers-by-destination-countries</member>
+<member>top-victims-by-source-countries</member>
+<member>top-victims-by-destination-countries</member>
+<member>top-sources</member>
+<member>top-destinations</member>
+<member>top-destination-countries</member>
+<member>top-source-countries</member>
+<member>top-connections</member>
+<member>top-ingress-interfaces</member>
+<member>top-egress-interfaces</member>
+<member>top-ingress-zones</member>
+<member>top-egress-zones</member>
+<member>top-applications</member>
+<member>top-http-applications</member>
+<member>top-rules</member>
+<member>top-attacks</member>
+<member>top-spyware-threats</member>
+<member>top-viruses</member>
+<member>top-vulnerabilities</member>
+<member>wildfire-file-digests</member>
+<member>top-websites</member>
+<member>top-url-categories</member>
+<member>top-url-users</member>
+<member>top-url-user-behavior</member>
+<member>top-blocked-websites</member>
+<member>top-blocked-url-categories</member>
+<member>top-blocked-url-users</member>
+<member>top-blocked-url-user-behavior</member>
+<member>blocked-credential-post</member>
+<member>unknown-tcp-connections</member>
+<member>unknown-udp-connections</member>
+<member>top-denied-sources</member>
+<member>top-denied-destinations</member>
+<member>top-denied-applications</member>
+<member>risky-users</member>
+<member>SaaS Application Usage</member>
+<member>gtp-events-summary</member>
+<member>gtp-malicious-wildfire-submissions</member>
+<member>gtp-security-events</member>
+<member>gtp-v1-causes</member>
+<member>gtp-v2-causes</member>
+<member>gtp-users-visiting-malicious-url</member>
+<member>top-gtp-attacker-destinations</member>
+<member>top-gtp-attacker-sources</member>
+<member>top-gtp-victim-destinations</member>
+<member>top-gtp-victim-sources</member>
+<member>sctp-error-causes</member>
+<member>sctp-events-summary</member>
+<member>sctp-security-events</member>
+</disable-predefined-reports>
+</management>
+<auto-mac-detect>yes</auto-mac-detect>
+</setting>
+</deviceconfig>
+<vsys>
+<entry name="vsys1">
+<application/>
+<application-group/>
+<zone>
+<entry name="public-zone">
+<network>
+<layer3>
+<member>ethernet1/1</member>
+</layer3>
+<zone-protection-profile>public-zone</zone-protection-profile>
+</network>
+</entry>
+<entry name="internal-zone">
+<network>
+<layer3>
+<member>ethernet1/2</member>
+</layer3>
+<zone-protection-profile>internal-zone</zone-protection-profile>
+</network>
+</entry>
+<entry name="external-zone">
+<network>
+<layer3>
+<member>ethernet1/3</member>
+</layer3>
+<zone-protection-profile>external-zone</zone-protection-profile>
+</network>
+</entry>
+<entry name="dmz-zone">
+<network>
+<layer3>
+<member>ethernet1/4</member>
+</layer3>
+<zone-protection-profile>dmz-zone</zone-protection-profile>
+</network>
+</entry>
+</zone>
+<service>
+<entry name="service-dns">
+<protocol>
+<tcp>
+<port>53</port>
+<override>
+<no/>
+</override>
+</tcp>
+</protocol>
+<description>Allow DNS Traffic</description>
+</entry>
+<entry name="service-dns-udp">
+<protocol>
+<udp>
+<port>53</port>
+<override>
+<no/>
+</override>
+</udp>
+</protocol>
+<description>Allow DNS UDP traffic</description>
+</entry>
+<entry name="service-ntp">
+<protocol>
+<tcp>
+<port>123</port>
+<override>
+<no/>
+</override>
+</tcp>
+</protocol>
+<description>Allow NTP traffic</description>
+</entry>
+<entry name="service-ntp-udp">
+<protocol>
+<udp>
+<port>123</port>
+<override>
+<no/>
+</override>
+</udp>
+</protocol>
+<description>Allow ntp for udp as well</description>
+</entry>
+<entry name="Splunk-8000">
+<protocol>
+<tcp>
+<port>8000</port>
+<override>
+<no/>
+</override>
+</tcp>
+</protocol>
+<description>Splunk internal</description>
+</entry>
+<entry name="Splunk-8089">
+<protocol>
+<tcp>
+<port>8089</port>
+<override>
+<no/>
+</override>
+</tcp>
+</protocol>
+<description>Splunk internal</description>
+</entry>
+<entry name="Splunk-9997">
+<protocol>
+<tcp>
+<port>9997</port>
+<override>
+<no/>
+</override>
+</tcp>
+</protocol>
+<description>Splunk internal</description>
+</entry>
+<entry name="Splunk-514">
+<protocol>
+<tcp>
+<port>514</port>
+<override>
+<no/>
+</override>
+</tcp>
+</protocol>
+<description>Splunk Internal</description>
+</entry>
+<entry name="Mail-SMTP">
+<protocol>
+<tcp>
+<port>25</port>
+<override>
+<no/>
+</override>
+</tcp>
+</protocol>
+<description>Allow SMTP for mail server</description>
+</entry>
+<entry name="Mail-POP3">
+<protocol>
+<tcp>
+<port>110</port>
+<override>
+<no/>
+</override>
+</tcp>
+</protocol>
+<description>Allow POP3 for the mail server</description>
+</entry>
+</service>
+<service-group>
+<entry name="Splunk">
+<members>
+<member>Splunk-514</member>
+<member>Splunk-8000</member>
+<member>Splunk-8089</member>
+<member>Splunk-9997</member>
+</members>
+<tag>
+<member>public-zone</member>
+</tag>
+</entry>
+<entry name="Debian-DNS">
+<members>
+<member>service-dns</member>
+<member>service-dns-udp</member>
+<member>service-ntp</member>
+<member>service-ntp-udp</member>
+</members>
+<tag>
+<member>internal-zone</member>
+</tag>
+</entry>
+<entry name="Ecomm">
+<members>
+<member>service-http</member>
+<member>service-https</member>
+</members>
+<tag>
+<member>public-zone</member>
+</tag>
+</entry>
+<entry name="Fedora-Mail">
+<members>
+<member>Mail-POP3</member>
+<member>Mail-SMTP</member>
+</members>
+<tag>
+<member>public-zone</member>
+</tag>
+</entry>
+<entry name="AD-DNS">
+<members>
+<member>service-http</member>
+<member>service-https</member>
+<member>Splunk-8000</member>
+<member>Splunk-8089</member>
+<member>Splunk-9997</member>
+</members>
+<tag>
+<member>external-zone</member>
+</tag>
+</entry>
+</service-group>
+<schedule/>
+<rulebase>
+<nat>
+<rules>
+<entry name="DebianDNS-Public" uuid="675ff4f2-3c0d-4f35-9e9e-3284f620d4eb">
+<source-translation>
+<static-ip>
+<translated-address>debianDNS-pub-ip</translated-address>
+<bi-directional>yes</bi-directional>
+</static-ip>
+</source-translation>
+<to>
+<member>external-zone</member>
+</to>
+<from>
+<member>internal-zone</member>
+</from>
+<source>
+<member>debianDNS-priv-ip</member>
+</source>
+<destination>
+<member>any</member>
+</destination>
+<service>any</service>
+</entry>
+<entry name="Docker-Public" uuid="0a9abcb1-d41d-4f12-a1e4-e0c380c6e8ec">
+<source-translation>
+<static-ip>
+<translated-address>docker-pub-ip</translated-address>
+<bi-directional>yes</bi-directional>
+</static-ip>
+</source-translation>
+<to>
+<member>external-zone</member>
+</to>
+<from>
+<member>internal-zone</member>
+</from>
+<source>
+<member>docker-priv-ip</member>
+</source>
+<destination>
+<member>any</member>
+</destination>
+<service>any</service>
+</entry>
+<entry name="Splunk-Public" uuid="2c086c04-d03a-41f0-a72d-3ab99e2d6b04">
+<source-translation>
+<static-ip>
+<translated-address>splunk-pub-ip</translated-address>
+<bi-directional>yes</bi-directional>
+</static-ip>
+</source-translation>
+<to>
+<member>external-zone</member>
+</to>
+<from>
+<member>public-zone</member>
+</from>
+<source>
+<member>Splunk-priv-ip</member>
+</source>
+<destination>
+<member>any</member>
+</destination>
+<service>any</service>
+</entry>
+<entry name="Ecomm-Public" uuid="20561563-427e-4657-9db5-65647a839737">
+<source-translation>
+<static-ip>
+<translated-address>ecomm-pub-ip</translated-address>
+<bi-directional>yes</bi-directional>
+</static-ip>
+</source-translation>
+<to>
+<member>external-zone</member>
+</to>
+<from>
+<member>public-zone</member>
+</from>
+<source>
+<member>ecomm-priv-ip</member>
+</source>
+<destination>
+<member>any</member>
+</destination>
+<service>any</service>
+</entry>
+<entry name="FedoraMail-Public" uuid="25c7d034-3a48-4b97-ae01-e651ad97fb7a">
+<source-translation>
+<static-ip>
+<translated-address>fedoramail-pub-ip</translated-address>
+<bi-directional>yes</bi-directional>
+</static-ip>
+</source-translation>
+<to>
+<member>external-zone</member>
+</to>
+<from>
+<member>public-zone</member>
+</from>
+<source>
+<member>fedoramail-priv-ip</member>
+</source>
+<destination>
+<member>any</member>
+</destination>
+<service>any</service>
+</entry>
+<entry name="UbuntuWeb-Public" uuid="1add3dc4-f9cc-4131-884d-83c30b765a68">
+<source-translation>
+<static-ip>
+<translated-address>ubuntuweb-pub-ip</translated-address>
+<bi-directional>yes</bi-directional>
+</static-ip>
+</source-translation>
+<to>
+<member>external-zone</member>
+</to>
+<from>
+<member>dmz-zone</member>
+</from>
+<source>
+<member>ubuntuweb-priv-ip</member>
+</source>
+<destination>
+<member>any</member>
+</destination>
+<service>any</service>
+</entry>
+<entry name="2012DNS-Public" uuid="7ce493da-b61e-4455-adce-b03c8ff3ba74">
+<source-translation>
+<static-ip>
+<translated-address>2012dns-pub-ip</translated-address>
+<bi-directional>yes</bi-directional>
+</static-ip>
+</source-translation>
+<to>
+<member>external-zone</member>
+</to>
+<from>
+<member>dmz-zone</member>
+</from>
+<source>
+<member>2012dns-priv-ip</member>
+</source>
+<destination>
+<member>any</member>
+</destination>
+<service>any</service>
+</entry>
+<entry name="Inside-Outside PAT" uuid="fa8c6736-d705-4f5b-86fa-81d2f5b657b9">
+<source-translation>
+<dynamic-ip-and-port>
+<interface-address>
+<ip>external-gw</ip>
+<interface>ethernet1/3</interface>
+</interface-address>
+</dynamic-ip-and-port>
+</source-translation>
+<to>
+<member>external-zone</member>
+</to>
+<from>
+<member>dmz-zone</member>
+<member>internal-zone</member>
+<member>public-zone</member>
+</from>
+<source>
+<member>any</member>
+</source>
+<destination>
+<member>any</member>
+</destination>
+<service>any</service>
+</entry>
+</rules>
+</nat>
+<default-security-rules>
+<rules>
+<entry name="interzone-default" uuid="68b8fb22-558c-41c2-81c0-53bc48845e73">
+<action>allow</action>
+<log-start>no</log-start>
+<log-end>no</log-end>
+</entry>
+</rules>
+</default-security-rules>
+</rulebase>
+<address>
+<entry name="Public">
+<ip-netmask>172.20.241.254/24</ip-netmask>
+<description>Default gateway for public network</description>
+</entry>
+<entry name="internal-gw">
+<ip-netmask>172.20.240.254/24</ip-netmask>
+</entry>
+<entry name="external-gw">
+<ip-netmask>172.31.40.10/24</ip-netmask>
+</entry>
+<entry name="dmz-gw">
+<ip-netmask>172.20.242.254/24</ip-netmask>
+</entry>
+<entry name="default-gateway">
+<ip-netmask>172.31.40.1/24</ip-netmask>
+</entry>
+<entry name="any-net">
+<ip-netmask>0.0.0.0/0</ip-netmask>
+</entry>
+<entry name="master-gw">
+<ip-netmask>172.31.40.1/24</ip-netmask>
+</entry>
+<entry name="default-gw">
+<ip-netmask>172.31.40.1/24</ip-netmask>
+</entry>
+<entry name="debianDNS-priv-ip">
+<ip-netmask>172.20.240.20</ip-netmask>
+</entry>
+<entry name="debianDNS-pub-ip">
+<ip-netmask>172.25.40.20</ip-netmask>
+</entry>
+<entry name="Splunk-priv-ip">
+<ip-netmask>172.20.241.20</ip-netmask>
+</entry>
+<entry name="splunk-pub-ip">
+<ip-netmask>172.25.40.9</ip-netmask>
+</entry>
+<entry name="ecomm-priv-ip">
+<ip-netmask>172.20.241.30</ip-netmask>
+</entry>
+<entry name="ecomm-pub-ip">
+<ip-netmask>172.25.40.11</ip-netmask>
+</entry>
+<entry name="fedoramail-priv-ip">
+<ip-netmask>172.20.241.40</ip-netmask>
+</entry>
+<entry name="fedoramail-pub-ip">
+<ip-netmask>172.25.40.39</ip-netmask>
+</entry>
+<entry name="ubuntuweb-priv-ip">
+<ip-netmask>172.20.242.10</ip-netmask>
+</entry>
+<entry name="ubuntuweb-pub-ip">
+<ip-netmask>172.25.40.23</ip-netmask>
+</entry>
+<entry name="2012dns-priv-ip">
+<ip-netmask>172.20.242.200</ip-netmask>
+</entry>
+<entry name="2012dns-pub-ip">
+<ip-netmask>172.25.40.27</ip-netmask>
+</entry>
+<entry name="docker-priv-ip">
+<ip-netmask>172.20.240.10</ip-netmask>
+</entry>
+<entry name="docker-pub-ip">
+<ip-netmask>172.25.40.97</ip-netmask>
+</entry>
+</address>
+<import>
+<network>
+<interface>
+<member>ethernet1/1</member>
+<member>ethernet1/2</member>
+<member>ethernet1/3</member>
+<member>ethernet1/4</member>
+</interface>
+</network>
+</import>
+<tag>
+<entry name="dmz-zone">
+<color>color1</color>
+<comments>Tag for the DMZ zone</comments>
+</entry>
+<entry name="public-zone">
+<color>color15</color>
+<comments>Public zone tag</comments>
+</entry>
+<entry name="external-zone">
+<color>color22</color>
+<comments>Tag for the External zone</comments>
+</entry>
+<entry name="internal-zone">
+<color>color26</color>
+<comments>Tag for the Internal zone</comments>
+</entry>
+</tag>
+<profiles>
+<virus>
+<entry name="Custom Antivirus">
+<decoder>
+<entry name="ftp">
+<action>default</action>
+<wildfire-action>default</wildfire-action>
+<mlav-action>default</mlav-action>
+</entry>
+<entry name="http">
+<action>default</action>
+<wildfire-action>default</wildfire-action>
+<mlav-action>default</mlav-action>
+</entry>
+<entry name="http2">
+<action>default</action>
+<wildfire-action>default</wildfire-action>
+<mlav-action>default</mlav-action>
+</entry>
+<entry name="imap">
+<action>default</action>
+<wildfire-action>default</wildfire-action>
+<mlav-action>default</mlav-action>
+</entry>
+<entry name="pop3">
+<action>default</action>
+<wildfire-action>default</wildfire-action>
+<mlav-action>default</mlav-action>
+</entry>
+<entry name="smb">
+<action>default</action>
+<wildfire-action>default</wildfire-action>
+<mlav-action>default</mlav-action>
+</entry>
+<entry name="smtp">
+<action>default</action>
+<wildfire-action>default</wildfire-action>
+<mlav-action>default</mlav-action>
+</entry>
+</decoder>
+<description>This is a custom antivirus for competition</description>
+<mlav-engine-filebased-enabled>
+<entry name="Windows Executables">
+<mlav-policy-action>disable</mlav-policy-action>
+</entry>
+<entry name="PowerShell Script 1">
+<mlav-policy-action>disable</mlav-policy-action>
+</entry>
+<entry name="PowerShell Script 2">
+<mlav-policy-action>disable</mlav-policy-action>
+</entry>
+<entry name="Executable Linked Format">
+<mlav-policy-action>disable</mlav-policy-action>
+</entry>
+<entry name="MSOffice">
+<mlav-policy-action>disable</mlav-policy-action>
+</entry>
+<entry name="Shell">
+<mlav-policy-action>disable</mlav-policy-action>
+</entry>
+</mlav-engine-filebased-enabled>
+</entry>
+</virus>
+<spyware>
+<entry name="Custom Anti-Virus">
+<botnet-domains>
+<lists>
+<entry name="default-paloalto-dns">
+<action>
+<sinkhole/>
+</action>
+<packet-capture>disable</packet-capture>
+</entry>
+</lists>
+<dns-security-categories>
+<entry name="pan-dns-sec-adtracking">
+<log-level>default</log-level>
+<action>default</action>
+<packet-capture>disable</packet-capture>
+</entry>
+<entry name="pan-dns-sec-cc">
+<log-level>default</log-level>
+<action>default</action>
+<packet-capture>disable</packet-capture>
+</entry>
+<entry name="pan-dns-sec-ddns">
+<log-level>default</log-level>
+<action>default</action>
+<packet-capture>disable</packet-capture>
+</entry>
+<entry name="pan-dns-sec-grayware">
+<log-level>default</log-level>
+<action>default</action>
+<packet-capture>disable</packet-capture>
+</entry>
+<entry name="pan-dns-sec-malware">
+<log-level>default</log-level>
+<action>default</action>
+<packet-capture>disable</packet-capture>
+</entry>
+<entry name="pan-dns-sec-parked">
+<log-level>default</log-level>
+<action>default</action>
+<packet-capture>disable</packet-capture>
+</entry>
+<entry name="pan-dns-sec-phishing">
+<log-level>default</log-level>
+<action>default</action>
+<packet-capture>disable</packet-capture>
+</entry>
+<entry name="pan-dns-sec-proxy">
+<log-level>default</log-level>
+<action>default</action>
+<packet-capture>disable</packet-capture>
+</entry>
+<entry name="pan-dns-sec-recent">
+<log-level>default</log-level>
+<action>default</action>
+<packet-capture>disable</packet-capture>
+</entry>
+</dns-security-categories>
+<sinkhole>
+<ipv4-address>pan-sinkhole-default-ip</ipv4-address>
+<ipv6-address>::1</ipv6-address>
+</sinkhole>
+</botnet-domains>
+<description>This is a custom anti-virus for the competition</description>
+<rules>
+<entry name="Advanced-Critical">
+<action>
+<drop/>
+</action>
+<severity>
+<member>critical</member>
+</severity>
+<threat-name>any</threat-name>
+<category>any</category>
+<packet-capture>extended-capture</packet-capture>
+</entry>
+<entry name="Advanced-High">
+<action>
+<reset-both/>
+</action>
+<severity>
+<member>high</member>
+</severity>
+<threat-name>any</threat-name>
+<category>any</category>
+<packet-capture>extended-capture</packet-capture>
+</entry>
+<entry name="Advanced-Medium">
+<action>
+<reset-both/>
+</action>
+<severity>
+<member>medium</member>
+</severity>
+<threat-name>any</threat-name>
+<category>any</category>
+<packet-capture>single-packet</packet-capture>
+</entry>
+<entry name="Advanced-Low">
+<action>
+<default/>
+</action>
+<severity>
+<member>low</member>
+</severity>
+<threat-name>any</threat-name>
+<category>any</category>
+<packet-capture>disable</packet-capture>
+</entry>
+<entry name="Advanced-Informational">
+<action>
+<alert/>
+</action>
+<severity>
+<member>informational</member>
+</severity>
+<threat-name>any</threat-name>
+<category>any</category>
+<packet-capture>disable</packet-capture>
+</entry>
+</rules>
+</entry>
+</spyware>
+<vulnerability>
+<entry name="Vulnerability Protection - Comp">
+<rules>
+<entry name="simple-client-critical">
+<action>
+<reset-both/>
+</action>
+<vendor-id>
+<member>any</member>
+</vendor-id>
+<severity>
+<member>critical</member>
+</severity>
+<cve>
+<member>any</member>
+</cve>
+<threat-name>any</threat-name>
+<host>client</host>
+<category>any</category>
+<packet-capture>disable</packet-capture>
+</entry>
+<entry name="simple-client-high">
+<action>
+<reset-both/>
+</action>
+<vendor-id>
+<member>any</member>
+</vendor-id>
+<severity>
+<member>high</member>
+</severity>
+<cve>
+<member>any</member>
+</cve>
+<threat-name>any</threat-name>
+<host>client</host>
+<category>any</category>
+<packet-capture>disable</packet-capture>
+</entry>
+<entry name="simple-client-medium">
+<action>
+<reset-both/>
+</action>
+<vendor-id>
+<member>any</member>
+</vendor-id>
+<severity>
+<member>medium</member>
+</severity>
+<cve>
+<member>any</member>
+</cve>
+<threat-name>any</threat-name>
+<host>client</host>
+<category>any</category>
+<packet-capture>disable</packet-capture>
+</entry>
+<entry name="simple-client-informational">
+<action>
+<default/>
+</action>
+<vendor-id>
+<member>any</member>
+</vendor-id>
+<severity>
+<member>informational</member>
+</severity>
+<cve>
+<member>any</member>
+</cve>
+<threat-name>any</threat-name>
+<host>client</host>
+<category>any</category>
+<packet-capture>disable</packet-capture>
+</entry>
+<entry name="simple-client-low">
+<action>
+<default/>
+</action>
+<vendor-id>
+<member>any</member>
+</vendor-id>
+<severity>
+<member>low</member>
+</severity>
+<cve>
+<member>any</member>
+</cve>
+<threat-name>any</threat-name>
+<host>client</host>
+<category>any</category>
+<packet-capture>disable</packet-capture>
+</entry>
+<entry name="simple-server-critical">
+<action>
+<reset-both/>
+</action>
+<vendor-id>
+<member>any</member>
+</vendor-id>
+<severity>
+<member>critical</member>
+</severity>
+<cve>
+<member>any</member>
+</cve>
+<threat-name>any</threat-name>
+<host>server</host>
+<category>any</category>
+<packet-capture>disable</packet-capture>
+</entry>
+<entry name="simple-server-high">
+<action>
+<reset-both/>
+</action>
+<vendor-id>
+<member>any</member>
+</vendor-id>
+<severity>
+<member>high</member>
+</severity>
+<cve>
+<member>any</member>
+</cve>
+<threat-name>any</threat-name>
+<host>server</host>
+<category>any</category>
+<packet-capture>disable</packet-capture>
+</entry>
+<entry name="simple-server-medium">
+<action>
+<reset-both/>
+</action>
+<vendor-id>
+<member>any</member>
+</vendor-id>
+<severity>
+<member>medium</member>
+</severity>
+<cve>
+<member>any</member>
+</cve>
+<threat-name>any</threat-name>
+<host>server</host>
+<category>any</category>
+<packet-capture>disable</packet-capture>
+</entry>
+<entry name="simple-server-informational">
+<action>
+<default/>
+</action>
+<vendor-id>
+<member>any</member>
+</vendor-id>
+<severity>
+<member>informational</member>
+</severity>
+<cve>
+<member>any</member>
+</cve>
+<threat-name>any</threat-name>
+<host>server</host>
+<category>any</category>
+<packet-capture>disable</packet-capture>
+</entry>
+<entry name="simple-server-low">
+<action>
+<default/>
+</action>
+<vendor-id>
+<member>any</member>
+</vendor-id>
+<severity>
+<member>low</member>
+</severity>
+<cve>
+<member>any</member>
+</cve>
+<threat-name>any</threat-name>
+<host>server</host>
+<category>any</category>
+<packet-capture>disable</packet-capture>
+</entry>
+</rules>
+<description>This is a vulnerability protection policy for competition</description>
+</entry>
+</vulnerability>
+</profiles>
+</entry>
+</vsys>
+</entry>
+</devices>
+</config>
