@@ -4,12 +4,14 @@
 #Then copy and past the output of the script. The first command increases the winow buffer size and the second command enters configure mode.
 #Syntax for rule creation
 #set rulebase security rules <RuleName> action <allow/deny> from <zone source> to <dest zone> source <source IP> destination <dest ip>
+#11/12/24* Added interface shutdown to prevent redteam access while running intial configs
 
 #this will need to go at the begining when done testing configs
 #set deviceconfig system permitted-ip 172.20.241.0/24
 # Temporary: set deviceconfig system permitted-ip 192.168.1.0/24
 
 #remember to put rule in to deny all external to PA NAT IP before removing NothingIn rule
+#Also Remeber to turn off cli scripting after script is ran with "set cli scripting-mode off"
 
 permitted_ip = "172.20.241.0/24"
 team_num = input("Please input a team number (for third octet, add 20 to team#): ")
@@ -18,6 +20,9 @@ team_num = str(team_num)
 with open("PAConfig.txt", "w") as command_file:
   commands="""
 configure
+set network interface ethernet ethernet1/1 link-state down
+commit
+set deviceconfig system permitted-ip 127.0.0.1
 set deviceconfig system permitted-ip """+permitted_ip+"""
 set deviceconfig system dns-setting servers primary 9.9.9.9
 set deviceconfig system dns-setting servers secondary 149.112.112.112
@@ -83,6 +88,7 @@ set rulebase security rules AllowLDAPFromPublic2User application ldap service ap
 set rulebase security rules AllowSplunkTraffic action allow from Internal to Public source any destination 172.20.242.10 profile-setting profiles spyware strict virus default vulnerability strict
 set rulebase security rules AllowSplunkTraffic from User
 set rulebase security rules AllowSplunkTraffic application splunk service application-default
+set network interface ethernet ethernet1/1 link-state up
 commit
 """
   command_file.write(commands)
