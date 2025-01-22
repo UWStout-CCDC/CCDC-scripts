@@ -12,9 +12,10 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
-if [[ $# -lt 1 ]]; then
-  echo 'Must specify a forward-server! (This is the server Splunk-enterprise is on)'
-  echo 'ex: sudo ./splunk.sh 192.168.0.5'
+read -p "Enter the Splunk server IP [default: 172.20.241.20]: " SPLUNK_SERVER_IP
+SPLUNK_SERVER_IP=${SPLUNK_SERVER_IP:-172.20.241.20}
+if [[ -z "$SPLUNK_SERVER_IP" ]]; then
+  echo 'Splunk server IP cannot be empty!'
   exit 1
 fi
 
@@ -36,9 +37,9 @@ done
 # Start the splunk forwarder, and automatically accept the license
 ./splunk start --accept-license --answer-yes --auto-ports --no-prompt --seed-password $PASSWD
 # Add the server to forward to (ip needs to be the first param)
-./splunk add forward-server "$1":9997 # User will have to input the same creds here
+./splunk add forward-server "$SPLUNK_SERVER_IP":9997 # User will have to input the same creds here
 # Server to poll updates from (same as above, but a different port)
-./splunk set deploy-poll "$1":8089 # User will have to input the same creds here
+./splunk set deploy-poll "$SPLUNK_SERVER_IP":8089 # User will have to input the same creds here
 
 # Quick function to check if a file exists, and monitor it
 monitor() {
@@ -80,4 +81,4 @@ chown -R splunk /opt/splunkforwarder
 
 # This doesn't always seem to be able to restart on it's own, so we just kill it
 killall splunkd
-/opt/splunkforwarder/bin/splunk restart
+./opt/splunkforwarder/bin/splunk restart
