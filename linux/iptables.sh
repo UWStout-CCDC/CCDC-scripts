@@ -51,10 +51,16 @@ iptables -t filter -A OUTPUT -p tcp --dport 443 -j ACCEPT
 # NTP (server time)
 iptables -t filter -A OUTPUT -p udp --dport 123 -j ACCEPT
 
-# Splunk
-iptables -t filter -A OUTPUT -p tcp --dport 8000 -j ACCEPT
-iptables -t filter -A OUTPUT -p tcp --dport 9997 -j ACCEPT
-iptables -t filter -A OUTPUT -p tcp --dport 8089 -j ACCEPT
+# Splunk (Server, Forwarder, Palo)
+iptables -t filter -A INPUT -p tcp --dport 8000 -j ACCEPT
+iptables -t filter -A INPUT -p tcp --dport 9997 -j ACCEPT
+iptables -t filter -A INPUT -p tcp --dport 8089 -j ACCEPT
+iptables -t filter -A INPUT -p tcp --dport 514 -j ACCEPT
+
+# Splunk Forwarder
+iptables -t filter -A INPUT -p tcp --dport 8089 -j ACCEPT
+iptables -t filter -A INPUT -p tcp --dport 9997 -j ACCEPT
+  
 
 ######## OUTBOUND SERVICES ###############
 
@@ -90,7 +96,18 @@ fi
 
 if prompt "Splunk"
 then
+  # Splunk Ports
   iptables -t filter -A INPUT -p tcp --dport 8000 -j ACCEPT
+  # Splunk Forwarder
+  iptables -t filter -A INPUT -p tcp --dport 9997 -j ACCEPT
+  iptables -t filter -A INPUT -p tcp --dport 8089 -j ACCEPT
+  # Palo Syslog
+  iptables -t filter -A INPUT -p tcp --dport 514 -j ACCEPT
+fi
+
+if prompt "Splunk Forwarder"
+then
+  # Splunk Forwarder
   iptables -t filter -A INPUT -p tcp --dport 9997 -j ACCEPT
   iptables -t filter -A INPUT -p tcp --dport 8089 -j ACCEPT
 fi

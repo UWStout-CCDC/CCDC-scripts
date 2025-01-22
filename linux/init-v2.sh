@@ -71,7 +71,9 @@ get linux/monitor.sh
 get linux/monitor2.sh
 
 bash $(get linux/log_state.sh)
-SPLUNK_SCRIPT=$(get linux/splunk-forward.sh)
+get linux/splunk-forward.sh
+
+SPLUNK_SCRIPT="$SCRIPT_DIR/linux/splunk-forward.sh"
 
 #Create new admin user
 echo "What would you like the admin account to be named?"
@@ -158,16 +160,16 @@ iface eth0 inet static
   address ${IP_ADDR}
   netmask 255.255.255.0
   gateway ${IP_ADDR%.*}.254
-  dns-nameserver 172.20.240.20 172.20.242.200 9.9.9.9
+  dns-nameserver 1.1.1.1 9.9.9.9 172.20.240.20 172.20.242.200
 EOF
 
 # Iptables
 IPTABLES_SCRIPT="$SCRIPT_DIR/linux/iptables.sh"
 cat <<EOF > $IPTABLES_SCRIPT
-if [[ \$EUID -ne 0 ]]
+if [[ $EUID -ne 0 ]]
 then
   printf 'Must be run as root, exiting!\n'
-  exit 1
+  #exit 1
 fi
 
 # Empty all rules
@@ -201,12 +203,15 @@ iptables -t filter -A OUTPUT -p tcp --dport 443 -j ACCEPT
 iptables -t filter -A OUTPUT -p udp --dport 123 -j ACCEPT
 
 # Splunk
-iptables -t filter -A OUTPUT -p tcp --dport 8000 -j ACCEPT
-iptables -t filter -A OUTPUT -p tcp --dport 8089 -j ACCEPT
-iptables -t filter -A OUTPUT -p tcp --dport 9997 -j ACCEPT
+iptables -t filter -A INPUT -p tcp --dport 8000 -j ACCEPT
+iptables -t filter -A INPUT -p tcp --dport 9997 -j ACCEPT
+iptables -t filter -A INPUT -p tcp --dport 8089 -j ACCEPT
+iptables -t filter -A INPUT -p tcp --dport 514 -j ACCEPT
 
-# SSH outbound
-iptables -A OUTPUT -p tcp --sport 22 -m conntrack --ctstate ESTABLISHED -j ACCEPT
+# Splunk Forwarder
+iptables -t filter -A INPUT -p tcp --dport 8089 -j ACCEPT
+iptables -t filter -A INPUT -p tcp --dport 9997 -j ACCEPT
+  
 
 ######## OUTBOUND SERVICES ###############
 
@@ -265,13 +270,23 @@ if prompt "Splunk Server?" n
 then
   IS_SPLUNK_SERVER="y"
   cat <<-EOF >> $IPTABLES_SCRIPT
-  # Splunk Web UI
+  # Splunk Ports
   iptables -t filter -A INPUT -p tcp --dport 8000 -j ACCEPT
   # Splunk Forwarder
-  iptables -t filter -A INPUT -p tcp --dport 8089 -j ACCEPT
   iptables -t filter -A INPUT -p tcp --dport 9997 -j ACCEPT
-  # Syslog (PA)
+  iptables -t filter -A INPUT -p tcp --dport 8089 -j ACCEPT
+  # Palo Syslog
   iptables -t filter -A INPUT -p tcp --dport 514 -j ACCEPT
+EOF
+fi
+
+if prompt "Splunk Forwarder?" n
+then
+  IS_SPLUNK_FORWARDER="y"
+  cat <<-EOF >> $IPTABLES_SCRIPT
+  # Splunk Forwarder
+  iptables -t filter -A INPUT -p tcp --dport 9997 -j ACCEPT
+  iptables -t filter -A INPUT -p tcp --dport 8089 -j ACCEPT
 EOF
 fi
 
@@ -318,22 +333,6 @@ chmod a=,u=rw,g=r /etc/shadow
 
 # We might be able to get away with installing systemd on centos 6 to make every server the same
 
-# !! DO LAST !! These will take a while
-
-if type yum
-then
-  echo 'yum selected, upgrading'
-  yum update && yum upgrade -y
-  yum install -y ntp ntpdate screen openssh-client netcat aide
-elif type apt-get
-then
-  echo 'apt selected, upgrading'
-  apt-get update && apt-get upgrade -y
-  apt-get install -y ntp ntpdate screen openssh-client netcat aide
-else
-Outbound firewall rules
-  echo 'No package manager found'
-fi
 
 # SSH Server config
 replace /etc ssh/sshd_config linux/sshd_config
@@ -409,6 +408,23 @@ then
   then
     bash $SPLUNK_SCRIPT
   fi
+fi
+
+
+# !! DO LAST !! These will take a while
+if type yum
+then
+  echo 'yum selected, upgrading'
+  yum update && yum upgrade -y
+  yum install -y ntp ntpdate screen openssh-client netcat aide
+elif type apt-get
+then
+  echo 'apt selected, upgrading'
+  apt-get update && apt-get upgrade -y
+  apt-get install -y ntp ntpdate screen openssh-client netcat aide
+else
+Outbound firewall rules
+  echo 'No package manager found'
 fi
 
 echo "Now restart the machine to guarntee all changes apply"
