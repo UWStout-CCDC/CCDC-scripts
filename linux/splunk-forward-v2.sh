@@ -19,6 +19,11 @@ if [[ -z "$SPLUNK_SERVER_IP" ]]; then
   exit 1
 fi
 
+# Add Splunk user
+useradd -d /opt/splunkforwarder splunk
+groupadd splunk
+usermod -a -G splunk splunk
+
 # Install Splunk
 wget -O splunkforwarder-9.1.1-64e843ea36b1-Linux-x86_64.tgz "https://download.splunk.com/products/universalforwarder/releases/9.1.1/linux/splunkforwarder-9.1.1-64e843ea36b1-Linux-x86_64.tgz"
 tar -xzvf splunkforwarder-9.1.1-64e843ea36b1-Linux-x86_64.tgz -C /opt
@@ -69,16 +74,16 @@ monitor /var/log/mysqld.log
 
 # == Configure options ==
 
-# Add Splunk user
-useradd -d /opt/splunkforwarder splunk
-groupadd splunk
-usermod -a -G splunk splunk
-
 # Set Splunk to start as Splunk user
 ./splunk enable boot-start -user splunk
 #which systemd && ./splunk enable boot-start -systemd-managed 1 -user splunk 
-chown -R splunk /opt/splunkforwarder
+
+# Set permissions on the splunk directory
+chown -R splunk:splunk /opt/splunkforwarder
 
 # This doesn't always seem to be able to restart on it's own, so we just kill it
 killall splunkd
 /opt/splunkforwarder/bin/splunk restart
+
+# Start the service
+sudo -u splunk /opt/splunkforwarderk/bin/splunk start
