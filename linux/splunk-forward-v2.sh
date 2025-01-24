@@ -1,10 +1,5 @@
 #!/bin/bash
 #
-# splunk.sh
-# Copyright (C) 2021 matthew <matthew@matthew-ubuntu>
-#
-# Distributed under terms of the MIT license.
-#
 # Install and configure the splunk forwarder
 
 if [[ $EUID -ne 0 ]]; then
