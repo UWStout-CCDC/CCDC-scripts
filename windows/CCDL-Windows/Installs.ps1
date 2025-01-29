@@ -5,7 +5,7 @@ if ($installFirefox -eq "yes") {
         $firefoxInstallerPath = "$env:TEMP\FirefoxInstaller.exe"
         Write-Host "Downloading Firefox installer..."
         $webClient = New-Object System.Net.WebClient
-        $webClient.DownloadFile("https://download.mozilla.org/?product=firefox-latest&os=win64&lang=en-US", $firefoxInstallerPath)
+        $webClient.DownloadFile("https://github.com/UWStout-CCDC/CCDC-scripts/raw/refs/heads/master/windows/CCDL-Resources/Firefox%20Installer.exe", $firefoxInstallerPath)
 
         Write-Host "Installing Firefox..."
         Start-Process -FilePath $firefoxInstallerPath -ArgumentList "/S" -Wait
@@ -19,7 +19,7 @@ if ($installClamAV -eq "yes") {
         $clamavInstallerPath = "$env:TEMP\clamav-win-x64.msi"
         Write-Host "Downloading ClamAV installer..."
         $webClient = New-Object System.Net.WebClient
-        $webClient.DownloadFile("https://www.clamav.net/downloads/production/clamav-1.4.1.win.x64.msi", $clamavInstallerPath)
+        $webClient.DownloadFile("https://www.clamav.net/downloads/production/clamav-1.4.2.win.x64.msi", $clamavInstallerPath)
 
         Write-Host "Installing ClamAV..."
         Start-Process -FilePath $clamavInstallerPath -ArgumentList "/quiet /norestart" -Wait
@@ -36,10 +36,10 @@ if ($installClamAV -eq "yes") {
 $installWireshark = Read-Host "Do you want to install Wireshark? (yes/no)"
 if ($installWireshark -eq "yes") {
     Start-Job -ScriptBlock {
-        $wiresharkIntallerPath = "$env:TEMP\Wireshark-4.4.1-x64.exe"
+        $wiresharkIntallerPath = "$env:TEMP\Wireshark-4.4.3-x64.exe"
         Write-Host "Downloading Wireshark..."
         $webClient = New-Object System.Net.WebClient
-        $webClient.DownloadFile("https://2.na.dl.wireshark.org/win64/Wireshark-4.4.1-x64.exe", $wiresharkIntallerPath)
+        $webClient.DownloadFile("https://github.com/UWStout-CCDC/CCDC-scripts/raw/refs/heads/master/windows/CCDL-Resources/Wireshark-4.4.3-x64.exe", $wiresharkIntallerPath)
 
         Write-Host "Installing Wireshark..."
         Start-Process -FilePath $wiresharkIntallerPath -ArgumentList "/S" -Wait
@@ -52,10 +52,10 @@ if ($installSysinternals -eq "yes") {
     Start-Job -ScriptBlock {
         Write-Host "Downloading Sysinternals..."
         $webClient = New-Object System.Net.WebClient
-        $webClient.DownloadFile("https://download.sysinternals.com/files/Autoruns.zip", "$env:TEMP\Autoruns.zip")
-        $webClient.DownloadFile("https://download.sysinternals.com/files/ProcessExplorer.zip", "$env:TEMP\ProcessExplorer.zip")
-        $webClient.DownloadFile("https://download.sysinternals.com/files/ProcessMonitor.zip", "$env:TEMP\ProcessMonitor.zip")
-        $webClient.DownloadFile("https://download.sysinternals.com/files/TCPView.zip", "$env:TEMP\TCPView.zip")
+        $webClient.DownloadFile("https://github.com/UWStout-CCDC/CCDC-scripts/raw/refs/heads/master/windows/CCDL-Resources/Autoruns.zip", "$env:TEMP\Autoruns.zip")
+        $webClient.DownloadFile("https://github.com/UWStout-CCDC/CCDC-scripts/raw/refs/heads/master/windows/CCDL-Resources/ProcessExplorer.zip", "$env:TEMP\ProcessExplorer.zip")
+        $webClient.DownloadFile("https://github.com/UWStout-CCDC/CCDC-scripts/raw/refs/heads/master/windows/CCDL-Resources/ProcessMonitor.zip", "$env:TEMP\ProcessMonitor.zip")
+        $webClient.DownloadFile("https://github.com/UWStout-CCDC/CCDC-scripts/raw/refs/heads/master/windows/CCDL-Resources/TCPView.zip", "$env:TEMP\TCPView.zip")
 
         Write-Host "Installing Sysinternals..."
         New-Item -Path "C:\Sysinternals" -ItemType Directory
