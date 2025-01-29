@@ -9,9 +9,19 @@ To run these scripts, simply download the repository or individual scripts using
 ```bash
 wget "https://tinyurl.com/4duuewes" -OutFile "Startup-Script.ps1"
 wget "https://tinyurl.com/msc9cyd8" -Outfile "Installs.ps1"
+wget "https://tinyurl.com/3z7craus" -Outfile "clamav.msi"
 ```
 ```bash
 Invoke-WebRequest "https://raw.githubusercontent.com/Baglesrfine/CCDL-Windows/refs/heads/main/Startup-Script.ps1" -OutFile "Startup-Script.ps1"
+```
+```bash
+Invoke-WebRequest "https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/refs/heads/master/windows/CCDL-Windows/Startup-Script.ps1" -OutFile "Startup-Script.ps1"
+```
+```bash
+Invoke-WebRequest "https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/refs/heads/master/windows/CCDL-Windows/Startup-Script.ps1" -OutFile "Startup-Script.ps1"
+```
+```bash
+Invoke-WebRequest "https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/refs/heads/master/windows/CCDL-Windows/Startup-Script.ps1" -OutFile "Installs.ps1"
 ```
 
 After downloading, run each script in a PowerShell session with administrator privileges to ensure all configurations are applied correctly.

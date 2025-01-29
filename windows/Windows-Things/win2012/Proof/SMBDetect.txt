@@ -1,0 +1,92 @@
+
+
+AnnounceServer                  : False
+AsynchronousCredits             : 64
+AutoShareServer                 : True
+AutoShareWorkstation            : True
+CachedOpenLimit                 : 5
+AnnounceComment                 : 
+EnableDownlevelTimewarp         : False
+EnableLeasing                   : True
+EnableMultiChannel              : True
+EnableStrictNameChecking        : True
+AutoDisconnectTimeout           : 0
+DurableHandleV2TimeoutInSeconds : 30
+EnableAuthenticateUserSharing   : False
+EnableForcedLogoff              : True
+EnableOplocks                   : True
+EnableSecuritySignature         : False
+ServerHidden                    : True
+IrpStackSize                    : 15
+KeepAliveTime                   : 2
+MaxChannelPerSession            : 32
+MaxMpxCount                     : 50
+MaxSessionPerConnection         : 16384
+MaxThreadsPerQueue              : 20
+MaxWorkItems                    : 1
+NullSessionPipes                : 
+NullSessionShares               : 
+OplockBreakWait                 : 35
+PendingClientTimeoutInSeconds   : 120
+RequireSecuritySignature        : False
+EnableSMB1Protocol              : False
+EnableSMB2Protocol              : True
+Smb2CreditsMax                  : 2048
+Smb2CreditsMin                  : 128
+SmbServerNameHardeningLevel     : 0
+TreatHostAsStableStorage        : False
+ValidateAliasNotCircular        : True
+ValidateShareScope              : True
+ValidateShareScopeNotAliased    : True
+ValidateTargetName              : True
+EncryptData                     : False
+RejectUnencryptedAccess         : True
+
+
+
+
+
+AnnounceServer                  : False
+AsynchronousCredits             : 64
+AutoShareServer                 : True
+AutoShareWorkstation            : True
+CachedOpenLimit                 : 5
+AnnounceComment                 : 
+EnableDownlevelTimewarp         : False
+EnableLeasing                   : True
+EnableMultiChannel              : True
+EnableStrictNameChecking        : True
+AutoDisconnectTimeout           : 0
+DurableHandleV2TimeoutInSeconds : 30
+EnableAuthenticateUserSharing   : False
+EnableForcedLogoff              : True
+EnableOplocks                   : True
+EnableSecuritySignature         : False
+ServerHidden                    : True
+IrpStackSize                    : 15
+KeepAliveTime                   : 2
+MaxChannelPerSession            : 32
+MaxMpxCount                     : 50
+MaxSessionPerConnection         : 16384
+MaxThreadsPerQueue              : 20
+MaxWorkItems                    : 1
+NullSessionPipes                : 
+NullSessionShares               : 
+OplockBreakWait                 : 35
+PendingClientTimeoutInSeconds   : 120
+RequireSecuritySignature        : False
+EnableSMB1Protocol              : False
+EnableSMB2Protocol              : True
+Smb2CreditsMax                  : 2048
+Smb2CreditsMin                  : 128
+SmbServerNameHardeningLevel     : 0
+TreatHostAsStableStorage        : False
+ValidateAliasNotCircular        : True
+ValidateShareScope              : True
+ValidateShareScopeNotAliased    : True
+ValidateTargetName              : True
+EncryptData                     : False
+RejectUnencryptedAccess         : True
+
+
+
