@@ -1,0 +1,633 @@
+
+DISM /online /disable-feature /featurename:"NetFx4Extended-ASPNET45"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"WAS-WindowsActivationService"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"WAS-ProcessModel"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"WAS-NetFxEnvironment"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"WAS-ConfigurationAPI"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"BITSExtensions-AdminPack"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"WCF-Services45"
+State : Enabled
+
+DISM /online /disable-feature /featurename:"WCF-HTTP-Activation45"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"WCF-TCP-Activation45"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"WCF-Pipe-Activation45"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"WCF-MSMQ-Activation45"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"WCF-TCP-PortSharing45"
+State : Enabled
+
+DISM /online /disable-feature /featurename:"ManagementOdata"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"DSC-Service"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"IdentityServer-SecurityTokenService"
+State : Disabled
+
+
+DISM /online /disable-feature /featurename:"ADCertificateServicesRole"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"CertificateServices"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"OnlineRevocationServices"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"WebEnrollmentServices"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"NetworkDeviceEnrollmentServices"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"CertificateEnrollmentPolicyServer"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"CertificateEnrollmentServer"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"Web-Application-Proxy"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"IPAMServerFeature"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"RightsManagementServices-Role"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"RightsManagementServices"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"RMS-Federation"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"RightsManagementServices-AdminTools"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"WSS-Product-Package"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"BITSExtensions-Upload"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"Printing-Server-Foundation-Features"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"Printing-Server-Role"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"Printing-LPDPrintService"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"BusScan-ScanServer"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"Printing-InternetPrinting-Server"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"HCAP-Server"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"HCSRuntime"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"WCF-HTTP-Activation"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"WCF-NonHTTP-Activation"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"RPC-HTTP_Proxy"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"Smtpsvc-Admin-Update-Name"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"Smtpsvc-Service-Update-Name"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"Gateway"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"WebAccess"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"WorkFolders-Server"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"UpdateServices"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"UpdateServices-Services"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"UpdateServices-Database"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"UpdateServices-WidDatabase"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"Microsoft-Windows-Deployment-Services"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"Microsoft-Windows-Deployment-Services-Deployment-Server"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"Microsoft-Windows-Deployment-Services-Transport-Server"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"Microsoft-Windows-Deployment-Services-Legacy-SIS"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"User-Interfaces-Infra"
+State : Enabled
+
+DISM /online /disable-feature /featurename:"Server-Gui-Mgmt"
+State : Enabled
+
+DISM /online /disable-feature /featurename:"RSAT"
+State : Enabled
+
+DISM /online /disable-feature /featurename:"CoreFileServer-RSAT"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"Server-Manager-RSAT-File-Services"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"Server-RSAT-SNMP"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"DNS-Server-Tools"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"IPAMClientFeature"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"WINS-Server-Tools"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"DfsMgmt"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"ADCertificateServicesManagementTools"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"CertificateServicesManagementTools"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"OnlineRevocationServicesManagementTools"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"RSAT-AD-Tools-Feature"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"RSAT-ADDS-Tools-Feature"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"DirectoryServices-DomainController-Tools"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"DirectoryServices-ADAM-Tools"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"BdeAducExtTool"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"ActiveDirectory-PowerShell"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"DirectoryServices-DomainController"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"DirectoryServices-ISM-Smtp"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"DirectoryServices-AdministrativeCenter"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"RasServerAdminTools"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"DamgmtTools"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"HCSUI"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"Licensing-UI"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"Licensing-Diagnosis-UI"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"Microsoft-Windows-Deployment-Services-Admin-Pack"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"DHCPServer-Tools"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"FailoverCluster-Mgmt"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"NetworkLoadBalancingManagementClient"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"NFS-Administration"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"UpdateServices-UI"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"WindowsServerBackupSnapin"
+State : Enabled
+
+DISM /online /disable-feature /featurename:"FaxServiceConfigRole"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"NPSManagementTools"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"RightsManagementServicesManagementTools"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"Security-SPP-Vmw"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"FSRM-Infrastructure"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"FSRM-Management"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"Microsoft-Windows-FCI-Client-Package"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"Printing-Client"
+State : Enabled
+
+DISM /online /disable-feature /featurename:"Printing-Client-Gui"
+State : Enabled
+
+DISM /online /disable-feature /featurename:"RSAT-NIS"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"MicrosoftWindowsPowerShellISE"
+State : Enabled
+
+DISM /online /disable-feature /featurename:"Microsoft-Hyper-V"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"Microsoft-Hyper-V-Offline"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"Microsoft-Hyper-V-Online"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"RSAT-Hyper-V-Tools-Feature"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"Microsoft-Hyper-V-Management-Clients"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"Microsoft-Hyper-V-Management-PowerShell"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"VmHostAgent"
+State : Disabled
+
+State : Enabled
+
+DISM /online /disable-feature /featurename:"Internet-Explorer-Optional-amd64"
+State : Enabled
+
+DISM /online /disable-feature /featurename:"FaxServiceRole"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"ServicesForNFS-ServerAndClient"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"ServerForNFS-Infrastructure"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"ClientForNFS-Infrastructure"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"SearchEngine-Server-Package"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"FSRM-Infrastructure-Services"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"NPAS-Role"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"IAS NT Service"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"iSCSITargetServer-PowerShell"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"OEM-Appliance-OOBE"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"PSync"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"AppServer"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"Microsoft-Windows-ServerEssentials-ServerSetup"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"PKIClient-PSH-Cmdlets"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"KeyDistributionService-PSH-Cmdlets"
+State : Enabled
+
+DISM /online /disable-feature /featurename:"TlsSessionTicketKey-PSH-Cmdlets"
+State : Enabled
+
+DISM /online /disable-feature /featurename:"Server-Psh-Cmdlets"
+State : Enabled
+
+DISM /online /disable-feature /featurename:"UpdateServices-RSAT"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"UpdateServices-API"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"DirectoryServices-ADAM"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"AuthManager"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"ServerCore-WOW64"
+State : Enabled
+
+DISM /online /disable-feature /featurename:"ServerCore-EA-IME-WOW64"
+State : Enabled
+
+DISM /online /disable-feature /featurename:"LegacyComponents"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"DirectPlay"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"Windows-Identity-Foundation"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"SimpleTCP"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"Printing-LPRPortMonitor"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"Printing-InternetPrinting-Client"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"Printing-AdminTools-Collection"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"ServerManager-Core-RSAT"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"ServerManager-Core-RSAT-Role-Tools"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"ServerManager-Core-RSAT-Feature-Tools"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"NetFx3ServerFeatures"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"NetFx3"
+State : Disabled with Payload Removed
+
+DISM /online /disable-feature /featurename:"EnhancedStorage"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"Microsoft-Windows-GroupPolicy-ServerAdminTools-Update"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"RasCMAK"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"RSAT-RDS-Tools-Feature"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"FailoverCluster-AdminPak"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"FailoverCluster-PowerShell"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"AdminUI"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"BiometricFramework"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"WindowsServerBackup"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"WindowsFeedbackForwarder"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"FileAndStorage-Services"
+State : Enabled
+
+DISM /online /disable-feature /featurename:"Storage-Services"
+State : Enabled
+
+DISM /online /disable-feature /featurename:"File-Services"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"CoreFileServer"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"File-Services-Search-Service"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"DFSN-Server"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"DFSR-Infrastructure-ServerEdition"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"FileServerVSSAgent"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"iSCSITargetServer"
+State : Disabled
+
+State : Disabled
+
+DISM /online /disable-feature /featurename:"Dedup-Core"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"DHCPServer"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"DNS-Server-Full-Role"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"FailoverCluster-AutomationServer"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"FailoverCluster-CmdInterface"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"FRS-Infrastructure"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"Windows-Internal-Database"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"WINSRuntime"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"iSCSITargetStorageProviders"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"iSNS_Service"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"BITS"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"LightweightServer"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"MultipathIo"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"NetworkLoadBalancingFullServer"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"NIS"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"PeerDist"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"P2P-PnrpOnly"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"Printing-XPSServices-Features"
+State : Enabled
+
+DISM /online /disable-feature /featurename:"QWAVE"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"MSRDC-Infrastructure"
+State : Disabled
+
+State : Disabled
+
+DISM /online /disable-feature /featurename:"ServerCore-EA-IME"
+State : Enabled
+
+DISM /online /disable-feature /featurename:"DataCenterBridging"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"ServerMediaFoundation"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"InkAndHandwritingServices"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"DesktopExperience"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"MediaPlayback"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"WindowsMediaPlayer"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"ServerMigration"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"ServerCore-Drivers-General"
+State : Enabled
+
+DISM /online /disable-feature /featurename:"Server-Drivers-General"
+State : Enabled
+
+DISM /online /disable-feature /featurename:"Server-Drivers-Printers"
+State : Enabled
+
+DISM /online /disable-feature /featurename:"SIS-Limited"
+State : Disabled
+
+State : Enabled
+
+State : Disabled
+
+DISM /online /disable-feature /featurename:"WMISnmpProvider"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"WindowsStorageManagementService"
+State : Disabled
+
+State : Disabled
+
+DISM /online /disable-feature /featurename:"SessionDirectory"
+State : Disabled
+
+State : Disabled
+
+DISM /online /disable-feature /featurename:"Licensing"
+State : Disabled
+
+State : Disabled
+
+DISM /online /disable-feature /featurename:"VolumeActivation-Full-Role"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"TIFFIFilter"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"WirelessNetworking"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"Xps-Foundation-Xps-Viewer"
+State : Disabled
+
+State : Enabled
+
+State : Disabled
+
+DISM /online /disable-feature /featurename:"FailoverCluster-FullServer"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"CCFFilter"
+State : Disabled
+
+DISM /online /disable-feature /featurename:"ResumeKeyFilter"
+State : Disabled
+
+State : Disabled
+
