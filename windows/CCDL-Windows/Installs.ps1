@@ -8,7 +8,7 @@ if ($installFirefox -eq "yes") {
         $webClient.DownloadFile("https://github.com/UWStout-CCDC/CCDC-scripts/raw/refs/heads/master/windows/CCDL-Resources/Firefox%20Installer.exe", $firefoxInstallerPath)
 
         Write-Host "Installing Firefox..."
-        Start-Process -FilePath $firefoxInstallerPath -ArgumentList "/S" -Wait
+        Start-Process -FilePath $firefoxInstallerPath -ArgumentList "/quiet" -Wait
     }
 }
 
@@ -44,6 +44,17 @@ if ($installWireshark -eq "yes") {
         Write-Host "Installing Wireshark..."
         Start-Process -FilePath $wiresharkIntallerPath -ArgumentList "/S" -Wait
     }
+}
+
+# NPCAP (Required for Wireshark)
+Start-Job -ScriptBlock {
+    $npcapIntallerPath = "$env:TEMP\npcap-1.80.exe"
+    Write-Host "Downloading NPCAP..."
+    $webClient = New-Object System.Net.WebClient
+    $webClient.DownloadFile("https://github.com/UWStout-CCDC/CCDC-scripts/raw/refs/heads/master/windows/CCDL-Resources/npcap-1.80.exe", $npcapIntallerPath)
+
+    Write-Host "Installing Wireshark..."
+    Start-Process -FilePath $npcapIntallerPath -ArgumentList "/S" -Wait
 }
 
 # Sysinternals
