@@ -146,17 +146,15 @@ if [ ! -d "/bkp" ]; then
     mkdir /bkp
 fi
 echo "Zipping up /var/www/html..."
-# tar -czvf /bkp/html.tar.gz /var/www/html
-tar cf - /var/www/html -P | pv -s $(du -sb /var/www/html | awk '{print $1}') | gzip > /bkp/html.tar.gz
+tar -czf /bkp/html.tar.gz /var/www/html
 
 
 # zip up the /etc/httpd directory and move it to /bkp
-# tar -czvf /bkp/httpd.tar.gz /etc/httpd
 echo "Zipping up /etc/httpd..."
-tar cf - /etc/httpd -P | pv -s $(du -sb /etc/httpd | awk '{print $1}') | gzip > /bkp/httpd.tar.gz
+tar -czf /bkp/httpd.tar.gz /etc/httpd
 
 # backup the mysql database
-echo "$DEFAULT_PASS\n" | mysqldump -u root -p --all-databases > /bkp/ecomm.sql
+mysqldump -u root -p$DEFAULT_PRESTA_PASS --all-databases > /bkp/ecomm.sql
 
 # Remove prestashop admin directory, its in /var/www/html/prestashop and it will have random characters after admin
 rm -rf /var/www/html/prestashop/admin*
