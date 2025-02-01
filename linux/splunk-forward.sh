@@ -79,6 +79,5 @@ usermod -a -G splunk splunk
 #which systemd && ./splunk enable boot-start -systemd-managed 1 -user splunk 
 chown -R splunk /opt/splunkforwarder
 
-# This doesn't always seem to be able to restart on it's own, so we just kill it
-killall splunkd
+# Restart Splunk
 ./splunk restart
