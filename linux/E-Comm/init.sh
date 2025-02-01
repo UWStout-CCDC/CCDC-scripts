@@ -191,13 +191,6 @@ cat <<EOF >> /etc/httpd/conf/httpd.conf
     Deny from all
 </Directory>
 
-
-# Disable HTTP Methods
-<LimitExcept GET POST HEAD>
-    Order Deny,Allow
-    Deny from all
-</LimitExcept>
-
 # Prevent access to sensitive files
 <FilesMatch "\.(env|ini|log|bak|swp|sql|git)">
     Order Allow,Deny
