@@ -94,7 +94,7 @@ then
   iptables -t filter -A INPUT -p tcp --dport 143 -j ACCEPT
 fi
 
-if prompt "Splunk"
+if prompt "Splunk Server"
 then
   # Splunk Ports
   iptables -t filter -A INPUT -p tcp --dport 8000 -j ACCEPT
@@ -102,7 +102,7 @@ then
   iptables -t filter -A INPUT -p tcp --dport 9997 -j ACCEPT
   iptables -t filter -A INPUT -p tcp --dport 8089 -j ACCEPT
   # Palo Syslog
-  iptables -t filter -A INPUT -p tcp --dport 514 -j ACCEPT
+  #iptables -t filter -A INPUT -p tcp --dport 514 -j ACCEPT
 fi
 
 if prompt "Splunk Forwarder"
