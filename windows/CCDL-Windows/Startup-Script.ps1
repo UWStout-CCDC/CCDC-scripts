@@ -21,7 +21,8 @@ Invoke-WebRequest "https://github.com/UWStout-CCDC/CCDC-scripts/raw/refs/heads/m
 $tools = @(
     @{ Name = "Npcap Installer"; Url = "https://github.com/UWStout-CCDC/CCDC-scripts/raw/refs/heads/master/windows/CCDL-Resources/npcap-1.80.exe"; Path = "$toolsPath\npcap-1.80.exe" },
     @{ Name = "Firefox Installer"; Url = "https://github.com/UWStout-CCDC/CCDC-scripts/raw/refs/heads/master/windows/CCDL-Resources/Firefox%20Installer.exe"; Path = "$toolsPath\FirefoxInstaller.exe" },
-    @{ Name = "ClamAV Installer"; Url = "https://www.clamav.net/downloads/production/clamav-1.4.2.win.x64.msi"; Path = "$toolsPath\clamav-win-x64.msi" },
+    @{ Name = "ClamAV Installer Part 1"; Url = "https://github.com/UWStout-CCDC/CCDC-scripts/raw/refs/heads/master/windows/CCDL-Resources/setup_part.1"; Path = "$toolsPath\setup_part.1" },
+    @{ Name = "ClamAV Installer Part 2"; Url = "https://github.com/UWStout-CCDC/CCDC-scripts/raw/refs/heads/master/windows/CCDL-Resources/setup_part.2"; Path = "$toolsPath\setup_part.2" },
     @{ Name = "Wireshark Installer"; Url = "https://github.com/UWStout-CCDC/CCDC-scripts/raw/refs/heads/master/windows/CCDL-Resources/Wireshark-4.4.3-x64.exe"; Path = "$toolsPath\Wireshark-4.4.3-x64.exe" },
     @{ Name = "Autoruns"; Url = "https://github.com/UWStout-CCDC/CCDC-scripts/raw/refs/heads/master/windows/CCDL-Resources/Autoruns.zip"; Path = "$toolsPath\Autoruns.zip" },
     @{ Name = "ProcessExplorer"; Url = "https://github.com/UWStout-CCDC/CCDC-scripts/raw/refs/heads/master/windows/CCDL-Resources/ProcessExplorer.zip"; Path = "$toolsPath\ProcessExplorer.zip" },
@@ -33,6 +34,22 @@ foreach ($tool in $tools) {
     Write-Host "Downloading $($tool.Name)..."
     Start-BitsTransfer -Source $tool.Url -Destination $tool.Path
 }
+
+# Verify the split
+$part1Bytes = [System.IO.File]::ReadAllBytes("$destPrefix.1")
+$part2Bytes = [System.IO.File]::ReadAllBytes("$destPrefix.2")
+$part1Bytes.Length, $part2Bytes.Length 
+
+# Combine the parts back into a single file
+$combinedFile = "$toolsPath\combined.msi"
+$combinedBytes = [byte[]]::new($part1Bytes.Length + $part2Bytes.Length)
+[System.Array]::Copy($part1Bytes, 0, $combinedBytes, 0, $part1Bytes.Length)
+[System.Array]::Copy($part2Bytes, 0, $combinedBytes, $part1Bytes.Length, $part2Bytes.Length)
+[System.IO.File]::WriteAllBytes($combinedFile, $combinedBytes)
+
+# Verify the combined file
+$combinedBytes = [System.IO.File]::ReadAllBytes($combinedFile)
+$combinedBytes.Length, $totalSize
 
 # Check if PSWindowsUpdate is installed, if not, install it
 if (-not (Get-Module -ListAvailable -Name PSWindowsUpdate)) {
