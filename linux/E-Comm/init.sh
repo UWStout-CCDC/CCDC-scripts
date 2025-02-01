@@ -12,13 +12,7 @@ done
 CCDC_DIR="/ccdc"
 CCDC_ETC="$CCDC_DIR/etc"
 SCRIPT_DIR="/ccdc/scripts"
-
-
-if [[ $EUID -ne 0 ]]
-then
-  printf 'Must be run as root, exiting!\n'
-  exit 1
-fi
+DEFAULT_PRESTA_PASS='Pa$$w0rd' #TODO: Update this password to the correct password
 
 # check if the script dir exists, if it does not, create it
 if [ ! -d "$SCRIPT_DIR" ]; then
