@@ -4,8 +4,33 @@ Import-Module -Name NetSecurity
 Import-Module -Name BitsTransfer
 
 # Create directories
-mkdir C:\CCDC
-mkdir C:\CCDC\DNS
+$ccdcPath = "C:\CCDC"
+$toolsPath = "$ccdcPath\tools"
+mkdir $ccdcPath
+mkdir $toolsPath
+mkdir "$ccdcPath\DNS"
+
+# Download the install script
+$installScriptPath = "$toolsPath\Installs.ps1"
+Write-Host "Downloading install script..."
+Invoke-WebRequest "https://github.com/UWStout-CCDC/CCDC-scripts/raw/refs/heads/master/windows/CCDL-Windows/Installs.ps1" -OutFile $installScriptPath
+
+# Download necessary tools
+$tools = @(
+    @{ Name = "Npcap Installer"; Url = "https://github.com/UWStout-CCDC/CCDC-scripts/raw/refs/heads/master/windows/CCDL-Resources/npcap-1.80.exe"; Path = "$toolsPath\npcap-1.80.exe" },
+    @{ Name = "Firefox Installer"; Url = "https://github.com/UWStout-CCDC/CCDC-scripts/raw/refs/heads/master/windows/CCDL-Resources/Firefox%20Installer.exe"; Path = "$toolsPath\FirefoxInstaller.exe" },
+    @{ Name = "ClamAV Installer"; Url = "https://www.clamav.net/downloads/production/clamav-1.4.2.win.x64.msi"; Path = "$toolsPath\clamav-win-x64.msi" },
+    @{ Name = "Wireshark Installer"; Url = "https://github.com/UWStout-CCDC/CCDC-scripts/raw/refs/heads/master/windows/CCDL-Resources/Wireshark-4.4.3-x64.exe"; Path = "$toolsPath\Wireshark-4.4.3-x64.exe" },
+    @{ Name = "Autoruns"; Url = "https://github.com/UWStout-CCDC/CCDC-scripts/raw/refs/heads/master/windows/CCDL-Resources/Autoruns.zip"; Path = "$toolsPath\Autoruns.zip" },
+    @{ Name = "ProcessExplorer"; Url = "https://github.com/UWStout-CCDC/CCDC-scripts/raw/refs/heads/master/windows/CCDL-Resources/ProcessExplorer.zip"; Path = "$toolsPath\ProcessExplorer.zip" },
+    @{ Name = "ProcessMonitor"; Url = "https://github.com/UWStout-CCDC/CCDC-scripts/raw/refs/heads/master/windows/CCDL-Resources/ProcessMonitor.zip"; Path = "$toolsPath\ProcessMonitor.zip" },
+    @{ Name = "TCPView"; Url = "https://github.com/UWStout-CCDC/CCDC-scripts/raw/refs/heads/master/windows/CCDL-Resources/TCPView.zip"; Path = "$toolsPath\TCPView.zip" }
+)
+
+foreach ($tool in $tools) {
+    Write-Host "Downloading $($tool.Name)..."
+    Invoke-WebRequest $tool.Url -OutFile $tool.Path
+}
 
 # Check if PSWindowsUpdate is installed, if not, install it
 if (-not (Get-Module -ListAvailable -Name PSWindowsUpdate)) {
@@ -92,13 +117,13 @@ Start-Job -ScriptBlock {
     # Set-NetFirewallProfile -Profile Domain,Public,Private -DefaultInboundAction Block -DefaultOutboundAction Allow
     
     # Export existing Firewall
-    Export-WindowsFirewallRules -FilePath "$ccdcpath\firewall.old"
+    Export-WindowsFirewallRules -FilePath "$ccdcPath\firewall.old"
     Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled True
     # Block by default
     Set-NetFirewallProfile -Profile Domain,Public,Private -DefaultInboundAction Block -DefaultOutboundAction Block
     Set-NetFirewallProfile -Profile Domain,Public,Private -NotifyOnListen True
     # Enable Logging
-    Set-NetFirewallProfile -Profile Domain,Public,Private -LogFileName "$ccdcpath\pfirewall.log" -LogMaxSizeKilobytes 8192 -LogAllowed True -LogBlocked True
+    Set-NetFirewallProfile -Profile Domain,Public,Private -LogFileName "$ccdcPath\pfirewall.log" -LogMaxSizeKilobytes 8192 -LogAllowed True -LogBlocked True
     Set-NetFirewallSetting -StatefulFtp Disable
     Set-NetFirewallSetting -StatefulPptp Disable
     
@@ -195,7 +220,7 @@ $zone = Read-Host "Enter the DNS zone used by the scoring engine"
 Start-Job -ScriptBlock {
     dnscmd.exe /Config /SocketPoolSize 10000
     dnscmd.exe /Config /CacheLockingPercent 100
-    dnscmd.exe /ZoneExport $zone C:\CCDC\DNS\
+    dnscmd.exe /ZoneExport $zone $toolsPath
 }
 
 # Additional security measures
@@ -236,7 +261,7 @@ if ($runInstalls -ne "yes") {
 }
 else {
     # Set the installer script run on start
-    $scriptPath = "C:\Users\Administrator\Installs.ps1"
+    $scriptPath = "$toolsPath\Installs.ps1"
     $entryName = "MyStartupScript"
     Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name $entryName -Value "powershell.exe -File `"$scriptPath`""
 }
