@@ -32,7 +32,7 @@ foreach ($tool in $tools) {
     Write-Host "Downloading $($tool.Name)..."
     Start-BitsTransfer -Source $tool.Url -Destination $tool.Path
 }
-
+$destPrefix = "$toolsPath\setup_part"
 # Verify the split
 $part1Bytes = [System.IO.File]::ReadAllBytes("$destPrefix.1")
 $part2Bytes = [System.IO.File]::ReadAllBytes("$destPrefix.2")
