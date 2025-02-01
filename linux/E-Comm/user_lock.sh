@@ -1,3 +1,4 @@
+#!/bin/bash
 if [[ \$EUID -ne 0 ]]
 then
   printf 'Must be run as root, exiting!\n'
