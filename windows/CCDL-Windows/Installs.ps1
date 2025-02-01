@@ -17,8 +17,15 @@ if ($installClamAV -eq "yes") {
         Start-Process -FilePath $clamavInstallerPath -ArgumentList "/quiet /norestart" -Wait
         # Configure ClamAV for regular scans
         Write-Host "Scheduling ClamAV scans..."
-        $clamAVConfigPath = "C:\Program Files\ClamAV\clamd.conf"
-        Set-Content -Path $clamAVConfigPath -Value 'LogFile "C:\Program Files\ClamAV\clamd.log"'
+        $clamAVPath = "C:\Program Files\ClamAV\"
+        # Copy the example configuration files and prepare them for use
+        Copy-Item -Path "$clamAVPath\conf_examples\freshclam.conf.sample" -Destination "$clamAVPath\freshclam.conf"
+        Copy-Item -Path "$clamAVPath\conf_examples\clamd.conf.sample" -Destination "$clamAVPath\clamd.conf"
+        (Get-Content -Path "$clamAVPath\freshclam.conf") -replace '^Example', '' | Set-Content -Path "$clamAVPath\freshclam.conf"
+        (Get-Content -Path "$clamAVPath\clamd.conf") -replace '^Example', '' | Set-Content -Path "$clamAVPath\clamd.conf"
+        Set-Content -Path "$clamAVPath\clamd.conf" -Value 'LogFile "C:\Program Files\ClamAV\clamd.log"'
+        # update the virus definitions
+        Start-Process -FilePath "C:\Program Files\ClamAV\freshclam.exe"
         schtasks /create /sc minute /mo 15 /tn "ClamAV Scan" /tr "C:\Program Files\ClamAV\clamscan.exe -r C:\" /st 00:00
     }
 }
