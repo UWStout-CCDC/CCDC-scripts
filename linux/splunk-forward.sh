@@ -35,10 +35,13 @@ do
 done
 
 # Start the splunk forwarder, and automatically accept the license
+echo "\e[33mStarting Splunk and accepting license\e[0m"]
 ./splunk start --accept-license --answer-yes --auto-ports --no-prompt
 # Add the server to forward to (ip needs to be the first param)
+echo "\e[33mAdding server to forward to\e[0m"
 ./splunk add forward-server "$SPLUNK_SERVER_IP":9997 # User will have to input the same creds here
 # Server to poll updates from (same as above, but a different port)
+echo "\e[33mSetting deployment server\e[0m"
 ./splunk set deploy-poll "$SPLUNK_SERVER_IP":8089 # User will have to input the same creds here
 
 # Quick function to check if a file exists, and monitor it
@@ -50,6 +53,7 @@ monitor() {
 }
 
 # Add files to log
+echo "\e[33mAdding log files to monitor\e[0m"
 # Log files
 monitor /var/log/syslog
 monitor /var/log/messages
@@ -65,15 +69,14 @@ monitor /var/log/mysqld.log
 
 # == Configure options ==
 
-# Add Splunk user
-useradd -d /opt/splunkforwarder splunk
-groupadd splunk
-usermod -a -G splunk splunk
+# Adding new Splunk user
+echo "\e[33mAdding new Splunk user: splunkfwd\e[0m"
+useradd -d /opt/splunkforwarder splunkfwd
+groupadd splunkfwd
+usermod -a -G splunkfwd splunkfwd
 
 # Set Splunk to start as Splunk user
-./splunk enable boot-start -user splunk
-#which systemd && ./splunk enable boot-start -systemd-managed 1 -user splunk 
-chown -R splunk /opt/splunkforwarder
+./splunk enable boot-start -user splunkfwd
 
 # Restart Splunk
 ./splunk restart
