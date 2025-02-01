@@ -5,9 +5,9 @@ Import-Module -Name BitsTransfer
 
 # Create directories
 $ccdcPath = "C:\CCDC"
-$toolsPath = "$ccdcPath\tools"
+$toolsPath = "$ccdcPath\tools-Windows"
 mkdir $ccdcPath
-mkdir "$ccdcPath\tools"
+mkdir $toolsPath
 mkdir "$ccdcPath\DNS"
 
 # Download the install script
