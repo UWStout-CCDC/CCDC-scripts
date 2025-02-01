@@ -12,10 +12,9 @@ if ($installFirefox -eq "yes") {
 $installClamAV = Read-Host "Do you want to install ClamAV? (yes/no)"
 if ($installClamAV -eq "yes") {
     Start-Job -ScriptBlock {
-        $clamavInstallerPath = "C:\CCDC\tools\clamav-win-x64.msi"
+        $clamavInstallerPath = "C:\CCDC\tools\combined.msi"
         Write-Host "Installing ClamAV..."
         Start-Process -FilePath $clamavInstallerPath -ArgumentList "/quiet /norestart" -Wait
-
         # Configure ClamAV for regular scans
         Write-Host "Scheduling ClamAV scans..."
         $clamAVConfigPath = "C:\Program Files\ClamAV\clamd.conf"
