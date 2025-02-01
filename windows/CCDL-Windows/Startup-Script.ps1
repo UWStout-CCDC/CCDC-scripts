@@ -29,7 +29,7 @@ $tools = @(
 
 foreach ($tool in $tools) {
     Write-Host "Downloading $($tool.Name)..."
-    Invoke-WebRequest $tool.Url -OutFile $tool.Path
+    Start-BitsTransfer -Source $tool.Url -Destination $tool.Path
 }
 
 # Check if PSWindowsUpdate is installed, if not, install it
