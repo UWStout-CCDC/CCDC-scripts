@@ -156,7 +156,7 @@ echo "Zipping up /etc/httpd..."
 tar cf - /etc/httpd -P | pv -s $(du -sb /etc/httpd | awk '{print $1}') | gzip > /bkp/httpd.tar.gz
 
 # backup the mysql database
-echo "$DEFAULT_PASS" | mysqldump -u root -p --all-databases > /bkp/ecomm.sql
+echo "$DEFAULT_PASS\n" | mysqldump -u root -p --all-databases > /bkp/ecomm.sql
 
 # Remove prestashop admin directory, its in /var/www/html/prestashop and it will have random characters after admin
 rm -rf /var/www/html/prestashop/admin*
