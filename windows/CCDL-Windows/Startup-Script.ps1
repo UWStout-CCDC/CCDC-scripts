@@ -6,9 +6,11 @@ Import-Module -Name BitsTransfer
 # Create directories
 $ccdcPath = "C:\CCDC"
 $toolsPath = "$ccdcPath\tools-Windows"
-mkdir $ccdcPath
-mkdir "C:\CCDC\tools-Windows"
-mkdir "$ccdcPath\DNS"
+mkdir $ccdcPath -wait
+
+mkdir "$ccdcPath\DNS" -wait
+
+mkdir "C:\CCDC\tools-Windows" -wait
 
 # Download the install script
 $installScriptPath = "$toolsPath\Installs.ps1"
