@@ -65,6 +65,10 @@ Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" 
 # Wait for all jobs to complete
 Get-Job | Wait-Job
 
+# Set execution policy back to Restricted
+Write-Host "Setting execution policy back to Restricted..."
+Set-ExecutionPolicy -Scope LocalMachine -ExecutionPolicy Restricted -Force
+
 # Restart the computer
 Write-Host "Restarting Computer"
 Restart-Computer
