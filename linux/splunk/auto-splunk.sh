@@ -15,9 +15,9 @@ BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master"
 # Changing default admin password
 cd /opt/splunk/bin
 echo "Enter admin password:"
-read admin_password
+read -s admin_password
 echo "Enter new admin password:"
-read password
+read -s password
 ./splunk edit user admin -auth admin:$admin_password -password $password
 
 
@@ -58,7 +58,7 @@ mv /var/lib/aide/aide.db.new.gz /var/lib/aide/aide.db.gz
 
 # Enable Splunk reciever
 cd /opt/splunk/bin
-./splunk enable listen 9997 -auth $admin_password:$password
+./splunk enable listen 9997 -auth admin:$password
 ./splunk restart
 
 # Quick function to check if a file exists, and monitor it
@@ -89,6 +89,7 @@ monitor /var/log/mysqld.log
 # TODO: add more files
 
 # Install GUI
+yum install epel-release -y
 yum groupinstall "Server with GUI" -y
 yum install firefox
 systemctl set-default graphical.target
