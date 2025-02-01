@@ -102,4 +102,4 @@ then
     systemctl set-default graphical.target
     systemctl isolate graphical.target
 
-echo "\e[33mSplunk setup complete. Reboot to apply changes and clear in-memory beacons.\e0m"
+echo "\e[33mSplunk setup complete. Reboot to apply changes and clear in-memory beacons.\e[0m"
