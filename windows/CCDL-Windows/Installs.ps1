@@ -69,6 +69,10 @@ Get-Job | Wait-Job
 Write-Host "Setting execution policy back to Restricted..."
 Set-ExecutionPolicy -Scope LocalMachine -ExecutionPolicy Restricted -Force
 
+$scriptPath = "C:\CCDC\tools-Windows\Win-Upodate.ps1"
+$entryName = "Windows Update Script"
+Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name $entryName -Value "powershell.exe -File `"$scriptPath`""
+
 # Restart the computer
 Write-Host "Restarting Computer"
 Restart-Computer
