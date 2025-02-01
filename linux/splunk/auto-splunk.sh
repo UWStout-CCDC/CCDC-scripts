@@ -1,7 +1,5 @@
 #!/bin/bash
 
-
-
 ###################################
 ##    Splunk Specific Configs    ##
 ###################################
@@ -12,17 +10,29 @@ then
   exit 1
 fi
 
+BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master"
+
 # Changing default admin password
 cd /opt/splunk/bin
 echo "Enter admin password:" read admin_password
 echo "Enter new admin password:" read password
 ./splunk edit user admin -auth admin:$admin_password -password $password
 
+
+# Fix repos preemtively
+cd ~
+wget $BASE_URL/linux/splunk/CentOS-Base.repo -O CentOS-Base.repo
+mv /etc/yum.repos.d/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo.bak
+mv ~/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo
+yum clean all
+rm -rf /var/cache/yum
+yum makecache
+
 # Install tools (if not already)
 yum install iptables wget git aide
 
 # Install scripts
-wget wget http://tinyurl.com/bddawdwe -O init.sh
+wget wget $BASE_URL/linux/init.sh -O init.sh
 chmod +x init.sh
 ./init.sh
 
@@ -45,6 +55,7 @@ aide --init
 mv /var/lib/aide/aide.db.new.gz /var/lib/aide/aide.db.gz
 
 # Enable Splunk reciever
+cd /opt/splunk/bin
 ./splunk enable listen 9997 -auth $admin_password:$password
 ./splunk restart
 
