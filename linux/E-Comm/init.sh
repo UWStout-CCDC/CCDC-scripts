@@ -242,7 +242,7 @@ systemctl disable --now ufw
 systemctl enable --now ccdc_firewall.service
 
 yum update -y && yum upgrade -y
-yum install -y screen netcat aide clamav
+yum install -y screen netcat aide clamav tmux
 
 # Set up AIDE
 echo "Initializing AIDE..."
@@ -257,5 +257,9 @@ echo "0 4 * * * /usr/sbin/aide --check > /root/aide.log" > /etc/cron.d/aide
 # Set up ClamAV
 echo "Initializing ClamAV..."
 freshclam
+
+# Install monitor script
+wget $BASEURL/linux/E-Comm/monitor.sh -O /ccdc/scripts/monitor.sh
+chmod +x /ccdc/scripts/monitor.sh
 
 echo "Finished running init.sh, please reboot the system to apply changes"
