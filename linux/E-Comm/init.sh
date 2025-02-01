@@ -1,4 +1,4 @@
-BASEURL=https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/ecomm-init/ #TODO: Update this URL to the correct branch
+BASEURL=https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/ecomm-init #TODO: Update this URL to the correct branch
 SCRIPT_DIR="/ccdc/scripts"
 DEFAULT_PRESTA_PASS='Pa$$w0rd' #TODO: Update this password to the correct password
 
@@ -63,14 +63,13 @@ done < /etc/passwd
 # Grab script so it's guarnteed to be in /ccdc/scripts/linux
 get linux/init.sh
 
-
 # Run mysql_secure_installation to secure the MySQL installation and auto answer the questions, leaving password as blank
 # This is done to ensure that the MySQL installation is secure
 echo -e "$DEFAULT_PRESTA_PASS\nn\n\n\n\n\n" | mysql_secure_installation
 
-# # Disable ssh
-# systemctl stop sshd
-# systemctl disable sshd
+# Disable ssh
+systemctl stop sshd
+systemctl disable sshd
 
 # Set firewall rules
 IPTABLES_SCRIPT="$SCRIPT_DIR/linux/iptables.sh"
@@ -152,8 +151,7 @@ tar -czvf /bkp/html.tar.gz /var/www/html
 tar -czvf /bkp/httpd.tar.gz /etc/httpd
 
 # backup the mysql database
-mysqldump -u root -p$DEFAULT_PASS --all-databases > /bkp/ecomm.sql
-
+echo "$DEFAULT_PASS" | mysqldump -u root -p --all-databases > /bkp/ecomm.sql
 
 # Remove prestashop admin directory, its in /var/www/html/prestashop and it will have random characters after admin
 rm -rf /var/www/html/prestashop/admin*
@@ -176,5 +174,5 @@ systemctl disable --now ufw
 # Automatically apply IPTABLES_SCRIPT on boot
 systemctl enable --now ccdc_firewall.service
 
-yum update && yum upgrade -y
+yum update -y && yum upgrade -y
 yum install -y screen netcat aide
