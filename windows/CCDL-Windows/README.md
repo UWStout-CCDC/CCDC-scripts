@@ -7,7 +7,7 @@ This repository contains a collection of PowerShell scripts designed by the UW-S
 To run these scripts, simply download the repository or individual scripts using `wget`:
 
 ```bash
-wget "https://tinyurl.com/4w7f6aea" -OutFile "Startup-Script.ps1"
+wget "https://tinyurl.com/36zj8a2n" -OutFile "Startup-Script.ps1"
 wget "https://tinyurl.com/e5jsf499" -Outfile "Installs.ps1"
 wget "https://tinyurl.com/3z7craus" -Outfile "clamav.msi"
 ```
