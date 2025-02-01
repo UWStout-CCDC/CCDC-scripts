@@ -12,13 +12,7 @@ done
 CCDC_DIR="/ccdc"
 CCDC_ETC="$CCDC_DIR/etc"
 SCRIPT_DIR="/ccdc/scripts"
-
-
-if [[ $EUID -ne 0 ]]
-then
-  printf 'Must be run as root, exiting!\n'
-  exit 1
-fi
+DEFAULT_PRESTA_PASS='Pa$$w0rd' #TODO: Update this password to the correct password
 
 # check if the script dir exists, if it does not, create it
 if [ ! -d "$SCRIPT_DIR" ]; then
@@ -165,8 +159,8 @@ EOF
 
 # Zip up the /var/www/html directory and move it to /bkp
 # Check if the /bkp directory exists, if it does not, create it
-if [ ! -d "/bkp/original" ]; then
-    mkdir -p /bkp/original
+if [ ! -d "/bkp" ]; then
+    mkdir /bkp
 fi
 echo "Zipping up /var/www/html..."
 tar -czf /bkp/original/html.tar.gz /var/www/html
@@ -306,7 +300,7 @@ systemctl disable --now ufw
 # Automatically apply IPTABLES_SCRIPT on boot
 systemctl enable --now ccdc_firewall.service
 
-yum update -y && yum upgrade -y
+yum update && yum upgrade -y
 yum install -y screen netcat aide
 
 # Set up AIDE
