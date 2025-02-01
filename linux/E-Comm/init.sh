@@ -1,6 +1,10 @@
+#!/bin/bash
 BASEURL=https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/ecomm-init #TODO: Update this URL to the correct branch
-SCRIPT_DIR="/ccdc/scripts"
 read -p "Enter the default password for the PrestaShop database: " -s DEFAULT_PRESTA_PASS
+
+CCDC_DIR="/ccdc"
+CCDC_ETC="$CCDC_DIR/etc"
+SCRIPT_DIR="/ccdc/scripts"
 
 
 if [[ \$EUID -ne 0 ]]
@@ -12,6 +16,11 @@ fi
 # check if the script dir exists, if it does not, create it
 if [ ! -d "$SCRIPT_DIR" ]; then
     mkdir -p $SCRIPT_DIR
+fi
+
+# Check if the linux directory exists within the script directory, if it does not, create it
+if [ ! -d "$SCRIPT_DIR/linux" ]; then
+    mkdir -p $SCRIPT_DIR/linux
 fi
 
 # Download and install new repos
