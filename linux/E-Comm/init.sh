@@ -65,9 +65,8 @@ USER_LOCK_SCRIPT="$SCRIPT_DIR/linux/user_lock.sh"
 wget -O $USER_LOCK_SCRIPT $BASEURL/linux/E-Comm/user_lock.sh
 bash $USER_LOCK_SCRIPT
 
-
 # Grab script so it's guarnteed to be in /ccdc/scripts/linux
-get linux/init.sh
+wget -O $SCRIPT_DIR/linux/init.sh $BASEURL/linux/E-Comm/init.sh
 
 # Run mysql_secure_installation to secure the MySQL installation and auto answer the questions, leaving password as blank
 # This is done to ensure that the MySQL installation is secure
