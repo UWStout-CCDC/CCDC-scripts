@@ -58,7 +58,7 @@ prompt() {
     *) [[ "$def" != "[y/N]" ]] ;;
   esac
 }
-$USER_LOCK_SCRIPT=$SCRIPT_DIR/linux/user_lock.sh
+$USER_LOCK_SCRIPT="$SCRIPT_DIR/linux/user_lock.sh"
 cat <<-EOF > $USER_LOCK_SCRIPT
 if [[ \$EUID -ne 0 ]]
 then
