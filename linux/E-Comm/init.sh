@@ -176,5 +176,14 @@ systemctl disable --now ufw
 # Automatically apply IPTABLES_SCRIPT on boot
 systemctl enable --now ccdc_firewall.service
 
-yum update && yum upgrade -y
+yum update -y && yum upgrade -y
 yum install -y screen netcat aide
+
+# Set up AIDE
+aide --init
+mv /var/lib/aide/aide.db.new.gz /var/lib/aide/aide.db.gz
+
+# Set up cron job for AIDE
+echo "0 4 * * * /usr/sbin/aide --check" > /etc/cron.d/aide
+
+echo "Finished running init.sh, please reboot the system to apply changes"
