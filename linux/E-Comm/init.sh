@@ -186,7 +186,7 @@ rm -f /var/www/html/prestashop/README.md
 # Add the following to the end of the file
 cat <<EOF >> /etc/httpd/conf/httpd.conf
 # Disable config folder access
-<Directory "/var/www/http/prestashop/config">
+<Directory "/var/www/html/prestashop/config">
     Order Deny,Allow
     Deny from all
 </Directory>
