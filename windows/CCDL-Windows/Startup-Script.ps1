@@ -7,7 +7,7 @@ Import-Module -Name BitsTransfer
 $ccdcPath = "C:\CCDC"
 $toolsPath = "$ccdcPath\tools"
 mkdir $ccdcPath
-mkdir $toolsPath
+mkdir "$ccdcPath\tools"
 mkdir "$ccdcPath\DNS"
 
 # Download the install script
@@ -210,7 +210,7 @@ Write-Host "Setting Windows Update to automatic..."
 Start-Job -ScriptBlock {
     Set-Service -Name wuauserv -StartupType Automatic
     Write-Host "Checking for Windows updates..."
-    Install-WindowsUpdate -AcceptAll
+    Install-WindowsUpdate -AcceptAll -Install
 }
 
 # Secure and backup DNS
