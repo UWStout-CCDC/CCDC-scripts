@@ -207,9 +207,11 @@ yum update -y && yum upgrade -y
 yum install -y screen netcat aide
 
 # Set up AIDE
+echo "Initializing AIDE..."
 aide --init
 mv /var/lib/aide/aide.db.new.gz /var/lib/aide/aide.db.gz
 
+echo "Setting up AIDE cron job..."
 # Set up cron job for AIDE
 echo "0 4 * * * /usr/sbin/aide --check > /root/aide.log" > /etc/cron.d/aide
 
