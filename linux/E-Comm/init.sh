@@ -146,7 +146,7 @@ if [ ! -d "/bkp" ]; then
     mkdir /bkp
 fi
 echo "Zipping up /var/www/html..."
-tar -czvf /bkp/html.tar.gz /var/www/html
+# tar -czvf /bkp/html.tar.gz /var/www/html
 tar cf - /var/www/html -P | pv -s $(du -sb /var/www/html | awk '{print $1}') | gzip > /bkp/html.tar.gz
 
 
