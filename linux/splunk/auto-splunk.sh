@@ -1,5 +1,7 @@
 #!/bin/bash
 
+
+
 ###################################
 ##    Splunk Specific Configs    ##
 ###################################
@@ -12,8 +14,8 @@ fi
 
 # Changing default admin password
 cd /opt/splunk/bin
-echo "Enter admin password:" read -s admin_password
-echo "Enter new admin password:" read -s password
+echo "Enter admin password:" read admin_password
+echo "Enter new admin password:" read password
 ./splunk edit user admin -auth admin:$admin_password -password $password
 
 # Install tools (if not already)
