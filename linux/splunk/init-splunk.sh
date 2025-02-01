@@ -10,7 +10,8 @@ then
   exit 1
 fi
 
-BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master"
+#BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master"
+BASE_URL="https://raw.githubusercontent.com/CCDC-Defense/CCDC-scripts/splunk-automation" # Used for testing in branch
 
 # Changing default admin password
 cd /opt/splunk/bin
@@ -86,9 +87,11 @@ monitor /var/log/mysqld.log
 # Install GUI (broken  fix)
 yum install epel-release -y
 gui_installed=true
-yum groupinstall "Server with GUI" -y || yum groupinstall “Xfce” -y || echo "Failed to install GUI" && gui_installed=false
+yum groupinstall "X Window system" -y --skip-broken && yum groupinstall “Xfce” -y --skip-broken || echo "Failed to install GUI" && gui_installed=false
 if $gui_installed
 then
-    yum install firefox -y
     systemctl set-default graphical.target
     systemctl isolate graphical.target
+    yum install firefox -y
+
+echo "Splunk setup complete. Reboot to apply changes and clear in-memory beacons."
