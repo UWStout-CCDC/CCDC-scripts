@@ -14,8 +14,10 @@ BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master"
 
 # Changing default admin password
 cd /opt/splunk/bin
-echo "Enter admin password:" read admin_password
-echo "Enter new admin password:" read password
+echo "Enter admin password:"
+read admin_password
+echo "Enter new admin password:"
+read password
 ./splunk edit user admin -auth admin:$admin_password -password $password
 
 
