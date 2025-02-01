@@ -34,7 +34,7 @@ yum makecache
 
 # Install tools (if not already)
 echo -e "\e[33mInstalling tools\e[0m"
-yum install iptables wget git aide net-tools -y
+yum install iptables wget git aide net-tools epel-release -y
 
 # Install scripts
 echo -e "\e[33mInstalling init script\e[0m"
@@ -94,13 +94,12 @@ monitor /var/log/mysqld.log
 
 # Install GUI
 echo -e "\e[33mInstalling GUI\e[0m"
-yum install epel-release -y
 gui_installed=true
-yum groupinstall "Server with GUI" -y --skip-broken || echo "Failed to install GUI" && gui_installed=false
+yum groupinstall "Server with GUI" -y || echo "Failed to install GUI" && gui_installed=false
 if $gui_installed
 then
+    yum install firefox -y
     systemctl set-default graphical.target
     systemctl isolate graphical.target
-    yum install firefox -y
 
 echo "\e[33mSplunk setup complete. Reboot to apply changes and clear in-memory beacons.\e0m"
