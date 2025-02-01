@@ -42,14 +42,14 @@ prompt() {
     *) [[ "$def" != "[y/N]" ]] ;;
   esac
 }
-
-
+$USER_LOCK_SCRIPT=$SCRIPT_DIR/linux/user_lock.sh
+cat <<-EOF > $USER_LOCK_SCRIPT
 # Get a list of users from /etc/passwd, and allow the user to select what users to keep with a simple yes/no prompt
 while read -r line; do
     # Get the username
     username=$(echo $line | cut -d: -f1)
     # Check if the user is root
-    if [ "$username" == "root" || "$username" == "sysadmin" ]; then
+    if [ "$username" == "root" ] || [ "$username" == "sysadmin" ]; then
         # Skip the root user and the sysadmin user
         continue
     fi
@@ -59,6 +59,10 @@ while read -r line; do
         passwd -l $username
     fi
 done < /etc/passwd
+EOF
+
+bash $USER_LOCK_SCRIPT
+
 
 # Grab script so it's guarnteed to be in /ccdc/scripts/linux
 get linux/init.sh
