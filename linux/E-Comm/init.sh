@@ -2,6 +2,13 @@ BASEURL=https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/ecomm-init #
 SCRIPT_DIR="/ccdc/scripts"
 DEFAULT_PRESTA_PASS='Pa$$w0rd' #TODO: Update this password to the correct password
 
+
+if [[ \$EUID -ne 0 ]]
+then
+  printf 'Must be run as root, exiting!\n'
+  exit 1
+fi
+
 # check if the script dir exists, if it does not, create it
 if [ ! -d "$SCRIPT_DIR" ]; then
     mkdir -p $SCRIPT_DIR
@@ -44,6 +51,12 @@ prompt() {
 }
 $USER_LOCK_SCRIPT=$SCRIPT_DIR/linux/user_lock.sh
 cat <<-EOF > $USER_LOCK_SCRIPT
+if [[ \$EUID -ne 0 ]]
+then
+  printf 'Must be run as root, exiting!\n'
+  exit 1
+fi
+
 # Get a list of users from /etc/passwd, and allow the user to select what users to keep with a simple yes/no prompt
 while read -r line; do
     # Get the username
