@@ -87,7 +87,7 @@ monitor /var/log/mysqld.log
 # Install GUI (broken  fix)
 yum install epel-release -y
 gui_installed=true
-yum groupinstall "Server with GUI" -y --skip-broken && yum groupinstall “Xfce” -y --skip-broken || echo "Failed to install GUI" && gui_installed=false
+yum groupinstall "Server with GUI" -y --skip-broken || echo "Failed to install GUI" && gui_installed=false
 if $gui_installed
 then
     systemctl set-default graphical.target
