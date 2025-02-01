@@ -53,11 +53,6 @@ monitor() {
 # Log files
 monitor /var/log/syslog
 monitor /var/log/messages
-# Apache
-monitor /var/log/apache/access.log
-monitor /var/log/apache/error.log
-monitor /var/log/apache2/access.log
-monitor /var/log/apache2/error.log
 # SSH
 monitor /var/log/auth.log
 monitor /var/log/secure

@@ -31,7 +31,7 @@ rm -rf /var/cache/yum
 yum makecache
 
 # Install tools (if not already)
-yum install iptables wget git aide
+yum install iptables wget git aide net-tools -y
 
 # Install scripts
 wget wget $BASE_URL/linux/init.sh -O init.sh
@@ -40,7 +40,7 @@ chmod +x init.sh
 
 # cron and at security
 rm /etc/cron.deny
-rm /etc/at.deny
+rm /etc/at.deny || echo "No at.deny to remove"
 
 touch /etc/cron.allow
 echo "root" >> /etc/cron.allow
@@ -73,11 +73,6 @@ monitor() {
 # Log files
 monitor /var/log/syslog
 monitor /var/log/messages
-# Apache
-monitor /var/log/apache/access.log
-monitor /var/log/apache/error.log
-monitor /var/log/apache2/access.log
-monitor /var/log/apache2/error.log
 # SSH
 monitor /var/log/auth.log
 monitor /var/log/secure
@@ -88,9 +83,12 @@ monitor /var/log/mysql.log
 monitor /var/log/mysqld.log
 # TODO: add more files
 
-# Install GUI
+# Install GUI (broken  fix)
 yum install epel-release -y
-yum groupinstall "Server with GUI" -y
-yum install firefox
-systemctl set-default graphical.target
-systemctl isolate graphical.target
+gui_installed=true
+yum groupinstall "Server with GUI" -y || yum groupinstall “Xfce” -y || echo "Failed to install GUI" && gui_installed=false
+if $gui_installed
+then
+    yum install firefox -y
+    systemctl set-default graphical.target
+    systemctl isolate graphical.target
