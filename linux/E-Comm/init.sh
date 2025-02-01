@@ -1,6 +1,6 @@
 BASEURL=https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/ecomm-init #TODO: Update this URL to the correct branch
 SCRIPT_DIR="/ccdc/scripts"
-DEFAULT_PRESTA_PASS='Pa$$w0rd' #TODO: Update this password to the correct password
+read -p "Enter the default password for the PrestaShop database: " -s DEFAULT_PRESTA_PASS
 
 
 if [[ \$EUID -ne 0 ]]
