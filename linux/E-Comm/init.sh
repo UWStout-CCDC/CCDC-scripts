@@ -202,6 +202,6 @@ aide --init
 mv /var/lib/aide/aide.db.new.gz /var/lib/aide/aide.db.gz
 
 # Set up cron job for AIDE
-echo "0 4 * * * /usr/sbin/aide --check" > /etc/cron.d/aide
+echo "0 4 * * * /usr/sbin/aide --check > /root/aide.log" > /etc/cron.d/aide
 
 echo "Finished running init.sh, please reboot the system to apply changes"
