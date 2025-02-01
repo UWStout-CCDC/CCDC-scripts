@@ -41,32 +41,6 @@ done
 # Server to poll updates from (same as above, but a different port)
 ./splunk set deploy-poll "$SPLUNK_SERVER_IP":8089 # User will have to input the same creds here
 
-# Quick function to check if a file exists, and monitor it
-monitor() {
-  if [ -f $1 ]
-  then
-    ./splunk add monitor $1
-  fi
-}
-
-# Add files to log
-monitor /var/log/syslog
-monitor /var/log/messages
-# Apache
-monitor /var/log/apache/access.log
-monitor /var/log/apache/error.log
-monitor /var/log/apache2/access.log
-monitor /var/log/apache2/error.log
-# SSH
-monitor /var/log/auth.log
-monitor /var/log/secure
-
-#monitor /var/log/httpd/*_log
-#watch /var/log/https/modsec_*.log
-monitor /var/log/mysql.log
-monitor /var/log/mysqld.log
-# TODO: add more files
-
 # == Configure options ==
 
 # Add Splunk user

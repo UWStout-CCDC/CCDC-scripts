@@ -13,10 +13,10 @@ fi
 # Changing default admin password
 cd /opt/splunk/bin
 echo "Enter admin password:" read -s admin_password
-echo "Enter new password:" read -s password
-./splunk edit user <username> -auth admin:<admin_password> -password <password>
+echo "Enter new admin password:" read -s password
+./splunk edit user admin -auth admin:$admin_password -password $password
 
-# Install tools
+# Install tools (if not already)
 yum install iptables wget git aide
 
 # Install scripts
@@ -41,6 +41,37 @@ systemctl disable --now sshd
 # AIDE setup
 aide --init
 mv /var/lib/aide/aide.db.new.gz /var/lib/aide/aide.db.gz
+
+# Enable Splunk reciever
+./splunk enable listen 9997 -auth $admin_password:$password
+./splunk restart
+
+# Quick function to check if a file exists, and monitor it
+monitor() {
+  if [ -f $1 ]
+  then
+    ./splunk add monitor $1
+  fi
+}
+
+# Add files to log
+# Log files
+monitor /var/log/syslog
+monitor /var/log/messages
+# Apache
+monitor /var/log/apache/access.log
+monitor /var/log/apache/error.log
+monitor /var/log/apache2/access.log
+monitor /var/log/apache2/error.log
+# SSH
+monitor /var/log/auth.log
+monitor /var/log/secure
+# HTTP
+monitor /var/log/httpd/
+# MySQL
+monitor /var/log/mysql.log
+monitor /var/log/mysqld.log
+# TODO: add more files
 
 # Install GUI
 yum groupinstall "Server with GUI" -y
