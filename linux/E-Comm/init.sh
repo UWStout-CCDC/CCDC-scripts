@@ -1,12 +1,6 @@
 BASEURL=https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/ecomm-init/ #TODO: Update this URL to the correct branch
 SCRIPT_DIR="/ccdc/scripts"
-
-
-if [[ $EUID -ne 0 ]]
-then
-  printf 'Must be run as root, exiting!\n'
-  exit 1
-fi
+DEFAULT_PRESTA_PASS='Pa$$w0rd' #TODO: Update this password to the correct password
 
 # check if the script dir exists, if it does not, create it
 if [ ! -d "$SCRIPT_DIR" ]; then
@@ -69,10 +63,6 @@ done < /etc/passwd
 # Grab script so it's guarnteed to be in /ccdc/scripts/linux
 get linux/init.sh
 
-
-# Get PrestaShop sql password change script
-wget -O $SCRIPT_DIR/linux/change_sql_pass.sh $BASEURL/linux/E-Comm/change_sql_pass.sh
-chmod +x $SCRIPT_DIR/linux/change_sql_pass.sh
 
 # Run mysql_secure_installation to secure the MySQL installation and auto answer the questions, leaving password as blank
 # This is done to ensure that the MySQL installation is secure
@@ -153,23 +143,17 @@ EOF
 
 # Zip up the /var/www/html directory and move it to /bkp
 # Check if the /bkp directory exists, if it does not, create it
-if [ ! -d "/bkp/original" ]; then
-    mkdir -p /bkp/original
+if [ ! -d "/bkp" ]; then
+    mkdir /bkp
 fi
-echo "Zipping up /var/www/html..."
-tar -czf /bkp/original/html.tar.gz /var/www/html
-
+tar -czvf /bkp/html.tar.gz /var/www/html
 
 # zip up the /etc/httpd directory and move it to /bkp
-echo "Zipping up /etc/httpd..."
-tar -czf /bkp/original/httpd.tar.gz /etc/httpd
+tar -czvf /bkp/httpd.tar.gz /etc/httpd
 
 # backup the mysql database
-if [ -z "$DEFAULT_PRESTA_PASS" ]; then
-  mysqldump -u root --all-databases > /bkp/ecomm.sql
-else
-  mysqldump -u root -p$DEFAULT_PRESTA_PASS --all-databases > /bkp/ecomm.sql
-fi
+mysqldump -u root -p$DEFAULT_PASS --all-databases > /bkp/ecomm.sql
+
 
 # Remove prestashop admin directory, its in /var/www/html/prestashop and it will have random characters after admin
 rm -rf /var/www/html/prestashop/admin*
@@ -178,108 +162,6 @@ rm -rf /var/www/html/prestashop/admin*
 rm -rf /var/www/html/prestashop/install
 rm -rf /var/www/html/prestashop/docs
 rm -f /var/www/html/prestashop/README.md
-
-# edit the /etc/httpd/conf/httpd.conf file and add hardening options for prestashop
-# Add the following to the end of the file
-cat <<EOF >> /etc/httpd/conf/httpd.conf
-# Disable config folder access
-<Directory "/var/www/html/prestashop/config">
-    Order Deny,Allow
-    Deny from all
-</Directory>
-
-<Directory /var/www/html/prestashop/app>
-    Order Allow,Deny
-    Deny from all
-</Directory>
-
-<Directory /var/www/html/prestashop/var>
-    Order Allow,Deny
-    Deny from all
-</Directory>
-
-<Directory /var/www/html/prestashop/translations>
-    Order Allow,Deny
-    Deny from all
-</Directory>
-
-<Directory /var/www/html/prestashop/src>
-    Order Allow,Deny
-    Deny from all
-</Directory>
-
-<Directory /var/www/html/prestashop/vendor>
-    Order Allow,Deny
-    Deny from all
-</Directory>
-
-<Directory /var/www/html/prestashop/install>
-    Order Allow,Deny
-    Deny from all
-</Directory>
-
-# Prevent access to sensitive files
-<FilesMatch "\.(env|ini|log|bak|swp|sql|git)">
-    Order Allow,Deny
-    Deny from all
-</FilesMatch>
-
-# Disable directory listing
-<IfModule autoindex_module>
-    Options -Indexes
-</IfModule>
-
-EOF
-
-# Edit the /etc/httpd/conf.d/php.conf file and add the following to the end of the file
-cat <<EOF >> /etc/httpd/conf.d/php.conf
-# Disable PHP engine in the uploads directory
-<Directory "/var/www/html/prestashop/upload">
-    php_flag engine off
-</Directory>
-
-# Disable PHP engine in the download directory
-<Directory "/var/www/html/prestashop/download">
-    php_flag engine off
-</Directory>
-EOF
-
-# Check if the change_sql_pass.sh script exists, if it is then run it
-if [ -f "$SCRIPT_DIR/linux/change_sql_pass.sh" ]; then
-    bash $SCRIPT_DIR/linux/change_sql_pass.sh $DEFAULT_PRESTA_PASS
-fi
-
-
-# Restart the httpd service
-systemctl restart httpd
-
-
-if [ ! -d "/bkp/new" ]; then
-    mkdir -p /bkp/new
-fi
-
-
-echo "Zipping up edited /var/www/html..."
-tar -czf /bkp/new/html-changed.tar.gz /var/www/html
-
-# zip up the /etc/httpd directory and move it to /bkp
-echo "Zipping up edited /etc/httpd..."
-tar -czf /bkp/new/httpd-changed.tar.gz /etc/httpd
-
-# backup the mysql database
-if [ -z "$DEFAULT_PRESTA_PASS" ]; then
-  mysqldump -u root --all-databases > /bkp/ecomm-changed.sql
-else
-  mysqldump -u root -p$DEFAULT_PRESTA_PASS --all-databases > /bkp/ecomm-changed.sql
-fi
-
-
-#########################################
-#
-#         END PRESTASHOP_CONFIG
-#
-#########################################
-
 
 # Replace the legal banners
 replace /etc motd general/legal_banner.txt
@@ -294,14 +176,5 @@ systemctl disable --now ufw
 # Automatically apply IPTABLES_SCRIPT on boot
 systemctl enable --now ccdc_firewall.service
 
-yum update -y && yum upgrade -y
+yum update && yum upgrade -y
 yum install -y screen netcat aide
-
-# Set up AIDE
-aide --init
-mv /var/lib/aide/aide.db.new.gz /var/lib/aide/aide.db.gz
-
-# Set up cron job for AIDE
-echo "0 4 * * * /usr/sbin/aide --check" > /etc/cron.d/aide
-
-echo "Finished running init.sh, please reboot the system to apply changes"
