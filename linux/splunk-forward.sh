@@ -50,6 +50,7 @@ monitor() {
 }
 
 # Add files to log
+# Log files
 monitor /var/log/syslog
 monitor /var/log/messages
 # Apache
@@ -60,9 +61,9 @@ monitor /var/log/apache2/error.log
 # SSH
 monitor /var/log/auth.log
 monitor /var/log/secure
-
-#monitor /var/log/httpd/*_log
-#watch /var/log/https/modsec_*.log
+# HTTP
+monitor /var/log/httpd/
+# MySQL
 monitor /var/log/mysql.log
 monitor /var/log/mysqld.log
 # TODO: add more files
