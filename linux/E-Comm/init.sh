@@ -300,7 +300,7 @@ systemctl disable --now ufw
 # Automatically apply IPTABLES_SCRIPT on boot
 systemctl enable --now ccdc_firewall.service
 
-yum update && yum upgrade -y
+yum update -y && yum upgrade -y
 yum install -y screen netcat aide
 
 # Set up AIDE
