@@ -37,7 +37,7 @@ cd /opt/splunkforwarder/bin
 chown -R splunkfwd:splunkfwd $SPLUNK_HOME
 
 # Changing default admin password
-cd /opt/splunk/bin
+cd /opt/splunkforwarder/bin
 echo "Enter Splunk Web UI admin password:"
 read -s admin_password
 echo "Enter new Splunk Web UI admin password:"
