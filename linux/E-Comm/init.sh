@@ -242,7 +242,7 @@ systemctl disable --now ufw
 systemctl enable --now ccdc_firewall.service
 
 yum update -y && yum upgrade -y
-yum install -y screen netcat aide
+yum install -y screen netcat aide clamav
 
 # Set up AIDE
 echo "Initializing AIDE..."
@@ -252,5 +252,10 @@ mv /var/lib/aide/aide.db.new.gz /var/lib/aide/aide.db.gz
 echo "Setting up AIDE cron job..."
 # Set up cron job for AIDE
 echo "0 4 * * * /usr/sbin/aide --check > /root/aide.log" > /etc/cron.d/aide
+
+
+# Set up ClamAV
+echo "Initializing ClamAV..."
+freshclam
 
 echo "Finished running init.sh, please reboot the system to apply changes"
