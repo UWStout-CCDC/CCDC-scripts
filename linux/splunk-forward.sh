@@ -12,6 +12,7 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
+# Confirm Splunk server IP
 read -p "Enter the Splunk server IP [default: 172.20.241.20]: " SPLUNK_SERVER_IP
 SPLUNK_SERVER_IP=${SPLUNK_SERVER_IP:-172.20.241.20}
 if [[ -z "$SPLUNK_SERVER_IP" ]]; then
@@ -19,29 +20,38 @@ if [[ -z "$SPLUNK_SERVER_IP" ]]; then
   exit 1
 fi
 
+# Create splunkfwd user and group
+useradd -m splunkfwd
+groupadd splunkfwd
+
+# Create Splunk directory
+export SPLUNK_HOME="/opt/splunkforwarder"
+mkdir $SPLUNK_HOME
+
 # Install Splunk
 wget -O splunkforwarder-9.1.1-64e843ea36b1-Linux-x86_64.tgz "https://download.splunk.com/products/universalforwarder/releases/9.1.1/linux/splunkforwarder-9.1.1-64e843ea36b1-Linux-x86_64.tgz"
 tar -xzvf splunkforwarder-9.1.1-64e843ea36b1-Linux-x86_64.tgz -C /opt
 cd /opt/splunkforwarder/bin
 
-# Request and confirm password
-PASSWD_CONFIRM='!'
-while [[ "$PASSWD" != "$PASSWD_CONFIRM" || -z "$PASSWD" ]]
-do
-  read -sr -p "Create splunk user password: " PASSWD
-  echo ""
-  read -sr -p "Confirm password: " PASSWD_CONFIRM
-  echo ""
-done
+# Set permissions
+chown -R splunkfwd:splunkfwd $SPLUNK_HOME
+
+# Changing default admin password
+cd /opt/splunk/bin
+echo "Enter Splunk Web UI admin password:"
+read -s admin_password
+echo "Enter new Splunk Web UI admin password:"
+read -s password
+./splunk edit user admin -auth admin:$admin_password -password $password
 
 # Start the splunk forwarder, and automatically accept the license
-echo "\e[33mStarting Splunk and accepting license\e[0m"]
+echo "Starting Splunk and accepting license"
 ./splunk start --accept-license --answer-yes --auto-ports --no-prompt
 # Add the server to forward to (ip needs to be the first param)
-echo "\e[33mAdding server to forward to\e[0m"
+echo "Adding server to forward to $SPLUNK_SERVER_IP. Use admin credentials"
 ./splunk add forward-server "$SPLUNK_SERVER_IP":9997 # User will have to input the same creds here
 # Server to poll updates from (same as above, but a different port)
-echo "\e[33mSetting deployment server\e[0m"
+echo "Setting deployment server. Use admin credentials"
 ./splunk set deploy-poll "$SPLUNK_SERVER_IP":8089 # User will have to input the same creds here
 
 # Quick function to check if a file exists, and monitor it
@@ -53,7 +63,7 @@ monitor() {
 }
 
 # Add files to log
-echo "\e[33mAdding log files to monitor\e[0m"
+echo "Adding log files to monitor"
 # Log files
 monitor /var/log/syslog
 monitor /var/log/messages
@@ -68,12 +78,6 @@ monitor /var/log/mysqld.log
 # TODO: add more files
 
 # == Configure options ==
-
-# Adding new Splunk user
-echo "\e[33mAdding new Splunk user: splunkfwd\e[0m"
-useradd -d /opt/splunkforwarder splunkfwd
-groupadd splunkfwd
-usermod -a -G splunkfwd splunkfwd
 
 # Set Splunk to start as Splunk user
 ./splunk enable boot-start -user splunkfwd
