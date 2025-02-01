@@ -148,7 +148,9 @@ fi
 tar -czvf /bkp/html.tar.gz /var/www/html
 
 # zip up the /etc/httpd directory and move it to /bkp
-tar -czvf /bkp/httpd.tar.gz /etc/httpd
+# tar -czvf /bkp/httpd.tar.gz /etc/httpd
+echo "Zipping up /etc/httpd..."
+tar cf - /etc/httpd -P | pv -s $(du -sb /etc/httpd | awk '{print $1}') | gzip > /bkp/httpd.tar.gz
 
 # backup the mysql database
 echo "$DEFAULT_PASS" | mysqldump -u root -p --all-databases > /bkp/ecomm.sql
