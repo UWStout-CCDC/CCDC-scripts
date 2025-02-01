@@ -59,14 +59,15 @@ prompt() {
   esac
 }
 
-
 # Lock all users except root and sysadmin
 USER_LOCK_SCRIPT="$SCRIPT_DIR/linux/user_lock.sh"
 wget -O $USER_LOCK_SCRIPT $BASEURL/linux/E-Comm/user_lock.sh
+chmod +x $USER_LOCK_SCRIPT
 bash $USER_LOCK_SCRIPT
 
 # Grab script so it's guarnteed to be in /ccdc/scripts/linux
 wget -O $SCRIPT_DIR/linux/init.sh $BASEURL/linux/E-Comm/init.sh
+chmod +x $SCRIPT_DIR/linux/init.sh
 
 # Run mysql_secure_installation to secure the MySQL installation and auto answer the questions, leaving password as blank
 # This is done to ensure that the MySQL installation is secure
@@ -79,6 +80,7 @@ systemctl disable sshd
 # Set firewall rules
 IPTABLES_SCRIPT="$SCRIPT_DIR/linux/iptables.sh"
 cat <<EOF > $IPTABLES_SCRIPT
+#!/bin/bash
 if [[ \$EUID -ne 0 ]]
 then
   printf 'Must be run as root, exiting!\n'
@@ -125,6 +127,8 @@ iptables -t filter -A OUTPUT -p udp --dport 123 -j ACCEPT
 iptables -t filter -A INPUT -p tcp --dport 80 -j ACCEPT
 iptables -t filter -A INPUT -p tcp --dport 443 -j ACCEPT
 EOF
+# Make the script executable
+chmod +x $IPTABLES_SCRIPT
 
 bash $IPTABLES_SCRIPT
 
