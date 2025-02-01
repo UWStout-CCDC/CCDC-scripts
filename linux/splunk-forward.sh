@@ -7,6 +7,10 @@
 #
 # Install and configure the splunk forwarder
 
+# TODO:
+# Fix outputs
+# Fix ordering and commands so that the users are created properly and the install happens properly
+
 if [[ $EUID -ne 0 ]]; then
   echo 'Must be run as root, exiting!'
   exit 1
