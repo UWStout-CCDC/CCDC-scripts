@@ -1,0 +1,180 @@
+BASEURL=https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/ecomm-init/ #TODO: Update this URL to the correct branch
+SCRIPT_DIR="/ccdc/scripts"
+DEFAULT_PRESTA_PASS='Pa$$w0rd' #TODO: Update this password to the correct password
+
+# check if the script dir exists, if it does not, create it
+if [ ! -d "$SCRIPT_DIR" ]; then
+    mkdir -p $SCRIPT_DIR
+fi
+
+# Download and install new repos
+wget -O /etc/yum.repos.d/CentOS-Base.repo $BASEURL/linux/E-Comm/CentOS-Base.repo
+
+get() {
+  # only download if the file doesn't exist
+  if [[ ! -f "$SCRIPT_DIR/$1" ]]
+  then
+    mkdir -p $(dirname "$SCRIPT_DIR/$1") 1>&2
+    BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master"
+    wget --no-check-certificate "$BASE_URL/$1" -O "$SCRIPT_DIR/$1" 1>&2
+  fi
+  echo "$SCRIPT_DIR/$1"
+}
+
+# replace <dir> <file> <new file>
+replace() {
+  mkdir -p $CCDC_ETC/$(dirname $2)
+  cp $1/$2 $CCDC_ETC/$2.old
+  mkdir -p $(dirname $1/$2)
+  cp $(get $3) $1/$2
+}
+
+prompt() {
+  case "$2" in 
+    y) def="[Y/n]" ;;
+    n) def="[y/N]" ;;
+    *) echo "INVALID PARAMETER!!!!"; exit ;;
+  esac
+  read -p "$1 $def" ans
+  case $ans in
+    y|Y) true ;;
+    n|N) false ;;
+    *) [[ "$def" != "[y/N]" ]] ;;
+  esac
+}
+
+
+# Get a list of users from /etc/passwd, and allow the user to select what users to keep with a simple yes/no prompt
+while read -r line; do
+    # Get the username
+    username=$(echo $line | cut -d: -f1)
+    # Check if the user is root
+    if [ "$username" == "root" || "$username" == "sysadmin" ]; then
+        # Skip the root user and the sysadmin user
+        continue
+    fi
+    # Ask the user if they want to keep the user only if the user can login
+    if [ $(echo $line | cut -d: -f7) != "/sbin/nologin" ]; then
+        usermod -s /sbin/nologin $username
+        passwd -l $username
+    fi
+done < /etc/passwd
+
+# Grab script so it's guarnteed to be in /ccdc/scripts/linux
+get linux/init.sh
+
+
+# Run mysql_secure_installation to secure the MySQL installation and auto answer the questions, leaving password as blank
+# This is done to ensure that the MySQL installation is secure
+echo -e "$DEFAULT_PRESTA_PASS\nn\n\n\n\n\n" | mysql_secure_installation
+
+# # Disable ssh
+# systemctl stop sshd
+# systemctl disable sshd
+
+# Set firewall rules
+IPTABLES_SCRIPT="$SCRIPT_DIR/linux/iptables.sh"
+cat <<EOF > $IPTABLES_SCRIPT
+if [[ \$EUID -ne 0 ]]
+then
+  printf 'Must be run as root, exiting!\n'
+  exit 1
+fi
+
+# Empty all rules
+iptables -t filter -F
+iptables -t filter -X
+
+# Block everything by default
+iptables -t filter -P INPUT DROP
+iptables -t filter -P FORWARD DROP
+iptables -t filter -P OUTPUT DROP
+
+# Authorize already established connections
+iptables -A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+iptables -A OUTPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+iptables -t filter -A INPUT -i lo -j ACCEPT
+iptables -t filter -A OUTPUT -o lo -j ACCEPT
+
+# ICMP (Ping)
+iptables -t filter -A INPUT -p icmp -j ACCEPT
+iptables -t filter -A OUTPUT -p icmp -j ACCEPT
+
+# DNS (Needed for curl, and updates)
+iptables -t filter -A OUTPUT -p tcp --dport 53 -j ACCEPT
+iptables -t filter -A OUTPUT -p udp --dport 53 -j ACCEPT
+
+# HTTP/HTTPS
+iptables -t filter -A OUTPUT -p tcp --dport 80 -j ACCEPT
+iptables -t filter -A OUTPUT -p tcp --dport 443 -j ACCEPT
+
+# NTP (server time)
+iptables -t filter -A OUTPUT -p udp --dport 123 -j ACCEPT
+
+# # Splunk
+# iptables -t filter -A OUTPUT -p tcp --dport 8000 -j ACCEPT
+# iptables -t filter -A OUTPUT -p tcp --dport 8089 -j ACCEPT
+# iptables -t filter -A OUTPUT -p tcp --dport 9997 -j ACCEPT
+
+######## OUTBOUND SERVICES ###############
+# HTTP/HTTPS (apache)
+iptables -t filter -A INPUT -p tcp --dport 80 -j ACCEPT
+iptables -t filter -A INPUT -p tcp --dport 443 -j ACCEPT
+EOF
+
+bash $IPTABLES_SCRIPT
+
+# Create systemd unit for the firewall
+mkdir -p /etc/systemd/system/
+cat <<-EOF > /etc/systemd/system/ccdc_firewall.service
+[Unit]
+Description=ZDSFirewall
+After=syslog.target network.target
+
+[Service]
+Type=oneshot
+ExecStart=$IPTABLES_SCRIPT
+ExecStop=/sbin/iptables -F
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Zip up the /var/www/html directory and move it to /bkp
+# Check if the /bkp directory exists, if it does not, create it
+if [ ! -d "/bkp" ]; then
+    mkdir /bkp
+fi
+tar -czvf /bkp/html.tar.gz /var/www/html
+
+# zip up the /etc/httpd directory and move it to /bkp
+tar -czvf /bkp/httpd.tar.gz /etc/httpd
+
+# backup the mysql database
+mysqldump -u root -p$DEFAULT_PASS --all-databases > /bkp/ecomm.sql
+
+
+# Remove prestashop admin directory, its in /var/www/html/prestashop and it will have random characters after admin
+rm -rf /var/www/html/prestashop/admin*
+
+# Remove the unneeded directories from prestashop
+rm -rf /var/www/html/prestashop/install
+rm -rf /var/www/html/prestashop/docs
+rm -f /var/www/html/prestashop/README.md
+
+# Replace the legal banners
+replace /etc motd general/legal_banner.txt
+replace /etc issue general/legal_banner.txt
+replace /etc issue.net general/legal_banner.txt
+
+# Disable other firewalls
+# (--now also runs a start/stop with the enable/disable)
+systemctl disable --now firewalld
+systemctl disable --now ufw
+
+# Automatically apply IPTABLES_SCRIPT on boot
+systemctl enable --now ccdc_firewall.service
+
+yum update && yum upgrade -y
+yum install -y screen netcat aide
