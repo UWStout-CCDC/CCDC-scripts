@@ -11,7 +11,7 @@ then
 fi
 
 #BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master"
-BASE_URL="https://raw.githubusercontent.com/CCDC-Defense/CCDC-scripts/splunk-automation" # Used for testing in branch
+BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/splunk-automation" # Used for testing in branch
 
 # Changing default admin password
 cd /opt/splunk/bin
@@ -35,7 +35,7 @@ yum makecache
 yum install iptables wget git aide net-tools -y
 
 # Install scripts
-wget wget $BASE_URL/linux/init.sh -O init.sh
+wget $BASE_URL/linux/init.sh -O init.sh
 chmod +x init.sh
 ./init.sh
 
