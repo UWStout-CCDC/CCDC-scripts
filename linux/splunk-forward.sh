@@ -35,7 +35,7 @@ do
 done
 
 # Start the splunk forwarder, and automatically accept the license
-./splunk start --accept-license --answer-yes --auto-ports --no-prompt --seed-password $PASSWD
+./splunk start --accept-license --answer-yes --auto-ports --no-prompt
 # Add the server to forward to (ip needs to be the first param)
 ./splunk add forward-server "$SPLUNK_SERVER_IP":9997 # User will have to input the same creds here
 # Server to poll updates from (same as above, but a different port)
