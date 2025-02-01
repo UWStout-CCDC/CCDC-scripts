@@ -149,6 +149,15 @@ RemainAfterExit=yes
 WantedBy=multi-user.target
 EOF
 
+
+
+#######################################
+#
+#          PRESTASHOP_CONFIG
+#
+#######################################
+
+
 # Zip up the /var/www/html directory and move it to /bkp
 # Check if the /bkp directory exists, if it does not, create it
 if [ ! -d "/bkp" ]; then
@@ -172,6 +181,59 @@ rm -rf /var/www/html/prestashop/admin*
 rm -rf /var/www/html/prestashop/install
 rm -rf /var/www/html/prestashop/docs
 rm -f /var/www/html/prestashop/README.md
+
+# edit the /etc/httpd/conf/httpd.conf file and add hardening options for prestashop
+# Add the following to the end of the file
+cat <<EOF >> /etc/httpd/conf/httpd.conf
+# Disable config folder access
+<Directory "/var/www/http/prestashop/config">
+    Order Deny,Allow
+    Deny from all
+</Directory>
+
+
+# Disable HTTP Methods
+<LimitExcept GET POST HEAD>
+    Order Deny,Allow
+    Deny from all
+</LimitExcept>
+
+# Prevent access to sensitive files
+<FilesMatch "\.(env|ini|log|bak|swp|sql|git)">
+    Order Allow,Deny
+    Deny from all
+</FilesMatch>
+
+# Disable directory listing
+<IfModule autoindex_module>
+    Options -Indexes
+</IfModule>
+
+EOF
+
+# Edit the /etc/httpd/conf.d/php.conf file and add the following to the end of the file
+cat <<EOF >> /etc/httpd/conf.d/php.conf
+# Disable PHP engine in the uploads directory
+<Directory "/var/www/html/prestashop/upload">
+    php_flag engine off
+</Directory>
+
+# Disable PHP engine in the download directory
+<Directory "/var/www/html/prestashop/download">
+    php_flag engine off
+</Directory>
+EOF
+
+# Restart the httpd service
+systemctl restart httpd
+
+
+#########################################
+#
+#         END PRESTASHOP_CONFIG
+#
+#########################################
+
 
 # Replace the legal banners
 replace /etc motd general/legal_banner.txt
