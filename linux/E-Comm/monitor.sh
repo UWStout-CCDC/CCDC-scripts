@@ -42,6 +42,12 @@ if [ ! -d /ccdc/scripts/monitor ]; then
   mkdir -p /ccdc/scripts/monitor
 fi
 
+# Check if the tmp directory exists
+if [ ! -d /ccdc/tmp ]; then
+  echo "Tmp directory does not exist, creating now..."
+  mkdir -p /ccdc/tmp
+fi
+
 # Install the monitor scripts
 wget $BASE_URL/linux/E-Comm/monitor/bashrc.sh -O /ccdc/scripts/monitor/bashrc.sh
 wget $BASE_URL/linux/E-Comm/monitor/binaries.sh -O /ccdc/scripts/monitor/binaries.sh
