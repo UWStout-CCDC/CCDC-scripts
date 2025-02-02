@@ -303,6 +303,10 @@ yum update && yum upgrade -y
 yum install -y screen netcat aide
 
 # Set up AIDE
+echo "Initializing AIDE..."
+# add /var/www/html to the aide.conf file
+echo "/var/www/html CONTENT_EX" >> /etc/aide.conf
+echo "/ccdc CONTENT_EX" >> /etc/aide.conf
 aide --init
 mv /var/lib/aide/aide.db.new.gz /var/lib/aide/aide.db.gz
 
