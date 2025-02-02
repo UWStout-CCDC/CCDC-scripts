@@ -221,6 +221,15 @@ EOF
 systemctl restart httpd
 
 
+echo "Zipping up edited /var/www/html..."
+tar -czf /bkp/html-changed.tar.gz /var/www/html
+
+
+# zip up the /etc/httpd directory and move it to /bkp
+echo "Zipping up edited /etc/httpd..."
+tar -czf /bkp/httpd-changed.tar.gz /etc/httpd
+
+
 #########################################
 #
 #         END PRESTASHOP_CONFIG
