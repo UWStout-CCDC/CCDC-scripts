@@ -260,7 +260,7 @@ mv /var/lib/aide/aide.db.new.gz /var/lib/aide/aide.db.gz
 
 echo "Setting up AIDE cron job..."
 # Set up cron job for AIDE
-echo "0 4 * * * /usr/sbin/aide --check > /tmp/aide.log && mv /tmp/aide.log /root/aide.log" > /etc/cron.d/aide
+echo "*/5 * * * * /usr/sbin/aide --check > /tmp/aide.log && mv /tmp/aide.log /root/aide.log" > /etc/cron.d/aide
 
 
 # Set up ClamAV
