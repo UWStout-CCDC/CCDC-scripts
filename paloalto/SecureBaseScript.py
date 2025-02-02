@@ -27,14 +27,13 @@ set deviceconfig system permitted-ip """+permitted_ip+"""
 set deviceconfig system dns-setting servers primary 9.9.9.9
 set deviceconfig system dns-setting servers secondary 149.112.112.112
 delete mgt-config users administrator
-set mgt-config users admin password
 set deviceconfig system service disable-telnet yes
 set deviceconfig system service disable-http yes
 set deviceconfig system service disable-https no
 set deviceconfig system service disable-ssh no
 set deviceconfig system login-banner "UNAUTHORIZED ACCESS TO THIS DEVICE IS PROHIBITED. You must have explicit, authorized permission to access or configure this device. Unauthorized attempts and actions to access or use this system may result in civil and/or criminal penalties. All activities performed on this device are logged and monitored."
 set deviceconfig system timezone US/Central
-set network profiles zone-protection-profile Default discard-overlapping-tcp-segment-mismatch yes discard-unknown-option yes tcp-reject-non-syn yes flood tcp-syn enable yes syn-cookies maximal-rate 500
+set network profiles zone-protection-profile Default discard-overlapping-tcp-segment-mismatch yes discard-unknown-option yes tcp-reject-non-syn yes flood tcp-syn enable yes
 set network profiles zone-protection-profile Default flood icmp enable yes
 set network profiles zone-protection-profile Default flood udp enable yes
 set network profiles zone-protection-profile Default flood other-ip enable yes
@@ -42,139 +41,54 @@ set network profiles zone-protection-profile Default flood icmpv6 enable yes
 set network profiles interface-management-profile none
 set network interface ethernet ethernet1/3 layer3 interface-management-profile none
 set network interface ethernet ethernet1/2 layer3 interface-management-profile none
-set network interface ethernet eth1/2 ipv6 enabled yes
-set network interface ethernet eth1/4 ipv6 enabled yes
-set network interface ethernet eth1/1 ipv6 enabled yes
-set network interface ethernet eth1/2 ipv6 address fd00:1::1/64
-set network interface ethernet eth1/4 ipv6 address fd00:2::1/64
-set network interface ethernet eth1/1 ipv6 address fd00:3::1/64
-set network interface ethernet eth1/2 ipv6 ndp-profile default
-set network interface ethernet eth1/4 ipv6 ndp-profile default
-set network interface ethernet eth1/1 ipv6 ndp-profile default
-set network virtual-router default routing-table ipv6 static-route Internal route fd00:1::/64 interface eth1/2 nexthop none
-set network virtual-router default routing-table ipv6 static-route User route fd00:2::/64 interface eth1/4 nexthop none
-set network virtual-router default routing-table ipv6 static-route Public route fd00:3::/64 interface eth1/1 nexthop none
-delete rulebase security rules Any-Any
-delete rulebase security rules LAN2DMZ
-delete rulebase security rules DMZ2LAN
-delete rulebase security rules any2any
-set address Private1 ip-range 10.0.0.0-10.255.255.255
-set address Private2 ip-range 172.16.0.0-172.16.255.255
-set address Private3 ip-range 192.168.0.0-192.168.255.255
-set rulebase security rules QuadNine action allow from any to any source any destination 9.9.9.9
-set rulebase security rules QuadNine application dns service application-default
-set rulebase security rules DNSoutBlock action allow from LAN to EXTERNAL source any destination any profile-setting profiles spyware strict virus default vulnerability strict
-set rulebase security rules DNSoutBlock action allow from DMZ to EXTERNAL source any destination any
-set rulebase security rules DNSoutBlock application DNS service application-default
-set rulebase security rules NTPandSYSLOGandDNS action allow from LAN to DMZ source any destination any profile-setting profiles spyware strict virus default vulnerability strict
-set rulebase security rules NTPandSYSLOGandDNS action allow from DMZ to LAN source any destination
-set rulebase security rules NTPandSYSLOGandDNS application ntp service application-default
-set rulebase security rules NTPandSYSLOGandDNS application syslog service application-default
-set rulebase security rules NTPandSYSLOGandDNS application dns service application-default
-set rulebase security rules NTPandSYSLOGandDNS application ssl service application-default
-set rulebase security rules NTPandSYSLOGandDNS application web-browsing service application-default
-set rulebase security rules CentOStoUbuntuDB action allow from any to any source 172.20.240.11 destination 172.25."""+team_num+""".23 profile-setting profiles spyware strict virus default vulnerability strict
-set rulebase security rules CentOStoUbuntuDB from any source 172.25."""+team_num+""".11
-set rulebase security rules CentOStoUbuntuDB application any service any
-set rulebase security rules PrivateIPOutNoNo action deny from LAN to External source any destination Private1
-set rulebase security rules PrivateIPOutNoNo action deny from LAN to External source any destination Private2
-set rulebase security rules PrivateIPOutNoNo action deny from DMZ to External source any destination Private3
-set rulebase security rules PrivateIPOutNoNo application any service any
-set rulebase security rules PaloAltoOut action allow from LAN to External source 172.20.242.150 destination any
-set rulebase security rules PaloAltoOut action allow from LAN to DMZ source 172.20.242.150 destination any
-set rulebase security rules PaloAltoOut application paloalto-updates service any
-set rulebase security rules PaloAltoOut application dns service any
-set rulebase security rules PaloAltoOut application ntp service any
-set rulebase security rules Win2019ADExternal action allow from External to External source 172.31."""+team_num+""".27 destination any
-set rulebase security rules Win2019ADExternal application any service any
-set rulebase security rules CentOSin action allow from External to DMZ source any destination 172.25."""+team_num+""".11 profile-setting profiles spyware strict virus default vulnerability strict
-set rulebase security rules CentOSin application ssl service application-default
-set rulebase security rules CentOSin application web-browsing service application-default
-set rulebase security rules 2019DNStoUbuntuDNS action allow from DMZ to LAN source 172.20.242.200 destination 172.20.240.20 profile-setting profiles spyware strict virus default vulnerability strict
-set rulebase security rules 2019DNStoUbuntuDNS application dns service application-default
-set rulebase security rules DEBIANtoUBUNTU action allow from LAN to DMZ source 172.20.240.20 destination 172.20.242.10 profile-setting profiles spyware strict virus default vulnerability strict
-set rulebase security rules DEBIANtoUBUNTU application mysql service application-default
-set rulebase security rules DEBIANtoUBUNTU to External destination 172.25."""+team_num+""".10
-set rulebase security rules DEBIANtoUBUNTU to DMZ
-set rulebase security rules UbuntuDNSto2019DNS action allow from DMZ to LAN source 172.20.242.10 destination 172.20.242.200 profile-setting profiles spyware strict virus default vulnerability strict
-set rulebase security rules UbuntuDNSto2019DNS application dns service application-default
-set rulebase security rules UbuntuDNSto2019DNS application ntp service application-default
-set rulebase security rules UbuntuDNSto2019DNS application active-directory service application-default
-set rulebase security rules UbuntuDNSto2019DNS application ldap service application-default
-set rulebase security rules UbuntuDNSto2019DNS application ms-ds-smb service application-default
-set rulebase security rules UbuntuDNSto2019DNS application msrpc service application-default
-set rulebase security rules UbuntuDNSto2019DNS application ms-ds-smb service application-default
-set rulebase security rules UbuntuDNSto2019DNS application netbios-ss service application-default
-set rulebase security rules UbuntuDNSto2019DNS application netbios-dg service application-default
-set rulebase security rules CentOSDNSto2019DNS action allow from DMZ to LAN source 172.20.241.30 destination 172.20.242.200 profile-setting profiles spyware strict virus default vulnerability strict
-set rulebase security rules CentOSDNSto2019DNS application dns service application-default
-set rulebase security rules CentOSDNSto2019DNS application ntp service application-default
-set rulebase security rules CentOSDNSto2019DNS application active-directory service application-default
-set rulebase security rules CentOSDNSto2019DNS application ldap service application-default
-set rulebase security rules CentOSDNSto2019DNS application ms-ds-smb service application-default
-set rulebase security rules CentOSDNSto2019DNS application msrpc service application-default
-set rulebase security rules CentOSDNSto2019DNS application netbios-ss service application-default
-set rulebase security rules CentOSDNSto2019DNS application netbios-dg service application-default
-set rulebase security rules UbuntuDNSin action allow from External to DMZ source any destination 172.25."""+team_num+""".23 profile-setting profiles spyware strict virus default vulnerability strict
-set rulebase security rules UbuntuDNSin application dns service application-default
-set rulebase security rules FedoraWebin action allow from External to LAN source any destination 172.25."""+team_num+""".39 profile-setting profiles spyware strict virus default vulnerability strict
-set rulebase security rules FedoraWebin application web-browsing service application-default
-set rulebase security rules FedoraWebin application smtp service application-default
-set rulebase security rules FedoraWebin application pop3 service application-default
-set rulebase security rules FedoraWebin application ssl service application-default
-set rulebase security rules FedoraWebin application imap service application-default
-set rulebase security rules 2019DNSin action allow from External to LAN source any destination 172.25."""+team_num+""".27 profile-setting profiles spyware strict virus default vulnerability strict
-set rulebase security rules 2019DNSin application dns service application-default
-set rulebase security rules SERVERout-2019AD action allow from LAN to External source 172.20.242.200 destination any profile-setting profiles spyware strict virus default vulnerability strict
-set rulebase security rules SERVERout-2019AD application ssl service application-default
-set rulebase security rules SERVERout-2019AD application ms-update service application-default
-set rulebase security rules SERVERout-2019AD application dns service application-default
-set rulebase security rules SERVERout-2019AD application web-browsing service application-default
-set rulebase security rules SERVERout-Fedora action allow from LAN to External source 172.20.241.39 destination any profile-setting profiles spyware strict virus default vulnerability strict
-set rulebase security rules SERVERout-Fedora application pop3 service application-default
-set rulebase security rules SERVERout-Fedora application imap service application-default
-set rulebase security rules SERVERout-Fedora application dns service application-default
-set rulebase security rules SERVERout-Fedora application ocsp service application-default
-set rulebase security rules SERVERout-Fedora application smtp service application-default
-set rulebase security rules SERVERout-Fedora application ssh service application-default
-set rulebase security rules SERVERout-Fedora application github service application-default
-set rulebase security rules SERVERout-Fedora application git-base service application-default
-set rulebase security rules SERVERout-Fedora application ssl service application-default
-set rulebase security rules SERVERout-Fedora application subversion service application-default
-set rulebase security rules SERVERout-Fedora application sourceforge service application-default
-set rulebase security rules SERVERout-Fedora application apt-get service application-default
-set rulebase security rules SERVERout-Fedora application web-browsing service application-default
-set rulebase security rules DMZout-CentOS action allow from DMZ to External source 172.20.241.30 destination any profile-setting profiles spyware strict virus default vulnerability strict
-set rulebase security rules DMZout-CentOS application ssl service application-default
-set rulebase security rules DMZout-CentOS application ftp service application-default
-set rulebase security rules DMZout-CentOS application yum service application-default
-set rulebase security rules DMZout-CentOS application github service application-default
-set rulebase security rules DMZout-CentOS application git-base service application-default
-set rulebase security rules DMZout-CentOS application ssh service application-default
-set rulebase security rules DMZout-CentOS application web-browsing service application-default
-set rulebase security rules DMZout-Ubuntu action allow from DMZ to External source 172.20.242.10 destination any profile-setting profiles spyware strict virus default vulnerability strict
-set rulebase security rules DMZout-Ubuntu application dns service application-default
-set rulebase security rules DMZout-Ubuntu application web-browsing service application-default
-set rulebase security rules DMZout-Ubuntu application ssl service application-default
-set rulebase security rules DMZout-Ubuntu application apt-get service application-default
-set rulebase security rules INTERZONELAN action allow from LAN to LAN source any destination any
-set rulebase security rules INTERZONELAN application any service any
-set rulebase security rules INTERZONEDMZ action allow from DMZ to DMZ source any destination any
-set rulebase security rules INTERZONEDMZ application any service any
-set rulebase security rules AllowPublic2InternalDNS action allow from Public to Internal source any destination 172.20.240.20 profile-setting profiles spyware strict virus default vulnerability strict
-set rulebase security rules AllowPublic2InternalDNS application dns service application-default
-set rulebase security rules AllowUser2InternalDNS action allow from User to Internal source any destination 172.20.242.200 profile-setting profiles spyware strict virus default vulnerability strict
-set rulebase security rules AllowUser2InternalDNS application dns service application-default
-set rulebase security rules AllowLDAPFromPublic2User action allow from Public to User source 172.20.242.150 destination 172.20.242.200 profile-setting profiles spyware strict virus default vulnerability strict
-set rulebase security rules AllowLDAPFromPublic2User application ldap service application-default
-set rulebase security rules AllowSplunkTraffic action allow from Internal to Public source any destination 172.20.242.10 profile-setting profiles spyware strict virus default vulnerability strict
-set rulebase security rules AllowSplunkTraffic from User
-set rulebase security rules AllowSplunkTraffic application splunk service application-default
-set rulebase security rules DENYALLEXTERNAL action deny from External to any source any destination any
-set rulebase security rules DENYALLEXTERNAL application any service any
-set rulebase security rules DENYALL action deny from any to any source any destination any
-set rulebase security rules DENYALL application any service any
+set network interface ethernet ethernet1/2 layer3 ipv6 enabled yes
+set network interface ethernet ethernet1/4 layer3 ipv6 enabled yes
+set network interface ethernet ethernet1/1 layer3 ipv6 enabled yes
+set network interface ethernet ethernet1/2 layer3 ipv6 address fd00:1::1/64
+set network interface ethernet ethernet1/4 layer3 ipv6 address fd00:2::1/64
+set network interface ethernet ethernet1/1 layer3 ipv6 address fd00:3::1/64
+set network virtual-router default routing-table ipv6 static-route Internal destination fd00:1::/64 interface eth1/2
+set network virtual-router default routing-table ipv6 static-route User destination fd00:2::/64 interface eth1/4
+set network virtual-router default routing-table ipv6 static-route Public destination fd00:3::/64 interface eth1/1
+delete rulebase security
+set rulebase security rules AllowICMP action allow from any to any source any destination any
+set rulebase security rules AllowICMP application ping
+set rulebase security rules AllowICMP application icmp
+set rulebase security rules AllowNTP allow from any to any source any destination any
+set rulebase security rules AllowNTP application ntp service application-default
+set rulebase security rules AllowInternet action allow from User to External source any destination any profile-setting profiles spyware strict virus default vulnerability
+set rulebase security rules AllowInternet action allow from Public to External source any destination any profile-setting profiles spyware strict virus default vulnerability
+set rulebase security rules AllowInternet action allow from Internal to External source any destination any profile-setting profiles spyware strict virus default vulnerability
+set rulebase security rules AllowInternet application any service service-http
+set rulebase security rules AllowInternet application any service service-https
+set rulebase security rules AllowDNSOutbound action allow from Internal to External source any destination any
+set rulebase security rules AllowDNSOutbound action allow from User to External source any destination any
+set rulebase security rules AllowDNSOutbound action allow from Public to External source any destination any
+set rulebase security rules AllowDNSOutbound application dns service application-default
+set rulebase security rules AllowDNSInbound action allow from External to Internal source any destination 172.25."""+team_num+20+""".20
+set rulebase security rules AllowDNSInbound application dns service application-default
+set rulebase security rules AllowHTTPSInbound action allow from External to Public source any destination 172.25."""+team_num+20+""".11
+set rulebase security rules AllowHTTPSInbound application any service service-https
+set rulebase security rules AllowHTTPSInbound application any service service-http
+set rulebase security rules AllowMailInbound action allow from External to Public source any destination 172.25."""+team_num+20+""".39
+set rulebase security rules AllowMailInbound application pop3 service application-default
+set rulebase security rules AllowMailInbound application smtp service application-default
+set rulebase security rules AllowMailInbound application imap service application-default
+set rulebase security rules AllowMailInbound application smtps service application-default
+set rulebase security rules AllowMailInbound application pop3s service application-default
+set rulebase security rules AllowInboundWindows action allow from External to User source any destination 172.25."""+team_num+20+""".27
+set rulebase security rules AllowInboundWindows application ldap service application-default
+set rulebase security rules AllowInboundWindows application ssh service application-default
+set rulebase security rules AllowScoringSplunk action allow from External to Public source any destination 172.25."""+team_num+20+""".9
+set rulebase security rules AllowScoringSplunk application splunk service application-default
+set rulebase security rules DENYOUTBOUND action deny from Internal to External source any destination any
+set rulebase security rules DENYOUTBOUND action deny from User to External source any destination any
+set rulebase security rules DENYOUTBOUND action deny from Public to External source any destination any
+set rulebase security rules DENYINBOUND action deny from External to Internal source any destination any
+set rulebase security rules DENYINBOUND action deny from External to User source any destination any
+set rulebase security rules DENYINBOUND action deny from External to Public source any destination any
 commit
+set mgt-config users admin password
 """
   command_file.write(commands)
   print("File is written to PAConfig.txt")
