@@ -7,7 +7,7 @@ CCDC_ETC="$CCDC_DIR/etc"
 SCRIPT_DIR="/ccdc/scripts"
 
 
-if [[ \$EUID -ne 0 ]]
+if [[ $EUID -ne 0 ]]
 then
   printf 'Must be run as root, exiting!\n'
   exit 1
@@ -68,6 +68,10 @@ bash $USER_LOCK_SCRIPT
 # Grab script so it's guarnteed to be in /ccdc/scripts/linux
 wget -O $SCRIPT_DIR/linux/init.sh $BASEURL/linux/E-Comm/init.sh
 chmod +x $SCRIPT_DIR/linux/init.sh
+
+# Get PrestaShop sql password change script
+wget -O $SCRIPT_DIR/linux/change_sql_pass.sh $BASEURL/linux/E-Comm/change_sql_pass.sh
+chmod +x $SCRIPT_DIR/linux/change_sql_pass.sh
 
 # Run mysql_secure_installation to secure the MySQL installation and auto answer the questions, leaving password as blank
 # This is done to ensure that the MySQL installation is secure
@@ -160,19 +164,23 @@ EOF
 
 # Zip up the /var/www/html directory and move it to /bkp
 # Check if the /bkp directory exists, if it does not, create it
-if [ ! -d "/bkp" ]; then
-    mkdir /bkp
+if [ ! -d "/bkp/original" ]; then
+    mkdir -p /bkp/original
 fi
 echo "Zipping up /var/www/html..."
-tar -czf /bkp/html.tar.gz /var/www/html
+tar -czf /bkp/original/html.tar.gz /var/www/html
 
 
 # zip up the /etc/httpd directory and move it to /bkp
 echo "Zipping up /etc/httpd..."
-tar -czf /bkp/httpd.tar.gz /etc/httpd
+tar -czf /bkp/original/httpd.tar.gz /etc/httpd
 
 # backup the mysql database
-mysqldump -u root -p$DEFAULT_PRESTA_PASS --all-databases > /bkp/ecomm.sql
+if [ -z "$DEFAULT_PRESTA_PASS" ]; then
+  mysqldump -u root --all-databases > /bkp/ecomm.sql
+else
+  mysqldump -u root -p$DEFAULT_PRESTA_PASS --all-databases > /bkp/ecomm.sql
+fi
 
 # Remove prestashop admin directory, its in /var/www/html/prestashop and it will have random characters after admin
 rm -rf /var/www/html/prestashop/admin*
@@ -188,6 +196,36 @@ cat <<EOF >> /etc/httpd/conf/httpd.conf
 # Disable config folder access
 <Directory "/var/www/html/prestashop/config">
     Order Deny,Allow
+    Deny from all
+</Directory>
+
+<Directory /var/www/html/prestashop/app>
+    Order Allow,Deny
+    Deny from all
+</Directory>
+
+<Directory /var/www/html/prestashop/var>
+    Order Allow,Deny
+    Deny from all
+</Directory>
+
+<Directory /var/www/html/prestashop/translations>
+    Order Allow,Deny
+    Deny from all
+</Directory>
+
+<Directory /var/www/html/prestashop/src>
+    Order Allow,Deny
+    Deny from all
+</Directory>
+
+<Directory /var/www/html/prestashop/vendor>
+    Order Allow,Deny
+    Deny from all
+</Directory>
+
+<Directory /var/www/html/prestashop/install>
+    Order Allow,Deny
     Deny from all
 </Directory>
 
@@ -217,17 +255,34 @@ cat <<EOF >> /etc/httpd/conf.d/php.conf
 </Directory>
 EOF
 
+# Check if the change_sql_pass.sh script exists, if it is then run it
+if [ -f "$SCRIPT_DIR/linux/change_sql_pass.sh" ]; then
+    bash $SCRIPT_DIR/linux/change_sql_pass.sh $DEFAULT_PRESTA_PASS
+fi
+
+
 # Restart the httpd service
 systemctl restart httpd
 
 
-echo "Zipping up edited /var/www/html..."
-tar -czf /bkp/html-changed.tar.gz /var/www/html
+if [ ! -d "/bkp/new" ]; then
+    mkdir -p /bkp/new
+fi
 
+
+echo "Zipping up edited /var/www/html..."
+tar -czf /bkp/new/html-changed.tar.gz /var/www/html
 
 # zip up the /etc/httpd directory and move it to /bkp
 echo "Zipping up edited /etc/httpd..."
-tar -czf /bkp/httpd-changed.tar.gz /etc/httpd
+tar -czf /bkp/new/httpd-changed.tar.gz /etc/httpd
+
+# backup the mysql database
+if [ -z "$DEFAULT_PRESTA_PASS" ]; then
+  mysqldump -u root --all-databases > /bkp/ecomm-changed.sql
+else
+  mysqldump -u root -p$DEFAULT_PRESTA_PASS --all-databases > /bkp/ecomm-changed.sql
+fi
 
 
 #########################################
