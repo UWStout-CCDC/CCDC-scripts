@@ -36,6 +36,12 @@ if [ ! -f /usr/bin/tmux ]; then
   yum install -y tmux
 fi
 
+# Check if the monitor scripts directory exists
+if [ ! -d /ccdc/scripts/monitor ]; then
+  echo "Monitor scripts directory does not exist, creating now..."
+  mkdir -p /ccdc/scripts/monitor
+fi
+
 # Install the monitor scripts
 wget $BASE_URL/linux/E-Comm/monitor/bashrc.sh -O /ccdc/scripts/monitor/bashrc.sh
 wget $BASE_URL/linux/E-Comm/monitor/binaries.sh -O /ccdc/scripts/monitor/binaries.sh
@@ -53,21 +59,13 @@ wget $BASE_URL/linux/E-Comm/monitor/processes.sh -O /ccdc/scripts/monitor/proces
 tmux new-session -d -s monitor
 
 # create a new window for each script
-tmux send-keys -t monitor "bash /ccdc/scripts/monitor/bashrc.sh" C-m
-tmux split-window -h -t monitor
-tmux send-keys -t monitor "bash /ccdc/scripts/monitor/binaries.sh" C-m
-tmux split-window -v -t monitor
-tmux send-keys -t monitor "bash /ccdc/scripts/monitor/connections.sh" C-m
-tmux split-window -v -t monitor
-tmux send-keys -t monitor "bash /ccdc/scripts/monitor/cronjobs.sh" C-m
-tmux split-window -v -t monitor
-tmux send-keys -t monitor "bash /ccdc/scripts/monitor/file_changes.sh" C-m
-tmux split-window -v -t monitor
-tmux send-keys -t monitor "bash /ccdc/scripts/monitor/http_logs.sh" C-m
-tmux split-window -v -t monitor
-tmux send-keys -t monitor "bash /ccdc/scripts/monitor/logins.sh" C-m
-tmux split-window -v -t monitor
-tmux send-keys -t monitor "bash /ccdc/scripts/monitor/processes.sh" C-m
+tmux new-window -t monitor:1 -n "binaries" "bash /ccdc/scripts/monitor/binaries.sh"
+tmux new-window -t monitor:2 -n "connections" "bash /ccdc/scripts/monitor/connections.sh"
+tmux new-window -t monitor:3 -n "cronjobs" "bash /ccdc/scripts/monitor/cronjobs.sh"
+tmux new-window -t monitor:4 -n "file_changes" "bash /ccdc/scripts/monitor/file_changes.sh"
+tmux new-window -t monitor:5 -n "http_logs" "bash /ccdc/scripts/monitor/http_logs.sh"
+tmux new-window -t monitor:6 -n "logins" "bash /ccdc/scripts/monitor/logins.sh"
+tmux new-window -t monitor:7 -n "processes" "bash /ccdc/scripts/monitor/processes.sh"
 
 # attach to the tmux session
 tmux attach -t monitor
