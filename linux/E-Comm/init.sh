@@ -187,9 +187,9 @@ tar -czf /bkp/original/httpd.tar.gz /etc/httpd
 
 # backup the mysql database
 if [ -z "$DEFAULT_PRESTA_PASS" ]; then
-  mysqldump -u root --all-databases > /bkp/ecomm.sql
+  mysqldump -u root --all-databases > /bkp/original/ecomm.sql
 else
-  mysqldump -u root -p$DEFAULT_PRESTA_PASS --all-databases > /bkp/ecomm.sql
+  mysqldump -u root -p$DEFAULT_PRESTA_PASS --all-databases > /bkp/original/ecomm.sql
 fi
 
 # Remove prestashop admin directory, its in /var/www/html/prestashop and it will have random characters after admin
@@ -289,9 +289,9 @@ tar -czf /bkp/new/httpd.tar.gz /etc/httpd
 
 # backup the mysql database
 if [ -z "$DEFAULT_PRESTA_PASS" ]; then
-  mysqldump -u root --all-databases > /bkp/ecomm-changed.sql
+  mysqldump -u root --all-databases > /bkp/new/ecomm.sql
 else
-  mysqldump -u root -p$DEFAULT_PRESTA_PASS --all-databases > /bkp/ecomm-changed.sql
+  mysqldump -u root -p$DEFAULT_PRESTA_PASS --all-databases > /bkp/new/ecomm.sql
 fi
 
 
