@@ -81,7 +81,6 @@ done < /etc/passwd
 # Grab script so it's guarnteed to be in /ccdc/scripts/linux
 get linux/init.sh
 
-
 # Get PrestaShop sql password change script
 wget -O $SCRIPT_DIR/linux/change_sql_pass.sh $BASEURL/linux/E-Comm/change_sql_pass.sh
 chmod +x $SCRIPT_DIR/linux/change_sql_pass.sh
