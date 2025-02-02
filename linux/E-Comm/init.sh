@@ -1,5 +1,5 @@
 #!/bin/bash
-BASEURL=https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master #TODO: Update this URL to the correct branch
+BASEURL=https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/fix/ecomm-init #TODO: Update this URL to the correct branch
 read -p "Enter the default password for the PrestaShop database: " -s DEFAULT_PRESTA_PASS
 
 CCDC_DIR="/ccdc"
