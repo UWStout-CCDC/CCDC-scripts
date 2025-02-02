@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+# Version 2.0.1
 # Run this with your team number and then Putty into the Palo Alto. Enter "set cli scripting-mode on" and then "cofigure"
 # Then copy and past the output of the script. The first command increases the winow buffer size and the second command enters configure mode.
 # This script should be ran before competition and put the config txt file on GitHub.
@@ -47,18 +48,18 @@ set network interface ethernet ethernet1/1 layer3 ipv6 enabled yes
 set network interface ethernet ethernet1/2 layer3 ipv6 address fd00:1::1/64
 set network interface ethernet ethernet1/4 layer3 ipv6 address fd00:2::1/64
 set network interface ethernet ethernet1/1 layer3 ipv6 address fd00:3::1/64
-set network virtual-router default routing-table ipv6 static-route Internal destination fd00:1::/64 interface eth1/2
-set network virtual-router default routing-table ipv6 static-route User destination fd00:2::/64 interface eth1/4
-set network virtual-router default routing-table ipv6 static-route Public destination fd00:3::/64 interface eth1/1
+set network virtual-router default routing-table ipv6 static-route Internal destination fd00:1::/64 interface ethernet1/2
+set network virtual-router default routing-table ipv6 static-route User destination fd00:2::/64 interface ethernet1/4
+set network virtual-router default routing-table ipv6 static-route Public destination fd00:3::/64 interface ethernet1/1
 delete rulebase security
 set rulebase security rules AllowICMP action allow from any to any source any destination any
-set rulebase security rules AllowICMP application ping
-set rulebase security rules AllowICMP application icmp
+set rulebase security rules AllowICMP application ping service application-default
+set rulebase security rules AllowICMP application icmp service application-default
 set rulebase security rules AllowNTP allow from any to any source any destination any
 set rulebase security rules AllowNTP application ntp service application-default
-set rulebase security rules AllowInternet action allow from User to External source any destination any profile-setting profiles spyware strict virus default vulnerability
-set rulebase security rules AllowInternet action allow from Public to External source any destination any profile-setting profiles spyware strict virus default vulnerability
-set rulebase security rules AllowInternet action allow from Internal to External source any destination any profile-setting profiles spyware strict virus default vulnerability
+set rulebase security rules AllowInternet action allow from User to External source any destination any profile-setting profiles spyware strict virus default vulnerability default
+set rulebase security rules AllowInternet action allow from Public to External source any destination any profile-setting profiles spyware strict virus default vulnerability default
+set rulebase security rules AllowInternet action allow from Internal to External source any destination any profile-setting profiles spyware strict virus default vulnerability default
 set rulebase security rules AllowInternet application any service service-http
 set rulebase security rules AllowInternet application any service service-https
 set rulebase security rules AllowDNSOutbound action allow from Internal to External source any destination any
