@@ -1,5 +1,5 @@
 #!/bin/bash
-BASE_URL=https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/better-monitor.sh #TODO: Update this URL to the correct branch
+BASE_URL=https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master #TODO: Update this URL to the correct branch
 
 if [ $(whoami) != "root" ];then
   echo "THIS SCRIPT MUST BE RUN AS ROOT!"
@@ -21,6 +21,9 @@ if [ -z "$(which apt)" ]; then
             if [ -z "$(which aide)" ]; then
                 dnf install aide -y
             fi
+            if [ -z "$(which tmux)" ]; then
+                dnf install tmux -y
+            fi
         fi
     else
         if [ -z "$(which netstat)" ]; then
@@ -32,6 +35,9 @@ if [ -z "$(which apt)" ]; then
         if [ -z "$(which aide)" ]; then
             yum install aide -y
         fi
+        if [ -z "$(which tmux)" ]; then
+            yum install tmux -y
+        fi
     fi
 else
     if [ -z "$(which netstat)" ]; then
@@ -42,6 +48,9 @@ else
     fi
     if [ -z "$(which aide)" ]; then
         apt install aide -y
+    fi
+    if [ -z "$(which tmux)" ]; then
+        apt install tmux -y
     fi
 fi
 
@@ -56,6 +65,12 @@ fi
 if [ ! -d /ccdc/scripts/monitor ]; then
   echo "Monitor scripts directory does not exist, creating now..."
   mkdir -p /ccdc/scripts/monitor
+fi
+
+# Check if the tmp directory exists
+if [ ! -d /ccdc/tmp ]; then
+  echo "Tmp directory does not exist, creating now..."
+  mkdir -p /ccdc/tmp
 fi
 
 # Install the monitor scripts

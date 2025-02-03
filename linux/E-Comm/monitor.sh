@@ -1,5 +1,5 @@
 #!/bin/bash
-BASE_URL=https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/better-monitor.sh #TODO: Update this URL to the correct branch
+BASE_URL=https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master #TODO: Update this URL to the correct branch
 
 if [ $(whoami) != "root" ];then
   echo "THIS SCRIPT MUST BE RUN AS ROOT!"
