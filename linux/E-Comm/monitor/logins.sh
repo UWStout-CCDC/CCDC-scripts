@@ -26,7 +26,13 @@ do
     echo
     echo "MySQL USERS:"
     echo "------------"
-    mysql -e "SELECT User, Host FROM mysql.user;" -u $MYSQL_USER -p$MYSQL_PASS
+    # Check if MYSQL pass is blank
+    if [ -z $MYSQL_PASS ]
+    then
+        mysql -e "SELECT User, Host FROM mysql.user;" -u $MYSQL_USER
+    else
+        mysql -e "SELECT User, Host FROM mysql.user;" -u $MYSQL_USER -p$MYSQL_PASS
+    fi
     sleep 5
     clear
 done
