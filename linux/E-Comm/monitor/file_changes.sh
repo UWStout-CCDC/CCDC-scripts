@@ -7,7 +7,7 @@ do
         clear
         echo "CHANGES TO IMPORTANT FILES:"
         echo "--------------------------"
-        cat aide_output.txt
+        cat /ccdc/tmp/aide_output.txt
     fi
     sleep 20
 done
