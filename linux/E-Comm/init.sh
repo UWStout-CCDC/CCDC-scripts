@@ -202,7 +202,14 @@ rm -f /var/www/html/prestashop/README.md
 
 # edit the /etc/httpd/conf/httpd.conf file and add hardening options for prestashop
 # Add the following to the end of the file
-cat <<EOF >> /etc/httpd/conf/httpd.conf
+
+# Check if the changes have already been made
+if grep -q "Disable config folder access" /etc/httpd/conf/httpd.conf
+then
+    echo "Config folder access already disabled"
+else
+    echo "Disabling config folder access..."
+    cat <<EOF >> /etc/httpd/conf/httpd.conf
 # Disable config folder access
 <Directory "/var/www/html/prestashop/config">
     Order Deny,Allow
@@ -249,11 +256,19 @@ cat <<EOF >> /etc/httpd/conf/httpd.conf
 <IfModule autoindex_module>
     Options -Indexes
 </IfModule>
-
 EOF
+fi
+
+
 
 # Edit the /etc/httpd/conf.d/php.conf file and add the following to the end of the file
-cat <<EOF >> /etc/httpd/conf.d/php.conf
+# Check if the changes have already been made
+if grep -q "Disable PHP engine in the uploads directory" /etc/httpd/conf.d/php.conf
+then
+    echo "PHP engine already disabled in uploads directory"
+else
+    echo "Disabling PHP engine in uploads directory..."
+    cat <<EOF >> /etc/httpd/conf.d/php.conf
 # Disable PHP engine in the uploads directory
 <Directory "/var/www/html/prestashop/upload">
     php_flag engine off
@@ -264,12 +279,13 @@ cat <<EOF >> /etc/httpd/conf.d/php.conf
     php_flag engine off
 </Directory>
 EOF
+fi
+
 
 # Check if the change_sql_pass.sh script exists, if it is then run it
 if [ -f "$SCRIPT_DIR/linux/change_sql_pass.sh" ]; then
     bash $SCRIPT_DIR/linux/change_sql_pass.sh $DEFAULT_PRESTA_PASS
 fi
-
 
 # Restart the httpd service
 systemctl restart httpd
@@ -278,7 +294,6 @@ systemctl restart httpd
 if [ ! -d "/bkp/new" ]; then
     mkdir -p /bkp/new
 fi
-
 
 echo "Zipping up edited /var/www/html..."
 tar -czf /bkp/new/html.tar.gz /var/www/html
@@ -321,15 +336,48 @@ yum install -y screen netcat aide clamav tmux
 # Set up AIDE
 echo "Initializing AIDE..."
 # add /var/www/html to the aide.conf file
-echo "/var/www/html CONTENT_EX" >> /etc/aide.conf
-echo "/ccdc CONTENT_EX" >> /etc/aide.conf
+# Check if the changes have already been made
+if grep -q "/var/www/html" /etc/aide.conf
+then
+    echo "/var/www/html already in aide.conf"
+else
+    echo "/var/www/html CONTENT_EX" >> /etc/aide.conf
+fi
+
+# check if /ccdc is in the aide.conf file
+if grep -q "/ccdc" /etc/aide.conf
+then
+    echo "/ccdc already in aide.conf"
+else
+    echo "/ccdc CONTENT_EX" >> /etc/aide.conf
+fi
+
 aide --init
 mv /var/lib/aide/aide.db.new.gz /var/lib/aide/aide.db.gz
 
 echo "Setting up AIDE cron job..."
 # Set up cron job for AIDE
-echo "*/5 * * * * /usr/sbin/aide --check > /tmp/aide.log && mv /tmp/aide.log /root/aide.log" > /etc/cron.d/aide
+# Check if the cron job already exists
+if [ -f "/etc/cron.d/aide" ]; then
+    echo "AIDE cron job already exists"
+else
+    echo "Setting up AIDE cron job..."
+    echo "*/5 * * * * /usr/sbin/aide --check > /tmp/aide.log && mv /tmp/aide.log /root/aide.log" > /etc/cron.d/aide
+fi
 
+# Check if changes were already made to the network config file
+if grep -q "IPV6INIT=yes" /etc/sysconfig/network-scripts/ifcfg-eth0
+then
+    echo "Network config file already has IPv6 settings"
+else
+    echo "Setting up IPv6..."
+    # get the interface name
+    INTERFACE=$(ip route | grep default | awk '{print $5}')
+    echo "IPV6INIT=yes" >> /etc/sysconfig/network-scripts/ifcfg-$INTERFACE
+    echo "IPV6ADDR=fd00:3::70/64" >> /etc/sysconfig/network-scripts/ifcfg-$INTERFACE
+    echo "IPV6_DEFAULTGW=fd00:3::1" >> /etc/sysconfig/network-scripts/ifcfg-$INTERFACE
+    systemctl restart network
+fi
 
 # Set up ClamAV
 echo "Initializing ClamAV..."
