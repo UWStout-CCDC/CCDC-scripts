@@ -42,7 +42,10 @@ fi
 
 # Generate random password for the new MySQL user
 NEW_USER="prestashop_user"
-NEW_PASS=$(openssl rand -base64 24)
+NEW_PASS=$(openssl rand -base64 64)
+
+# Fileter out special characters from the password
+NEW_PASS=$(echo "$NEW_PASS" | tr -cd '[:alnum:]')
 
 # Create new MySQL user with random password and grant necessary permissions
 echo "Creating MySQL user and granting permissions..."
@@ -54,8 +57,8 @@ FLUSH PRIVILEGES;
 
 # Update the PrestaShop configuration file (parameters.php)
 echo "Updating PrestaShop parameters.php with the new username and password..."
-sed -i "s/'database_user' => '.*'/'database_user' => '$NEW_USER'/g" $PHP_FILE
-sed -i "s/'database_password' => '.*'/'database_password' => '$NEW_PASS'/g" $PHP_FILE
+sed -i "s/'database_user' => '.*'/'database_user' => '$NEW_USER'/g" "$PHP_FILE"
+sed -i "s/'database_password' => '.*'/'database_password' => '$NEW_PASS'/g" "$PHP_FILE"
 
 echo "MySQL user created and PrestaShop configuration updated successfully."
 
