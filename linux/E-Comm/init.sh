@@ -335,7 +335,7 @@ systemctl disable --now ufw
 ##################################################
 
 # Ensure NTP is installed and running
-yum install ntp ntpdate
+yum install ntp ntpdate -y
 chkconfig ntpd on
 ntpdate pool.ntp.org
 /etc/init.d/ntpd start
@@ -464,23 +464,7 @@ Systemctl daemon-reload
 
 
 # Bulk remove services
-yum remove xinetd
-yum remove telnet-server
-yum remove rsh-server
-yum remove telnet
-yum remove rsh-server
-yum remove rsh
-yum remove ypbind
-yum remove ypserv
-yum remove tftp-server
-yum remove cronie-anacron
-yum remove bind
-yum remove vsftpd
-yum remove dovecot
-yum remove squid
-yum remove net-snmpd
-yum remove postfix
-
+yum remove xinetd telnet-server rsh-server telnet rsh ypbind ypserv tftp-server cronie-anacron bind vsftpd dovecot squid net-snmpd postfix -y
 
 # Bulk disable services
 systemctl disable xinetd
