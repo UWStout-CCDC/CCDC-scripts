@@ -44,14 +44,14 @@ chmod +x init.sh
 
 # cron and at security
 echo -e "\e[33mSetting cron and at security\e[0m"
-rm /etc/cron.deny
-rm /etc/at.deny || echo "No at.deny to remove"
-
+echo "Locking down Cron"
 touch /etc/cron.allow
-echo "root" >> /etc/cron.allow
-
+chmod 600 /etc/cron.allow
+awk -F: '{print $1}' /etc/passwd | grep -v root > /etc/cron.deny
+echo "Locking down AT"
 touch /etc/at.allow
-echo "root" >> /etc/at.allow
+chmod 600 /etc/at.allow
+awk -F: '{print $1}' /etc/passwd | grep -v root > /etc/at.deny
 
 # Stop SSH
 echo -e "\e[33mStopping SSH\e[0m"
