@@ -127,7 +127,7 @@
 #
 ##  sudo find / -xdev -type f -perm -4000 -o -perm -2000 2>/dev/null
 #
--a always,exit -F path=SETUID_PROG_PATH -F perm=x -F auid>=500 -F auid!=4294967295 -k privileged
+# -a always,exit -F path=SETUID_PROG_PATH -F perm=x -F auid>=500 -F auid!=4294967295 -k privileged
 
 #Ensure auditd Collects Information on Exporting to Media (successful)
 -a always,exit -F arch=ARCH -S mount -F auid>=500 -F auid!=4294967295 -k export
