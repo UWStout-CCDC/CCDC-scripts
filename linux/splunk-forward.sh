@@ -1,11 +1,8 @@
 #!/bin/bash
 #
-# splunk.sh
-# Copyright (C) 2021 matthew <matthew@matthew-ubuntu>
+# splunk-forward.sh
 #
-# Distributed under terms of the MIT license.
-#
-# Install and configure the splunk forwarder
+# Scripted install and configuration of the splunk forwarder for the CCDC competition
 
 # TODO:
 # Fix outputs
