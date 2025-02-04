@@ -512,6 +512,12 @@ systemctl disable netfs
 # Disable Network File System (nfs)
 systemctl disable nfs
 
+##################################################
+#
+#           END CENTOS HARDENING
+#
+##################################################
+
 
 # Automatically apply IPTABLES_SCRIPT on boot
 systemctl enable --now ccdc_firewall.service
