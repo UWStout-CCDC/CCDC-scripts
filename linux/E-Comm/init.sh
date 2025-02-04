@@ -335,10 +335,8 @@ systemctl disable --now ufw
 ##################################################
 
 # Ensure NTP is installed and running
-yum install ntp ntpdate -y
-chkconfig ntpd on
+yum install ntpdate -y
 ntpdate pool.ntp.org
-/etc/init.d/ntpd start
 
 # Disable prelinking altogether for aide
 #
