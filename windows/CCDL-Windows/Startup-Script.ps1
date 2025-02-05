@@ -398,6 +398,9 @@ while ($global:jobs.Count -gt 0) {
 Start-LoggedJob -JobName "Synchronize System Time" -ScriptBlock {
     tzutil /s "Central Standard Time"
     w32tm /resync
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "System time synchronized."
+    Write-Host "--------------------------------------------------------------------------------"
 }
 
 # Prompt for new administrator password and confirmation
@@ -417,6 +420,9 @@ Start-LoggedJob -JobName "Change Admin Password" -ScriptBlock {
     # Change local administrator password
     $adminAccount = Get-LocalUser -Name "Administrator"
     Set-LocalUser -Name $adminAccount -Password $newAdminPassword
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "Administrator password changed."
+    Write-Host "--------------------------------------------------------------------------------"
 }
 
 # Disable guest account
@@ -424,14 +430,24 @@ Start-LoggedJob -JobName "Disable Guest Account" -ScriptBlock {
     $guestAccount = Get-LocalUser -Name "Guest"
     if ($guestAccount.Enabled) {
         Disable-LocalUser -Name "Guest"
+        Write-Host "--------------------------------------------------------------------------------"
         Write-Host "Guest account has been disabled."
+        Write-Host "--------------------------------------------------------------------------------"
     } else {
+        Write-Host "--------------------------------------------------------------------------------"
         Write-Host "Guest account is already disabled."
+        Write-Host "--------------------------------------------------------------------------------"
     }
 }
 
 # Set strong password policies
-Start-LoggedJob -JobName "Set Password Policies" -ScriptBlock { net accounts /minpwlen:12 /maxpwage:30 /minpwage:1 /uniquepw:5 /lockoutthreshold:5 }
+Start-LoggedJob -JobName "Set Password Policies" -ScriptBlock { 
+    net accounts /minpwlen:12 /maxpwage:30 /minpwage:1 /uniquepw:5 /lockoutthreshold:5 
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "Strong password policies set." 
+    Write-Host "--------------------------------------------------------------------------------"
+}
+
 
 # # Disable unnecessary services
 # $servicesToDisable = @("Spooler", "RemoteRegistry", "Fax")
@@ -448,6 +464,9 @@ Start-LoggedJob -JobName "Set Password Policies" -ScriptBlock { net accounts /mi
 Start-LoggedJob -JobName "Enable Windows Defender" -ScriptBlock {
     Set-MpPreference -DisableRealtimeMonitoring $false
     Set-MpPreference -PUAProtection Enabled
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "Windows Defender enabled with real-time protection and PUA protection."
+    Write-Host "--------------------------------------------------------------------------------"
 }
 
 # Enable Windows Firewall with basic rules
@@ -496,6 +515,10 @@ Start-LoggedJob -JobName "Configure Windows Firewall" -ScriptBlock {
     New-NetFirewallRule -DisplayName "DNS UDP OUT" -Direction Outbound -Action Allow -Program "C:\Windows\System32\dns.exe" -Enabled True -Profile Any -Protocol UDP
     New-NetFirewallRule -DisplayName "DNS OUT" -Direction Outbound -Action Allow -Enabled True -Profile Any -RemotePort 53 -Protocol UDP
     New-NetFirewallRule -DisplayName "DHCP" -Direction Outbound -Action Allow -Program "C:\Windows\System32\svchost.exe" -Enabled True -Profile Any -LocalPort 68 -RemotePort 67 -Protocol UDP
+    
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "Windows Firewall configured with basic rules."
+    Write-Host "--------------------------------------------------------------------------------"
 }
 
 # Disable SMBv1 to mitigate vulnerabilities
@@ -504,15 +527,26 @@ Start-LoggedJob -JobName "Disable SMBv1" -ScriptBlock {
     Disable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -NoRestart
     $regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters"
     Set-ItemProperty -Path $regPath -Name "SMB1" -Value 0
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "SMBv1 protocol disabled."
+    Write-Host "--------------------------------------------------------------------------------"
 }
 
 # Configure Remote Desktop settings (disable if not needed)
 Start-LoggedJob -JobName "Disable Remote Desktop" -ScriptBlock {
     Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 1
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "Remote Desktop Protocol disabled."
+    Write-Host "--------------------------------------------------------------------------------"
 }
 
 # Set account lockout policies
-Start-LoggedJob -JobName "Set Account Lockout Policies" -ScriptBlock { net accounts /lockoutthreshold:5 /lockoutduration:30 /lockoutwindow:30 }
+Start-LoggedJob -JobName "Set Account Lockout Policies" -ScriptBlock { 
+    net accounts /lockoutthreshold:5 /lockoutduration:30 /lockoutwindow:30 
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "Account lockout policies set."
+    Write-Host "--------------------------------------------------------------------------------"
+}
 
 # Enable audit policies for key events like login, account management, file system changes, and registry changes
 Start-LoggedJob -JobName "Enable Audit Policies" -ScriptBlock {
@@ -520,6 +554,10 @@ Start-LoggedJob -JobName "Enable Audit Policies" -ScriptBlock {
     AuditPol.exe /set /subcategory:"Account Management" /success:enable /failure:enable
     AuditPol.exe /set /subcategory:"File System" /success:enable /failure:enable
     AuditPol.exe /set /subcategory:"Registry" /success:enable /failure:enable
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "Audit policies for login, account management, file system changes, and registry changes enabled."
+    Write-Host "Audit policies for login and account management enabled."
+    Write-Host "--------------------------------------------------------------------------------"
 }
 
 # Remove unnecessary network shares
@@ -528,6 +566,10 @@ Start-LoggedJob -JobName "Remove Unnecessary Network Shares" -ScriptBlock {
         Write-Host "Removing share: $($_.Name)"
         Remove-SmbShare -Name $_.Name -Force
     }
+    # Write a full line of ------'s to separate the output
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "Unnecessary network shares removed."
+    Write-Host "--------------------------------------------------------------------------------"
 }
 
 # Enable Windows Firewall (reaffirm if previously configured)
@@ -539,6 +581,9 @@ Start-LoggedJob -JobName "Reaffirm Windows Firewall" -ScriptBlock {
 Start-LoggedJob -JobName "Disable IPv6" -ScriptBlock {
     Disable-NetAdapterBinding -Name "*" -ComponentID ms_tcpip6
     Set-NetIPv6Protocol -State Disabled
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "IPv6 disabled."
+    Write-Host "--------------------------------------------------------------------------------"
 }
 
 # Ensure Windows Update is set to automatic
@@ -546,6 +591,9 @@ Start-LoggedJob -JobName "Set Windows Update to Automatic" -ScriptBlock {
     Set-Service -Name wuauserv -StartupType Automatic
     Write-Host "Checking for Windows updates..."
     Install-WindowsUpdate -AcceptAll -Install
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "Windows Update set to automatic and updates installed."
+    Write-Host "--------------------------------------------------------------------------------"
 }
 
 # Install Windows updates
@@ -554,6 +602,9 @@ Start-LoggedJob -JobName "Install Windows Updates" -ScriptBlock {
     #sleep for 2 minute
     Start-Sleep -Seconds 120
     Install-WindowsUpdate -AcceptAll -Install
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "Windows updates installed."
+    Write-Host "--------------------------------------------------------------------------------"
 }
 
 # Secure and backup DNS to ccdc folder
@@ -562,6 +613,9 @@ Start-LoggedJob -JobName "Secure and Backup DNS" -ScriptBlock {
     dnscmd.exe /Config /SocketPoolSize 10000
     dnscmd.exe /Config /CacheLockingPercent 100
     dnscmd.exe /ZoneExport $zone "$ccdcPath\DNS\$zone.dns"
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "DNS secured and backed up."
+    Write-Host "--------------------------------------------------------------------------------"
 }
 
 # Backup AD
@@ -570,6 +624,9 @@ Start-LoggedJob -JobName "Backup Active Directory" -ScriptBlock {
     $backupPath = "$ccdcPath\AD\ADBackup"
     mkdir $backupPath 
     ntdsutil.exe "activate instance ntds" "ifm" "create full $backupPath" quit quit
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "Active Directory backed up."
+    Write-Host "--------------------------------------------------------------------------------"
 }
 
 # Backup SAM and System Hives
@@ -579,6 +636,9 @@ Start-LoggedJob -JobName "Backup SAM and System Hives" -ScriptBlock {
     mkdir $backupPath 
     reg save HKLM\SAM "$backupPath\SAM"
     reg save HKLM\SYSTEM "$backupPath\SYSTEM"
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "SAM and System hives backed up."
+    Write-Host "--------------------------------------------------------------------------------"
 }
 
 # Restrict access to the SAM and System hives to just necessary system accounts
@@ -622,6 +682,9 @@ Start-LoggedJob -JobName "Restrict Access to SAM and System Hives" -ScriptBlock 
     
     # Apply the modified ACL to the SYSTEM hive
     Set-Acl "$backupPath\SYSTEM" $systemAcl
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "Access to SAM and System hives restricted."
+    Write-Host "--------------------------------------------------------------------------------"
 }
 
 # Create alert for new startup items, create message box when new startup item is created, check every 5 seconds, this should be run as a scheduled task
@@ -650,6 +713,9 @@ Start-LoggedJob -JobName "Create Alert for New Startup Items" -ScriptBlock {
     $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-File `"$scriptPath`""
     $trigger = New-ScheduledTaskTrigger -AtStartup
     Register-ScheduledTask -Action $action -Trigger $trigger -TaskName $taskName -User "SYSTEM" -RunLevel Highest
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "Alert for new startup items created."
+    Write-Host "--------------------------------------------------------------------------------"
 }
 
 # Lockdown the CCDC folder
@@ -674,6 +740,9 @@ Start-LoggedJob -JobName "Lockdown CCDC Folder" -ScriptBlock {
     
     # Apply the modified ACL to the CCDC folder
     Set-Acl -Path $ccdcPath -AclObject $acl
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "CCDC folder lockdown complete."
+    Write-Host "--------------------------------------------------------------------------------"
 }
 
 # Restrict access to running any commands to Administrator
@@ -697,6 +766,9 @@ Start-LoggedJob -JobName "Restrict Access to Commands" -ScriptBlock {
     
     # Apply the modified ACL to the registry key
     Set-Acl -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -AclObject $acl
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "Access to running commands restricted to Administrator."
+    Write-Host "--------------------------------------------------------------------------------"
 }
 
 # Disable all ports except the ones needed for AD/DNS
@@ -718,6 +790,10 @@ Start-LoggedJob -JobName "Disable All Ports Except AD/DNS" -ScriptBlock {
     New-NetFirewallRule -DisplayName "RPC IN" 
     New-NetFirewallRule -DisplayName "RPC-EPMAP IN" 
     New-NetFirewallRule -DisplayName "DHCP UDP IN" 
+    
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "All ports except AD/DNS disabled."
+    Write-Host "--------------------------------------------------------------------------------"
 }
 
 # Create alert for Audit WMI subscriptions
@@ -745,6 +821,9 @@ Start-LoggedJob -JobName "Create Alert for Audit WMI Subscriptions" -ScriptBlock
     $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-File `"$scriptPath`""
     $trigger = New-ScheduledTaskTrigger -AtStartup
     Register-ScheduledTask -Action $action -Trigger $trigger -TaskName $taskName -User "SYSTEM" -RunLevel Highest
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "Alert for Audit WMI subscriptions created."
+    Write-Host "--------------------------------------------------------------------------------"
 }
 
 # Remove .bat or .lnk files in startup folder using scheduled task to fight persistence
@@ -766,6 +845,9 @@ Start-LoggedJob -JobName "Remove .bat or .lnk Files in Startup Folder" -ScriptBl
     $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-File `"$scriptPath`""
     $trigger = New-ScheduledTaskTrigger -AtStartup
     Register-ScheduledTask -Action $action -Trigger $trigger -TaskName $taskName -User "SYSTEM" -RunLevel Highest
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "Scheduled task to remove .bat or .lnk files in startup folder created."
+    Write-Host "--------------------------------------------------------------------------------"
 }
 
 # Stop non admin users from installing software or running commands
@@ -789,6 +871,9 @@ Start-LoggedJob -JobName "Restrict Non-Admin Users from Installing Software" -Sc
     
     # Apply the modified ACL to the registry key
     Set-Acl -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall" -AclObject $acl
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "Non-admin users restricted from installing software."
+    Write-Host "--------------------------------------------------------------------------------"
 }
 
 # Block credential dumping
@@ -796,18 +881,56 @@ Start-LoggedJob -JobName "Block Credential Dumping" -ScriptBlock {
     $regPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa"
     Set-ItemProperty -Path $regPath -Name "NoLmHash" -Value 1
     Set-ItemProperty -Path $regPath -Name "LimitBlankPasswordUse" -Value 1
+    Set-ItemProperty -Path $regPath -Name "RestrictAnonymous" -Value 1
+    Set-ItemProperty -Path $regPath -Name "RestrictAnonymousSAM" -Value 1
+    Set-ItemProperty -Path $regPath -Name "EveryoneIncludesAnonymous" -Value 0
+    Set-ItemProperty -Path $regPath -Name "NoDefaultAdminShares" -Value 1
+    Set-ItemProperty -Path $regPath -Name "NoLMAuthentication" -Value 1
+    Set-ItemProperty -Path $regPath -Name "NoNullSessionShares" -Value 1
+    Set-ItemProperty -Path $regPath -Name "NoNullSessionUsername" -Value 1
+    Set-ItemProperty -Path $regPath -Name "NoNullSessionPassword" -Value 1
+    Set-ItemProperty -Path $regPath -Name "NoSaveSettings" -Value 1
+    
+    $regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters"
+    Set-ItemProperty -Path $regPath -Name "AutoShareWks" -Value 0
+    Set-ItemProperty -Path $regPath -Name "AutoShareServer" -Value 0
+    Set-ItemProperty -Path $regPath -Name "RestrictNullSessAccess" -Value 1
+    Set-ItemProperty -Path $regPath -Name "NullSessionPipes" -Value ""
+    Set-ItemProperty -Path $regPath -Name "NullSessionShares" -Value ""
+    Set-ItemProperty -Path $regPath -Name "Samba" -Value 0
+
+    $regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters"
+    Set-ItemProperty -Path $regPath -Name "EnableSecuritySignature" -Value 1
+    Set-ItemProperty -Path $regPath -Name "RequireSecuritySignature" -Value 1
+    Set-ItemProperty -Path $regPath -Name "EnablePlainTextPassword" -Value 0
+   
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "Credential dumping blocked."
+    Write-Host "--------------------------------------------------------------------------------"
+    
 }
 
 # block unecessary winrm traffic
 Start-LoggedJob -JobName "Block Unnecessary WinRM Traffic" -ScriptBlock {
     $regPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Firewall"
     Set-ItemProperty -Path $regPath -Name "AllowWinRM" -Value 0
+    Set-ItemProperty -Path $regPath -Name "AllowWinRMHTTP" -Value 0
+    Set-ItemProperty -Path $regPath -Name "AllowWinRMHTTPS" -Value 0
+    
+    $regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+    Set-ItemProperty -Path $regPath -Name "EnableLUA" -Value 0
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "Unnecessary WinRM traffic blocked."
+    Write-Host "--------------------------------------------------------------------------------"
 }
 
 # disable remote sign in
 Start-LoggedJob -JobName "Disable Remote Sign-in" -ScriptBlock {
     $regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
     Set-ItemProperty -Path $regPath -Name "EnableLUA" -Value 0
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "Remote sign-in disabled."
+    Write-Host "--------------------------------------------------------------------------------"
 }
 
 # Enable LSA Protection, restrict debug privileges, disable WDigest
@@ -815,40 +938,96 @@ Start-LoggedJob -JobName "Enable LSA Protection" -ScriptBlock {
     $regPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa"
     Set-ItemProperty -Path $regPath -Name "LsaCfgFlags" -Value 1
     Set-ItemProperty -Path $regPath -Name "RunAsPPL" -Value 1
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "LSA Protection enabled."
+    Write-Host "--------------------------------------------------------------------------------"
 }
 Start-LoggedJob -JobName "Restrict Debug Privileges" -ScriptBlock {
     $regPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa"
     Set-ItemProperty -Path $regPath -Name "RestrictAnonymous" -Value 1
+    Set-ItemProperty -Path $regPath -Name "RestrictAnonymousSAM" -Value 1
+    Set-ItemProperty -Path $regPath -Name "EveryoneIncludesAnonymous" -Value 0
+    Set-ItemProperty -Path $regPath -Name "NoDefaultAdminShares" -Value 1
+    Set-ItemProperty -Path $regPath -Name "NoLMAuthentication" -Value 1
+    Set-ItemProperty -Path $regPath -Name "NoNullSessionShares" -Value 1
+    Set-ItemProperty -Path $regPath -Name "NoNullSessionUsername" -Value 1
+    Set-ItemProperty -Path $regPath -Name "NoNullSessionPassword" -Value 1
+    Set-ItemProperty -Path $regPath -Name "NoSaveSettings" -Value 1
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "Debug privileges restricted."
+    Write-Host "--------------------------------------------------------------------------------"
 }
 Start-LoggedJob -JobName "Disable WDigest" -ScriptBlock {
     $regPath = "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\WDigest"
     Set-ItemProperty -Path $regPath -Name "UseLogonCredential" -Value 0
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "WDigest disabled."
+    Write-Host "--------------------------------------------------------------------------------"
 }
 
 # disable powershell remoting
 Start-LoggedJob -JobName "Disable PowerShell Remoting" -ScriptBlock {
     Disable-PSRemoting -Force
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "PowerShell remoting disabled."
+    Write-Host "--------------------------------------------------------------------------------"
 }
 
 
 
 # Additional security measures
-Start-LoggedJob -JobName "Configure Windows Defender Exploit Guard" -ScriptBlock { Set-MpPreference -EnableControlledFolderAccess Enabled }
+Start-LoggedJob -JobName "Configure Windows Defender Exploit Guard" -ScriptBlock {
+    Set-MpPreference -EnableControlledFolderAccess Enabled
+    Set-MpPreference -EnableExploitProtection Enabled
+    Set-MpPreference -AttackSurfaceReductionRules_Ids @(
+        "D4F940AB-401B-4EFC-AADC-AD5F3C50688A",  # Block executable content from email and webmail clients
+        "3B576869-A4EC-4529-8536-B80A7769E899",  # Block executable content from Office files
+        "75668C1F-73B5-4CF0-BB93-3ECF5CB7CC84",  # Block credential stealing from LSASS
+        "D1E49AAC-8F56-4280-B9BA-993A6D77406C"   # Block executable content from Office files that contain macros
+    )
+    Set-MpPreference -AttackSurfaceReductionRules_Actions @("Enable", "Enable", "Enable", "Enable")
+}
 
-Start-LoggedJob -JobName "Configure Network Level Authentication for Remote Desktop" -ScriptBlock { Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1 }
+Start-LoggedJob -JobName "Configure Network Level Authentication for Remote Desktop" -ScriptBlock { 
+    Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1 
+    Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "AllowRemoteRPC" -Value 0
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "Network Level Authentication for Remote Desktop configured."
+    Write-Host "--------------------------------------------------------------------------------"
+}
 
-Start-LoggedJob -JobName "Disable LM and NTLMv1 Protocols" -ScriptBlock { Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name "LmCompatibilityLevel" -Value 5 }
+Start-LoggedJob -JobName "Disable LM and NTLMv1 Protocols" -ScriptBlock {
+    Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name "LmCompatibilityLevel" -Value 5 
+    Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters' -Name "SMB1" -Value 0
+    Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters' -Name "EnableSecuritySignature" -Value 1
+    Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters' -Name "RequireSecuritySignature" -Value 1
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "LM and NTLMv1 protocols disabled."
+    Write-Host "--------------------------------------------------------------------------------"
+}
 
 Start-LoggedJob -JobName "Enable Windows Defender Credential Guard" -ScriptBlock {
     Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard' -Name "EnableVirtualizationBasedSecurity" -Value 1
     Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name "LsaCfgFlags" -Value 1
+    Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name "RunAsPPL" -Value 1
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "Windows Defender Credential Guard enabled."
+    Write-Host "--------------------------------------------------------------------------------"
 }
 
-Start-LoggedJob -JobName "Configure Windows Update to Install Updates Automatically" -ScriptBlock { Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU' -Name "AUOptions" -Value 4 }
+Start-LoggedJob -JobName "Configure Windows Update to Install Updates Automatically" -ScriptBlock { 
+    Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU' -Name "AUOptions" -Value 4 
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "Windows Update configured to install updates automatically."
+    Write-Host "--------------------------------------------------------------------------------"
+}
 
 Start-LoggedJob -JobName "Enable Logging for PowerShell" -ScriptBlock {
     Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging' -Name "EnableScriptBlockLogging" -Value 1
     Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\Transcription' -Name "EnableTranscripting" -Value 1
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "Logging for PowerShell enabled."
+    Write-Host "--------------------------------------------------------------------------------"
 }
 
 # Disable PSExec
@@ -856,9 +1035,13 @@ Start-LoggedJob -JobName "Disable PSExec" -ScriptBlock {
     $psexecPath = "C:\Windows\System32\psexec.exe"
     if (Test-Path $psexecPath) {
         Remove-Item $psexecPath -Force
+        Write-Host "--------------------------------------------------------------------------------"
         Write-Host "PSExec has been disabled."
+        Write-Host "--------------------------------------------------------------------------------"
     } else {
+        Write-Host "---------------------------------------------------------------------------------"
         Write-Host "PSExec is not present on the system."
+        Write-Host "---------------------------------------------------------------------------------"
     }
 }
 
@@ -867,13 +1050,29 @@ Start-LoggedJob -JobName "Disable Sign-in for Non-Admin Users" -ScriptBlock {
     $users = Get-LocalUser | Where-Object { $_.Name -ne "Administrator" }
     foreach ($user in $users) {
         Set-LocalUser -Name $user.Name -PasswordNeverExpires $true
+        Set-LocalUser -Name $user.Name -AccountNeverExpires $true
+        Set-LocalUser -Name $user.Name -Enabled $false
+        #generate a random 64 character password
+        $password = [System.Web.Security.Membership]::GeneratePassword(64, 0)
+        #set the password to the random password
+        Set-LocalUser -Name $user.Name -Password (ConvertTo-SecureString $password -AsPlainText -Force)
+        Set-LocalUser -Name $user.Name -UserMayNotChangePassword $true
+        Set-LocalUser -Name $user.Name -PasswordRequired $true
+        Set-LocalUser -Name $user.Name -Description "Disabled for security reasons"
+        Set-LocalUser -Name $user.Name -UserMayNotChangePassword $true
+
+        Write-Host "--------------------------------------------------------------------------------"
         Write-Host "Sign-in for user $($user.Name) has been disabled."
+        Write-Host "--------------------------------------------------------------------------------"
     }
 }
 
 # Disable RDP
 Start-LoggedJob -JobName "Disable RDP" -ScriptBlock {
     Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 1
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "RDP has been disabled."
+    Write-Host "--------------------------------------------------------------------------------"
 }
 
 
@@ -904,5 +1103,8 @@ else {
 Start-LoggedJob -JobName "Quick Scan with Windows Defender" -ScriptBlock { Start-MpScan -ScanType QuickScan }
 # Wait for all jobs to complete
 Get-Job | Wait-Job
+# Restart the computer
+Write-Host "--------------------------------------------------------------------------------"
 Write-Host "Restarting Computer"
+Write-Host "--------------------------------------------------------------------------------"
 Restart-Computer
