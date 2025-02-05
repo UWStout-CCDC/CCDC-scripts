@@ -305,9 +305,9 @@ Import-Module -Name BitsTransfer
 # Create directories
 $ccdcPath = "C:\CCDC"
 $toolsPath = "$ccdcPath\tools-Windows"
-mkdir $ccdcPath -wait
-mkdir "$ccdcPath\DNS" -wait
-mkdir "C:\CCDC\tools-Windows" -wait
+mkdir $ccdcPath 
+mkdir "$ccdcPath\DNS" 
+mkdir "C:\CCDC\tools-Windows" 
 
 # Download the install script
 $installScriptPath = "$toolsPath\Installs.ps1"
@@ -367,7 +367,8 @@ if ($runSetup -ne "yes") {
 }
 
 
-$jobs = @()
+# Initialize the global jobs array
+$global:jobs = @()
 
 function Start-LoggedJob {
     param (
@@ -380,9 +381,21 @@ function Start-LoggedJob {
     Write-Host "Started job: $JobName"
 }
 
+# Example usage of Start-LoggedJob
 Start-LoggedJob -JobName "Synchronize System Time" -ScriptBlock {
     tzutil /s "Central Standard Time"
     w32tm /resync
+}
+
+# Monitor jobs
+while ($global:jobs.Count -gt 0) {
+    foreach ($job in $global:jobs) {
+        if ($job.State -eq 'Completed') {
+            $job | Receive-Job
+            $global:jobs = $global:jobs | Where-Object { $_.Id -ne $job.Id }
+        }
+    }
+    Start-Sleep -Seconds 5
 }
 
 # Prompt for new administrator password and confirmation
@@ -551,17 +564,17 @@ Start-LoggedJob -JobName "Secure and Backup DNS" -ScriptBlock {
 
 # Backup AD
 Start-LoggedJob -JobName "Backup Active Directory" -ScriptBlock {
-    mkdir "$ccdcPath\AD" -wait
+    mkdir "$ccdcPath\AD" 
     $backupPath = "$ccdcPath\AD\ADBackup"
-    mkdir $backupPath -wait
+    mkdir $backupPath 
     ntdsutil.exe "activate instance ntds" "ifm" "create full $backupPath" quit quit
 }
 
 # Backup SAM and System Hives
 Start-LoggedJob -JobName "Backup SAM and System Hives" -ScriptBlock {
-    mkdir "$ccdcPath\Registry" -wait
+    mkdir "$ccdcPath\Registry" 
     $backupPath = "$ccdcPath\Registry\RegistryBackupSamSystem"
-    mkdir $backupPath -wait
+    mkdir $backupPath 
     reg save HKLM\SAM "$backupPath\SAM"
     reg save HKLM\SYSTEM "$backupPath\SYSTEM"
 }
