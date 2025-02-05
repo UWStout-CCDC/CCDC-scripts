@@ -377,25 +377,27 @@ function Start-LoggedJob {
     )
     
     $job = Start-Job -Name $JobName -ScriptBlock $ScriptBlock
-    $global:jobs += $job
+    $global:jobs += @($job)  # Ensure the job is added as an array element
     Write-Host "Started job: $JobName"
-}
-
-# Sync system time
-Start-LoggedJob -JobName "Synchronize System Time" -ScriptBlock {
-    tzutil /s "Central Standard Time"
-    w32tm /resync
 }
 
 # Monitor jobs
 while ($global:jobs.Count -gt 0) {
     foreach ($job in $global:jobs) {
         if ($job.State -eq 'Completed') {
+            Write-Host "$(Get-Date -Format 'HH:mm:ss') - $($job.Name) has completed."
             $job | Receive-Job
+            Remove-Job -Job $job
             $global:jobs = $global:jobs | Where-Object { $_.Id -ne $job.Id }
         }
     }
     Start-Sleep -Seconds 5
+}
+
+# Sync system time
+Start-LoggedJob -JobName "Synchronize System Time" -ScriptBlock {
+    tzutil /s "Central Standard Time"
+    w32tm /resync
 }
 
 # Prompt for new administrator password and confirmation
