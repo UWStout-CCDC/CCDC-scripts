@@ -485,6 +485,7 @@ kernel.perf_event_paranoid = 3
 kernel.modules_disabled = 1
 kernel.kptr_restrict = 2
 kernel.dmesg_restrict = 1
+kernel.yama.ptrace_scope = 3
 EOF
 
 # DENY ALL TCP WRAPPERS
