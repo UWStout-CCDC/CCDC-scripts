@@ -390,9 +390,6 @@ else
     sed -i '/pam_limits.so/a session required pam_lastlog.so showfailed' /etc/pam.d/system-auth
 fi
 
-# Ensure grub.conf is not world-writable
-sudo chmod 600/boot/grub2/grub.cfg
-
 # Disable Ctrl-Alt-Del Reboot Activation
 # change 'exec /sbin/shutdown -r now "Control-Alt-Delete pressed"' to 'exec /usr/bin/logger -p security.info "Control-Alt-Delete pressed"' in /etc/init/control-alt-delete.conf
 
@@ -418,7 +415,7 @@ else
 fi
 
 # REMOVE ALLL COMPILERS
-yum remove gcc gcc-c++ -y
+yum remove libgcc -y
 
 # Disable Support for RPC IPv6
 # comment the following lines in /etc/netconfig
@@ -611,7 +608,7 @@ if [ -f "/etc/cron.d/aide" ]; then
     echo "AIDE cron job already exists"
 else
     echo "Setting up AIDE cron job..."
-    echo "*/5 * * * * /usr/sbin/aide --check > /tmp/aide.log && mv /tmp/aide.log /root/aide.log" > /etc/cron.d/aide
+    # echo "*/5 * * * * /usr/sbin/aide --check > /tmp/aide.log && mv /tmp/aide.log /root/aide.log" > /etc/cron.d/aide
 fi
 
 # Check if changes were already made to the network config file

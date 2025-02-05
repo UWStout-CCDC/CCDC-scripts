@@ -30,9 +30,6 @@ CURRENT_DB_NAME=$(grep -oP "'database_name' => '\K[^']+" "$PHP_FILE")
 if [ -z "$CURRENT_DB_NAME" ]; then
     echo "No database name found in parameters.php."
 
-    echo "Searching for a database that matches 'prestashop*'..."
-    CURRENT_DB_NAME=$(mysql -u $MYSQL_ROOT_USER -p$MYSQL_ROOT_PASS -e "SHOW DATABASES LIKE 'prestashop%';" | grep -E '^prestashop' | head -n 1)
-
     # If no database is found, ask the user for the database name
     if [ -z "$CURRENT_DB_NAME" ]; then
         echo "No matching database found."
