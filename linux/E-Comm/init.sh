@@ -482,9 +482,9 @@ kernel.perf_event_paranoid = 3
 kernel.modules_disabled = 1
 kernel.kptr_restrict = 2
 kernel.dmesg_restrict = 1
-kernel.yama.ptrace_scope = 2
 EOF
 
+# kernel.yama.ptrace_scope = 2
 
 # DENY ALL TCP WRAPPERS
 echo "ALL:ALL" > /etc/hosts.deny
