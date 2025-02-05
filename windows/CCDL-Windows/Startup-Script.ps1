@@ -381,7 +381,7 @@ function Start-LoggedJob {
     Write-Host "Started job: $JobName"
 }
 
-# Example usage of Start-LoggedJob
+# Sync system time
 Start-LoggedJob -JobName "Synchronize System Time" -ScriptBlock {
     tzutil /s "Central Standard Time"
     w32tm /resync
