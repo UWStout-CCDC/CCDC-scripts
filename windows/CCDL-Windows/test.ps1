@@ -50,16 +50,16 @@ Start-LoggedJob -JobName "Synchronize System Time" -ScriptBlock {
 # Set strong password policies
 Start-LoggedJob -JobName "Set Password Policies" -ScriptBlock { net accounts /minpwlen:12 /maxpwage:30 /minpwage:1 /uniquepw:5 /lockoutthreshold:5 }
 
-# Disable unnecessary services
-$servicesToDisable = @("Spooler", "RemoteRegistry", "Fax")
-foreach ($service in $servicesToDisable) {
-    Start-LoggedJob -JobName "Disable Service: $service" -ScriptBlock {
-        param ($service)
-        Write-Host "Disabling service: $service"
-        Stop-Service -Name $service -Force
-        Set-Service -Name $service -StartupType Disabled
-    } -ArgumentList $service
-}
+# # Disable unnecessary services
+# $servicesToDisable = @("Spooler", "RemoteRegistry", "Fax")
+# foreach ($service in $servicesToDisable) {
+#     Start-LoggedJob -JobName "Disable Service: $service" -ScriptBlock {
+#         param ($service)
+#         Write-Host "Disabling service: $service"
+#         Stop-Service -Name $service -Force
+#         Set-Service -Name $service -StartupType Disabled
+#     } -ArgumentList $service
+# }
 
 # Additional test jobs
 Start-LoggedJob -JobName "Enable Windows Defender" -ScriptBlock {
