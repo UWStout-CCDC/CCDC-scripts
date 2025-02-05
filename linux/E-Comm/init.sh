@@ -67,6 +67,15 @@ prompt() {
 }
 
 
+# change DNS in network config file by replacing the DNS1 and DNS2 values
+echo "Setting up DNS..."
+INTERFACE=$(ip route | grep default | awk '{print $5}')
+sed -i 's/DNS1='.*'/DNS1=1.1.1.1/g' /etc/sysconfig/network-scripts/ifcfg-$INTERFACE
+sed -i 's/DNS2='.*'/DNS2=9.9.9.9/g' /etc/sysconfig/network-scripts/ifcfg-$INTERFACE
+
+# Restart the network service
+systemctl restart network
+
 # Lock all users except root and sysadmin
 USER_LOCK_SCRIPT="$SCRIPT_DIR/linux/user_lock.sh"
 wget -O $USER_LOCK_SCRIPT $BASEURL/linux/E-Comm/user_lock.sh
@@ -352,16 +361,6 @@ systemctl disable --now ufw
 #           CENTOS HARDENING
 #
 ##################################################
-
-# set nameservers, to google's, and cloudflare's, and quad9
-echo "nameserver 8.8.8.8" > /etc/resolv.conf
-echo "nameserver 1.1.1.1" >> /etc/resolv.conf
-echo "nameserver 9.9.9.9" >> /etc/resolv.conf
-echo "nameserver 8.8.4.4" >> /etc/resolv.conf
-echo "nameserver 1.1.1.2" >> /etc/resolv.conf
-echo "nameserver 1.0.0.2" >> /etc/resolv.conf
-echo "nameserver 1.0.0.1" >> /etc/resolv.conf
-
 
 # Ensure NTP is installed and running
 yum install ntpdate -y
