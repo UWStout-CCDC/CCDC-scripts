@@ -402,7 +402,7 @@ else
 fi
 
 # secure grub by ensuring the permissions are set to 600
-chmod 600 /boot/grub2/grub.cfg
+# chmod 600 /boot/grub2/grub.cfg
 
 # Ensure SELinux is enabled and enforcing
 # Check if SELINUX is already set to enforcing
