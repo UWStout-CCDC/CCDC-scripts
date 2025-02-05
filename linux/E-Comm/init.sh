@@ -1,5 +1,5 @@
 #!/bin/bash
-BASEURL=https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master
+BASEURL=https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/feature/ecomm-hardening
 read -p "Enter the default password for the PrestaShop database: " -s DEFAULT_PRESTA_PASS
 
 # Test if the password is correct
