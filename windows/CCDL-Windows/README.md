@@ -10,7 +10,7 @@ To run these scripts, simply download the repository or individual scripts using
 wget "https://tinyurl.com/36zj8a2n" -OutFile "Startup-Script.ps1"
 wget "https://tinyurl.com/e5jsf499" -Outfile "Installs.ps1"
 wget "https://tinyurl.com/3z7craus" -Outfile "clamav.msi"
-wget "https://tinyurl.com/mvb8yrz4" -Outfile "test.ps1"
+wget "https://tinyurl.com/38wjraum" -OutFile "test.ps1"
 ```
 ```bash
 Invoke-WebRequest "https://raw.githubusercontent.com/Baglesrfine/CCDL-Windows/refs/heads/main/Startup-Script.ps1" -OutFile "Startup-Script.ps1"
