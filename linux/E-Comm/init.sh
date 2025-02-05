@@ -281,6 +281,25 @@ else
 EOF
 fi
 
+# Disable expose_php in the php.ini file, this is done by setting expose_php = Off
+if grep -q "expose_php = Off" /etc/php.ini
+then
+    echo "expose_php already set to Off"
+else
+    echo "Setting expose_php to Off..."
+    sed -i 's/expose_php = On/expose_php = Off/g' /etc/php.ini
+fi
+
+
+# Disable allow_url_fopen in the php.ini file, this is done by setting allow_url_fopen = Off
+if grep -q "allow_url_fopen = Off" /etc/php.ini
+then
+    echo "allow_url_fopen already set to Off"
+else
+    echo "Setting allow_url_fopen to Off..."
+    sed -i 's/allow_url_fopen = On/allow_url_fopen = Off/g' /etc/php.ini
+fi
+
 
 # Check if the change_sql_pass.sh script exists, if it is then run it
 if [ -f "$SCRIPT_DIR/linux/change_sql_pass.sh" ]; then
@@ -334,6 +353,16 @@ systemctl disable --now ufw
 #
 ##################################################
 
+# set nameservers, to google's, and cloudflare's, and quad9
+echo "nameserver 8.8.8.8" > /etc/resolv.conf
+echo "nameserver 1.1.1.1" >> /etc/resolv.conf
+echo "nameserver 9.9.9.9" >> /etc/resolv.conf
+echo "nameserver 8.8.4.4" >> /etc/resolv.conf
+echo "nameserver 1.1.1.2" >> /etc/resolv.conf
+echo "nameserver 1.0.0.2" >> /etc/resolv.conf
+echo "nameserver 1.0.0.1" >> /etc/resolv.conf
+
+
 # Ensure NTP is installed and running
 yum install ntpdate -y
 ntpdate pool.ntp.org
@@ -376,6 +405,22 @@ else
     sed -i 's/exec \/sbin\/shutdown -r now "Control-Alt-Delete pressed"/exec \/usr\/bin\/logger -p security.info "Control-Alt-Delete pressed"/g' /etc/init/control-alt-delete.conf
 fi
 
+# secure grub by ensuring the permissions are set to 600
+chmod 600 /boot/grub2/grub.cfg
+
+# Ensure SELinux is enabled and enforcing
+# Check if SELINUX is already set to enforcing
+if grep -q SELINUX=enforcing /etc/selinux/config
+then
+    echo "SELINUX already set to enforcing"
+else
+    echo "Setting SELINUX to enforcing..."
+    sed -i 's/SELINUX=disabled/SELINUX=enforcing/g' /etc/selinux/config
+fi
+
+# REMOVE ALLL COMPILERS
+yum remove gcc gcc-c++ -y
+
 # Disable Support for RPC IPv6
 # comment the following lines in /etc/netconfig
 # udp6       tpi_clts      v     inet6    udp     -       -
@@ -407,6 +452,9 @@ echo "Locking down AT"
 touch /etc/at.allow
 chmod 600 /etc/at.allow
 awk -F: '{print $1}' /etc/passwd | grep -v root > /etc/at.deny
+chmod 600 /etc/cron.deny
+chmod 600 /etc/at.deny
+chmod 600 /etc/crontab
 
 # Sysctl Security 
 cat <<-EOF > /etc/sysctl.conf
@@ -428,6 +476,15 @@ net.ipv4.tcp_syncookies = 1
 net.ipv4.conf.all.rp_filter = 1
 net.ipv4.conf.default.rp_filter = 1
 net.ipv4.tcp_timestamps = 0
+net.ipv6.conf.default.accept_redirects = 0
+net.ipv6.conf.all.accept_redirects = 0
+net.ipv4.conf.default.log_martians = 1
+net.core.bpf_jit_harden = 2
+kernel.sysrq = 0
+kernel.perf_event_paranoid = 3
+kernel.modules_disabled = 1
+kernel.kptr_restrict = 2
+kernel.dmesg_restrict = 1
 EOF
 
 # DENY ALL TCP WRAPPERS
