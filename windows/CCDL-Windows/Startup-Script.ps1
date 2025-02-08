@@ -391,7 +391,10 @@ if ($runSetup -ne "yes") {
     Write-Host "Skipping setup..."
     goto installs
 }
-
+# Print out all DNS zones
+Get-DNSServerZone
+# Ask the user for the DNS zone
+$zone = Read-Host "Enter the DNS zone used by the scoring engine"
 
 # Initialize the global jobs array
 $global:jobs = @()
@@ -437,7 +440,7 @@ Start-LoggedJob -JobName "Disable Guest Account" -ScriptBlock {
             Write-Host "--------------------------------------------------------------------------------"
         }
     } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+        Write-Hos   t "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
         Write-Host "An error occurred while disabling the guest account: $_"
         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
     }
@@ -499,8 +502,6 @@ Start-LoggedJob -JobName "Configure Windows Firewall" -ScriptBlock {
 
         # Enable Logging
         Set-NetFirewallProfile -Profile Domain,Public,Private -LogFileName "$ccdcPath\pfirewall.log" -LogMaxSizeKilobytes 8192 -LogAllowed True -LogBlocked True
-        Set-NetFirewallSetting -StatefulFtp Disable
-        Set-NetFirewallSetting -StatefulPptp Disable
 
         # Disable existing rules
         Get-NetFirewallRule | Set-NetFirewallRule -Enabled False
@@ -686,7 +687,6 @@ Start-LoggedJob -JobName "Install Windows Updates" -ScriptBlock {
 # Secure and backup DNS to ccdc folder
 Start-LoggedJob -JobName "Secure and Backup DNS" -ScriptBlock {
     try {
-        $zone = Read-Host "Enter the DNS zone used by the scoring engine"
         dnscmd.exe /Config /SocketPoolSize 10000
         dnscmd.exe /Config /CacheLockingPercent 100
         dnscmd.exe /ZoneExport $zone "$ccdcPath\DNS\$zone.dns"
@@ -726,18 +726,28 @@ Start-LoggedJob -JobName "Backup Active Directory" -ScriptBlock {
 # Backup SAM and System Hives
 Start-LoggedJob -JobName "Backup SAM and System Hives" -ScriptBlock {
     try {
-        mkdir "$ccdcPath\Registry" 
-        $backupPath = "$ccdcPath\Registry\RegistryBackupSamSystem"
-        mkdir $backupPath 
-        reg save HKLM\SAM "$backupPath\SAM"
-        reg save HKLM\SYSTEM "$backupPath\SYSTEM"
+        $registryPath = "$ccdcPath\Registry"
+        $backupPath = "$registryPath\RegistryBackupSamSystem"
+
+        # Ensure the backup paths exist
+        if (-not (Test-Path $registryPath)) {
+            mkdir $registryPath
+        }
+        if (-not (Test-Path $backupPath)) {
+            mkdir $backupPath
+        }
+
+        # Backup the SAM and SYSTEM hives with elevated privileges
+        Start-Process -FilePath "reg.exe" -ArgumentList "save HKLM\SAM $backupPath\SAM.bak" -Verb RunAs -Wait
+        Start-Process -FilePath "reg.exe" -ArgumentList "save HKLM\SYSTEM $backupPath\SYSTEM.bak" -Verb RunAs -Wait
+
         Write-Host "--------------------------------------------------------------------------------"
         Write-Host "SAM and System hives backed up."
         Write-Host "--------------------------------------------------------------------------------"
     } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++" 
+        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
         Write-Host "An error occurred while backing up SAM and System hives: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++" 
+        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
     }
 }
 
@@ -913,43 +923,47 @@ Start-LoggedJob -JobName "Restrict Access to Commands" -ScriptBlock {
 }
 
 # Disable all ports except the ones needed for AD/DNS
-Start-LoggedJob -JobName "Disable All Ports Except AD/DNS" -ScriptBlock {
-    try {
-        # Block all inbound traffic
-        Set-NetFirewallProfile -Profile Domain,Public,Private -DefaultInboundAction Block
-        
-        # Allow inbound traffic for necessary services
-        $rules = @(
-            @{Name="NTP in"; Port=123; Protocol="UDP"},
-            @{Name="Allow Pings in"; Protocol="ICMPv4"},
-            @{Name="DNS IN (UDP)"; Port=53; Protocol="UDP"},
-            @{Name="DNS IN (TCP)"; Port=53; Protocol="TCP"},
-            @{Name="LDAP TCP IN"; Port="389,636,3268,3269,135,1024-65535,49152-65535,88,464,53,123,445,135,137-139,389-636,3268-3269,135-135,1024-65535,49152-65535,88-88,464-464,53-53,123-123,445-445"; Protocol="TCP"},
-            @{Name="LDAP UDP IN"; Port="389,636,3268,3269,135,1024-65535,49152-65535,88,464,53,123,445,135,137-139,389-636,3268-3269,135-135,1024-65535,49152-65535,88-88,464-464,53-53,123-123,445-445"; Protocol="UDP"},
-            @{Name="LDAP Global Catalog IN"; Port=3268; Protocol="TCP"},
-            @{Name="NETBIOS Resolution IN"; Port=137; Protocol="UDP"},
-            @{Name="Secure LDAP IN"; Port=636; Protocol="TCP"},
-            @{Name="Secure LDAP Global Catalog IN"; Port=3269; Protocol="TCP"},
-            @{Name="RPC IN"; Port=135; Protocol="TCP"},
-            @{Name="RPC-EPMAP IN"; Port=135; Protocol="TCP"},
-            @{Name="DHCP UDP IN"; Port=67; Protocol="UDP"}
-        )
+try {
+    # Block all inbound traffic
+    Set-NetFirewallProfile -Profile Domain,Public,Private -DefaultInboundAction Block
+    
+    # Allow inbound traffic for necessary services
+    $rules = @(
+        @{Name="NTP in"; Port=123; Protocol="UDP"},
+        @{Name="Allow Pings in"; Protocol="ICMPv4"},
+        @{Name="DNS IN (UDP)"; Port=53; Protocol="UDP"},
+        @{Name="DNS IN (TCP)"; Port=53; Protocol="TCP"},
+        @{Name="LDAP TCP IN"; Port="389,636,3268,3269,135,1024-65535,49152-65535,88,464,53,123,445,135,137-139,389-636,3268-3269,135-135,1024-65535,49152-65535,88-88,464-464,53-53,123-123,445-445"; Protocol="TCP"},
+        @{Name="LDAP UDP IN"; Port="389,636,3268,3269,135,1024-65535,49152-65535,88,464,53,123,445,135,137-139,389-636,3268-3269,135-135,1024-65535,49152-65535,88-88,464-464,53-53,123-123,445-445"; Protocol="UDP"},
+        @{Name="LDAP Global Catalog IN"; Port=3268; Protocol="TCP"},
+        @{Name="NETBIOS Resolution IN"; Port=137; Protocol="UDP"},
+        @{Name="Secure LDAP IN"; Port=636; Protocol="TCP"},
+        @{Name="Secure LDAP Global Catalog IN"; Port=3269; Protocol="TCP"},
+        @{Name="RPC IN"; Port=135; Protocol="TCP"},
+        @{Name="RPC-EPMAP IN"; Port=135; Protocol="TCP"},
+        @{Name="DHCP UDP IN"; Port=67; Protocol="UDP"}
+    )
 
-        foreach ($rule in $rules) {
-            $port = if ($rule.Port) { "-LocalPort $($rule.Port)" } else { "" }
-            $protocol = if ($rule.Protocol) { "-Protocol $($rule.Protocol)" } else { "" }
-            New-NetFirewallRule -DisplayName $rule.Name -Direction Inbound -Action Allow -Enabled True -Profile Any $port $protocol | Out-Null
+    foreach ($rule in $rules) {
+        if ($rule.Port -and $rule.Protocol) {
+            New-NetFirewallRule -DisplayName $rule.Name -Direction Inbound -Action Allow -Enabled True -Profile Any -LocalPort $rule.Port -Protocol $rule.Protocol | Out-Null
             Write-Host "Allowed: $($rule.Name) on port $($rule.Port)"
+        } elseif ($rule.Protocol) {
+            New-NetFirewallRule -DisplayName $rule.Name -Direction Inbound -Action Allow -Enabled True -Profile Any -Protocol $rule.Protocol | Out-Null
+            Write-Host "Allowed: $($rule.Name) with protocol $($rule.Protocol)"
+        } else {
+            New-NetFirewallRule -DisplayName $rule.Name -Direction Inbound -Action Allow -Enabled True -Profile Any | Out-Null
+            Write-Host "Allowed: $($rule.Name)"
         }
-
-        Write-Host "--------------------------------------------------------------------------------"
-        Write-Host "All ports except AD/DNS disabled."
-        Write-Host "--------------------------------------------------------------------------------"
-    } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        Write-Host "An error occurred while disabling all ports except AD/DNS: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
     }
+
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "All ports except AD/DNS disabled."
+    Write-Host "--------------------------------------------------------------------------------"
+} catch {
+    Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+    Write-Host "An error occurred while disabling all ports except AD/DNS: $_"
+    Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
 }
 
 # Create alert for Audit WMI subscriptions
@@ -1352,7 +1366,8 @@ Start-LoggedJob -JobName "Disable Sign-in for Non-Admin Users" -ScriptBlock {
             # Generate a random 64 character password
             $password = [System.Web.Security.Membership]::GeneratePassword(64, 0)
             # Set the password to the random password
-            Set-LocalUser -Name $user.Name -Password (ConvertTo-SecureString $password -AsPlainText -Force)
+            $securePassword = ConvertTo-SecureString $password -AsPlainText -Force
+            Set-LocalUser -Name $user.Name -Password $securePassword
             Set-LocalUser -Name $user.Name -UserMayNotChangePassword $true
             Set-LocalUser -Name $user.Name -PasswordRequired $true
             Set-LocalUser -Name $user.Name -Description "Disabled for security reasons"
