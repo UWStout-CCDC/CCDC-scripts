@@ -138,9 +138,10 @@ Start-LoggedJob -JobName "Quick Scan with Windows Defender" -ScriptBlock {
 }
 
 # Secure and backup DNS to ccdc folder
+$zone = Read-Host "Enter the DNS zone used by the scoring engine"
 Start-LoggedJob -JobName "Secure and Backup DNS" -ScriptBlock {
+    param ($zone, $ccdcPath)
     try {
-        $zone = Read-Host "Enter the DNS zone used by the scoring engine"
         dnscmd.exe /Config /SocketPoolSize 10000
         dnscmd.exe /Config /CacheLockingPercent 100
         dnscmd.exe /ZoneExport $zone "$ccdcPath\DNS\$zone.dns"
@@ -152,7 +153,7 @@ Start-LoggedJob -JobName "Secure and Backup DNS" -ScriptBlock {
         Write-Host "An error occurred while securing and backing up DNS: $_"
         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
     }
-}
+} -ArgumentList $zone, $ccdcPath
 
 # Enable Windows Firewall with basic rules
 Start-LoggedJob -JobName "Configure Windows Firewall" -ScriptBlock {
