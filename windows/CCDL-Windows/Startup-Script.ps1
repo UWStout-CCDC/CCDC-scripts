@@ -302,6 +302,32 @@ Import-Module -Name Microsoft.PowerShell.LocalAccounts
 Import-Module -Name NetSecurity
 Import-Module -Name BitsTransfer
 
+# Prompt for new administrator password and confirmation
+try {
+    do {
+        $newAdminPassword = Read-Host -AsSecureString "Enter new password for the local administrator account"
+        $confirmAdminPassword = Read-Host -AsSecureString "Confirm new password for the local administrator account"
+
+        $newAdminPasswordPlain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($newAdminPassword))
+        $confirmAdminPasswordPlain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($confirmAdminPassword))
+
+        if ($newAdminPasswordPlain -ne $confirmAdminPasswordPlain) {
+            Write-Host "Passwords do not match. Please try again."
+        }
+    } while ($newAdminPasswordPlain -ne $confirmAdminPasswordPlain)
+
+    # Change local administrator password
+    $adminAccount = Get-LocalUser -Name "Administrator"
+    Set-LocalUser -Name $adminAccount -Password $newAdminPassword
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "Administrator password changed."
+    Write-Host "--------------------------------------------------------------------------------"
+} catch {
+    Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+    Write-Host "An error occurred while changing the administrator password: $_"
+    Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+}
+
 # Create directories
 $ccdcPath = "C:\CCDC"
 $toolsPath = "$ccdcPath\tools-Windows"
@@ -381,19 +407,6 @@ function Start-LoggedJob {
     Write-Host "Started job: $JobName"
 }
 
-# Monitor jobs
-while ($global:jobs.Count -gt 0) {
-    foreach ($job in $global:jobs) {
-        if ($job.State -eq 'Completed') {
-            Write-Host "$(Get-Date -Format 'HH:mm:ss') - $($job.Name) has completed."
-            $job | Receive-Job
-            Remove-Job -Job $job
-            $global:jobs = $global:jobs | Where-Object { $_.Id -ne $job.Id }
-        }
-    }
-    Start-Sleep -Seconds 5
-}
-
 # Sync system time
 Start-LoggedJob -JobName "Synchronize System Time" -ScriptBlock {
     try {
@@ -405,34 +418,6 @@ Start-LoggedJob -JobName "Synchronize System Time" -ScriptBlock {
     } catch {
         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
         Write-Host "An error occurred while synchronizing system time: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-    }
-}
-
-# Prompt for new administrator password and confirmation
-Start-LoggedJob -JobName "Change Admin Password" -ScriptBlock {
-    try {
-        do {
-            $newAdminPassword = Read-Host -AsSecureString "Enter new password for the local administrator account"
-            $confirmAdminPassword = Read-Host -AsSecureString "Confirm new password for the local administrator account"
-
-            $newAdminPasswordPlain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($newAdminPassword))
-            $confirmAdminPasswordPlain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($confirmAdminPassword))
-
-            if ($newAdminPasswordPlain -ne $confirmAdminPasswordPlain) {
-                Write-Host "Passwords do not match. Please try again."
-            }
-        } while ($newAdminPasswordPlain -ne $confirmAdminPasswordPlain)
-
-        # Change local administrator password
-        $adminAccount = Get-LocalUser -Name "Administrator"
-        Set-LocalUser -Name $adminAccount -Password $newAdminPassword
-        Write-Host "--------------------------------------------------------------------------------"
-        Write-Host "Administrator password changed."
-        Write-Host "--------------------------------------------------------------------------------"
-    } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        Write-Host "An error occurred while changing the administrator password: $_"
         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
     }
 }
@@ -502,23 +487,24 @@ Start-LoggedJob -JobName "Enable Windows Defender" -ScriptBlock {
 # Enable Windows Firewall with basic rules
 Start-LoggedJob -JobName "Configure Windows Firewall" -ScriptBlock {
     try {
-        # Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled True
-        # Set-NetFirewallProfile -Profile Domain,Public,Private -DefaultInboundAction Block -DefaultOutboundAction Allow
-        
-        # Export existing Firewall
-        Export-WindowsFirewallRules -FilePath "$ccdcPath\firewall.old"
+        # Export existing Firewall rules using netsh
+        netsh advfirewall export "$ccdcPath\firewall.old"
+
+        # Enable Windows Firewall profiles
         Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled True
+
         # Block by default
         Set-NetFirewallProfile -Profile Domain,Public,Private -DefaultInboundAction Block -DefaultOutboundAction Block
         Set-NetFirewallProfile -Profile Domain,Public,Private -NotifyOnListen True
+
         # Enable Logging
         Set-NetFirewallProfile -Profile Domain,Public,Private -LogFileName "$ccdcPath\pfirewall.log" -LogMaxSizeKilobytes 8192 -LogAllowed True -LogBlocked True
         Set-NetFirewallSetting -StatefulFtp Disable
         Set-NetFirewallSetting -StatefulPptp Disable
-        
+
         # Disable existing rules
         Get-NetFirewallRule | Set-NetFirewallRule -Enabled False
-        
+
         # Firewall inbound rules
         New-NetFirewallRule -DisplayName "NTP in" -Direction Inbound -Action Allow -Enabled True -Profile Any -LocalPort 123 -Protocol UDP
         New-NetFirewallRule -DisplayName "Allow Pings in" -Direction Inbound -Action Allow -Enabled True -Protocol ICMPv4 -IcmpType 8
@@ -606,7 +592,7 @@ Start-LoggedJob -JobName "Set Account Lockout Policies" -ScriptBlock {
 Start-LoggedJob -JobName "Enable Audit Policies" -ScriptBlock {
     try {
         AuditPol.exe /set /subcategory:"Logon" /success:enable /failure:enable
-        AuditPol.exe /set /subcategory:"Account Management" /success:enable /failure:enable
+        AuditPol.exe /set /subcategory:"User Account Management" /success:enable /failure:enable
         AuditPol.exe /set /subcategory:"File System" /success:enable /failure:enable
         AuditPol.exe /set /subcategory:"Registry" /success:enable /failure:enable
         Write-Host "--------------------------------------------------------------------------------"
@@ -622,7 +608,7 @@ Start-LoggedJob -JobName "Enable Audit Policies" -ScriptBlock {
 # Remove unnecessary network shares
 Start-LoggedJob -JobName "Remove Unnecessary Network Shares" -ScriptBlock {
     try {
-        Get-SmbShare | Where-Object { $_.Name -ne "ADMIN$" -and $_.Name -ne "C$" } | ForEach-Object {
+        Get-SmbShare | Where-Object { $_.Name -ne "ADMIN$" -and $_.Name -ne "C$" -and $_.Name -ne "IPC$" } | ForEach-Object {
             Write-Host "Removing share: $($_.Name)"
             Remove-SmbShare -Name $_.Name -Force
         }
@@ -650,20 +636,20 @@ Start-LoggedJob -JobName "Reaffirm Windows Firewall" -ScriptBlock {
     }
 }
 
-# Disable IPv6 if not needed
-Start-LoggedJob -JobName "Disable IPv6" -ScriptBlock {
-    try {
-        Disable-NetAdapterBinding -Name "*" -ComponentID ms_tcpip6
-        Set-NetIPv6Protocol -State Disabled
-        Write-Host "--------------------------------------------------------------------------------"
-        Write-Host "IPv6 disabled."
-        Write-Host "--------------------------------------------------------------------------------"
-    } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        Write-Host "An error occurred while disabling IPv6: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-    }
-}
+# # Disable IPv6 if not needed
+# Start-LoggedJob -JobName "Disable IPv6" -ScriptBlock {
+#     try {
+#         Disable-NetAdapterBinding -Name "*" -ComponentID ms_tcpip6
+#         Set-NetIPv6Protocol -State Disabled
+#         Write-Host "--------------------------------------------------------------------------------"
+#         Write-Host "IPv6 disabled."
+#         Write-Host "--------------------------------------------------------------------------------"
+#     } catch {
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#         Write-Host "An error occurred while disabling IPv6: $_"
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#     }
+# }
 
 # Ensure Windows Update is set to automatic
 Start-LoggedJob -JobName "Set Windows Update to Automatic" -ScriptBlock {
@@ -717,12 +703,18 @@ Start-LoggedJob -JobName "Secure and Backup DNS" -ScriptBlock {
 # Backup AD
 Start-LoggedJob -JobName "Backup Active Directory" -ScriptBlock {
     try {
-        mkdir "$ccdcPath\AD" 
-        $backupPath = "$ccdcPath\AD\ADBackup"
-        mkdir $backupPath 
+        $timestamp = Get-Date -Format "yyyyMMddHHmmss"
+        $backupRoot = "$ccdcPath\AD"
+        $backupPath = "$backupRoot\ADBackup_$timestamp"
+
+        if (-Not (Test-Path -Path $backupRoot)) {
+            mkdir $backupRoot
+        }
+
+        mkdir $backupPath
         ntdsutil.exe "activate instance ntds" "ifm" "create full $backupPath" quit quit
         Write-Host "--------------------------------------------------------------------------------"
-        Write-Host "Active Directory backed up."
+        Write-Host "Active Directory backed up to $backupPath."
         Write-Host "--------------------------------------------------------------------------------"
     } catch {
         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
@@ -754,43 +746,53 @@ Start-LoggedJob -JobName "Restrict Access to SAM and System Hives" -ScriptBlock 
     try {
         $backupPath = "$ccdcPath\Registry\RegistryBackupSamSystem"
         
+        # Ensure the backup path exists
+        if (-not (Test-Path $backupPath)) {
+            mkdir $backupPath
+        }
+
+        # Backup the SAM and SYSTEM hives
+        reg save HKLM\SAM "$backupPath\SAM.bak"
+        reg save HKLM\SYSTEM "$backupPath\SYSTEM.bak"
+
         # Define necessary system accounts
         $adminUser = [System.Security.Principal.NTAccount]"Administrator"
         $systemUser = [System.Security.Principal.NTAccount]"SYSTEM"
         $trustedInstaller = [System.Security.Principal.NTAccount]"NT SERVICE\TrustedInstaller"
-        
-        # Get the current ACL for the SAM hive
-        $samAcl = Get-Acl "$backupPath\SAM"
-        $samAcl.SetAccessRuleProtection($true, $false)
-        
-        # Remove existing access rules
-        $samAcl.Access | ForEach-Object { $samAcl.RemoveAccessRule($_) }
-        
-        # Add full control for necessary system accounts
-        $adminRule = New-Object System.Security.AccessControl.RegistryAccessRule($adminUser, "FullControl", "Allow")
-        $systemRule = New-Object System.Security.AccessControl.RegistryAccessRule($systemUser, "FullControl", "Allow")
-        $trustedInstallerRule = New-Object System.Security.AccessControl.RegistryAccessRule($trustedInstaller, "FullControl", "Allow")
-        $samAcl.AddAccessRule($adminRule)
-        $samAcl.AddAccessRule($systemRule)
-        $samAcl.AddAccessRule($trustedInstallerRule)
-        
-        # Apply the modified ACL to the SAM hive
-        Set-Acl "$backupPath\SAM" $samAcl
-        
-        # Get the current ACL for the SYSTEM hive
-        $systemAcl = Get-Acl "$backupPath\SYSTEM"
-        $systemAcl.SetAccessRuleProtection($true, $false)
-        
-        # Remove existing access rules
-        $systemAcl.Access | ForEach-Object { $systemAcl.RemoveAccessRule($_) }
-        
-        # Add full control for necessary system accounts
-        $systemAcl.AddAccessRule($adminRule)
-        $systemAcl.AddAccessRule($systemRule)
-        $systemAcl.AddAccessRule($trustedInstallerRule)
-        
-        # Apply the modified ACL to the SYSTEM hive
-        Set-Acl "$backupPath\SYSTEM" $systemAcl
+
+        # Function to set ACL for a registry hive
+        function Set-RegistryAcl {
+            param (
+                [string]$hivePath,
+                [System.Security.Principal.NTAccount]$adminUser,
+                [System.Security.Principal.NTAccount]$systemUser,
+                [System.Security.Principal.NTAccount]$trustedInstaller
+            )
+
+            $acl = Get-Acl $hivePath
+            $acl.SetAccessRuleProtection($true, $false)
+
+            # Remove existing access rules
+            $acl.Access | ForEach-Object { $acl.RemoveAccessRule($_) }
+
+            # Add full control for necessary system accounts
+            $adminRule = New-Object System.Security.AccessControl.RegistryAccessRule($adminUser, "FullControl", "Allow")
+            $systemRule = New-Object System.Security.AccessControl.RegistryAccessRule($systemUser, "FullControl", "Allow")
+            $trustedInstallerRule = New-Object System.Security.AccessControl.RegistryAccessRule($trustedInstaller, "FullControl", "Allow")
+            $acl.AddAccessRule($adminRule)
+            $acl.AddAccessRule($systemRule)
+            $acl.AddAccessRule($trustedInstallerRule)
+
+            # Apply the modified ACL
+            Set-Acl $hivePath $acl
+        }
+
+        # Set ACL for SAM hive
+        Set-RegistryAcl -hivePath "HKLM\SAM" -adminUser $adminUser -systemUser $systemUser -trustedInstaller $trustedInstaller
+
+        # Set ACL for SYSTEM hive
+        Set-RegistryAcl -hivePath "HKLM\SYSTEM" -adminUser $adminUser -systemUser $systemUser -trustedInstaller $trustedInstaller
+
         Write-Host "--------------------------------------------------------------------------------"
         Write-Host "Access to SAM and System hives restricted."
         Write-Host "--------------------------------------------------------------------------------"
@@ -801,7 +803,7 @@ Start-LoggedJob -JobName "Restrict Access to SAM and System Hives" -ScriptBlock 
     }
 }
 
-# Create alert for new startup items, create message box when new startup item is created, check every 5 seconds, this should be run as a scheduled task
+# Create alert for new startup items, create toast notification when new startup item is created, check every 5 seconds, this should be run as a scheduled task
 Start-LoggedJob -JobName "Create Alert for New Startup Items" -ScriptBlock {
     try {
         $scriptPath = "$toolsPath\StartupAlert.ps1"
@@ -809,6 +811,8 @@ Start-LoggedJob -JobName "Create Alert for New Startup Items" -ScriptBlock {
         
         # Create the script
         @"
+        [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
+
         $startupItems = Get-ItemProperty HKCU:\Software\Microsoft\Windows\CurrentVersion\Run
         $previousItems = $startupItems.PSObject.Properties.Name
         
@@ -818,14 +822,19 @@ Start-LoggedJob -JobName "Create Alert for New Startup Items" -ScriptBlock {
             $newItems = Compare-Object -ReferenceObject $previousItems -DifferenceObject $currentItems.PSObject.Properties.Name | Where-Object { $_.SideIndicator -eq '=>' }
             
             if ($newItems) {
-                [System.Windows.MessageBox]::Show("New startup item detected: $($newItems.InputObject)")
+                $Template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent(1)
+                $ToastXml = [xml] $Template.GetXml()
+                $ToastXml.GetElementsByTagName("text").Item(0).InnerText = "New startup item detected: $($newItems.InputObject)"
+                $Toast = [Windows.UI.Notifications.ToastNotification]::new($ToastXml)
+                $Notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("Startup Monitor")
+                $Notifier.Show($Toast)
                 $previousItems += $newItems.InputObject
             }
         }
 "@ | Set-Content -Path $scriptPath
 
         # Create the scheduled task
-        $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-File `"$scriptPath`""
+        $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -File `"$scriptPath`""
         $trigger = New-ScheduledTaskTrigger -AtStartup
         Register-ScheduledTask -Action $action -Trigger $trigger -TaskName $taskName -User "SYSTEM" -RunLevel Highest
         Write-Host "--------------------------------------------------------------------------------"
@@ -910,20 +919,29 @@ Start-LoggedJob -JobName "Disable All Ports Except AD/DNS" -ScriptBlock {
         Set-NetFirewallProfile -Profile Domain,Public,Private -DefaultInboundAction Block
         
         # Allow inbound traffic for necessary services
-        New-NetFirewallRule -DisplayName "NTP in" -Direction Inbound -Action Allow -Enabled True -Profile Any -LocalPort 123 -Protocol UDP
-        New-NetFirewallRule -DisplayName "Allow Pings in" -Direction Inbound -Action Allow -Enabled True -Protocol ICMPv4 -IcmpType 8
-        New-NetFirewallRule -DisplayName "DNS IN (UDP)" -Direction Inbound -Action Allow -Enabled True -Profile Any -LocalPort 53 -Protocol UDP
-        New-NetFirewallRule -DisplayName "DNS IN (TCP)" -Direction Inbound -Action Allow -Enabled True -Profile Any -LocalPort 53 -Protocol TCP
-        New-NetFirewallRule -DisplayName "LDAP TCP IN" -Direction Inbound -Action Allow -Program "C:\Windows\System32\lsass.exe" -Enabled True -Profile Any -LocalPort 389,636,3268,3269,135,1024-65535,49152-65535,88,464,53,123,445,135,137-139,389-636,3268-3269,135-135,1024-65535,49152-65535,88-88,464-464,53-53,123-123,445-445
-        New-NetFirewallRule -DisplayName "LDAP UDP IN" -Direction Inbound -Action Allow -Program "C:\Windows\System32\lsass.exe" -Enabled True -Profile Any 
-        New-NetFirewallRule -DisplayName "LDAP Global Catalog IN" -Direction Inbound -Action Allow 
-        New-NetFirewallRule -DisplayName "NETBIOS Resolution IN" 
-        New-NetFirewallRule -DisplayName "Secure LDAP IN" 
-        New-NetFirewallRule -DisplayName "Secure LDAP Global Catalog IN" 
-        New-NetFirewallRule -DisplayName "RPC IN" 
-        New-NetFirewallRule -DisplayName "RPC-EPMAP IN" 
-        New-NetFirewallRule -DisplayName "DHCP UDP IN" 
-        
+        $rules = @(
+            @{Name="NTP in"; Port=123; Protocol="UDP"},
+            @{Name="Allow Pings in"; Protocol="ICMPv4"},
+            @{Name="DNS IN (UDP)"; Port=53; Protocol="UDP"},
+            @{Name="DNS IN (TCP)"; Port=53; Protocol="TCP"},
+            @{Name="LDAP TCP IN"; Port="389,636,3268,3269,135,1024-65535,49152-65535,88,464,53,123,445,135,137-139,389-636,3268-3269,135-135,1024-65535,49152-65535,88-88,464-464,53-53,123-123,445-445"; Protocol="TCP"},
+            @{Name="LDAP UDP IN"; Port="389,636,3268,3269,135,1024-65535,49152-65535,88,464,53,123,445,135,137-139,389-636,3268-3269,135-135,1024-65535,49152-65535,88-88,464-464,53-53,123-123,445-445"; Protocol="UDP"},
+            @{Name="LDAP Global Catalog IN"; Port=3268; Protocol="TCP"},
+            @{Name="NETBIOS Resolution IN"; Port=137; Protocol="UDP"},
+            @{Name="Secure LDAP IN"; Port=636; Protocol="TCP"},
+            @{Name="Secure LDAP Global Catalog IN"; Port=3269; Protocol="TCP"},
+            @{Name="RPC IN"; Port=135; Protocol="TCP"},
+            @{Name="RPC-EPMAP IN"; Port=135; Protocol="TCP"},
+            @{Name="DHCP UDP IN"; Port=67; Protocol="UDP"}
+        )
+
+        foreach ($rule in $rules) {
+            $port = if ($rule.Port) { "-LocalPort $($rule.Port)" } else { "" }
+            $protocol = if ($rule.Protocol) { "-Protocol $($rule.Protocol)" } else { "" }
+            New-NetFirewallRule -DisplayName $rule.Name -Direction Inbound -Action Allow -Enabled True -Profile Any $port $protocol | Out-Null
+            Write-Host "Allowed: $($rule.Name) on port $($rule.Port)"
+        }
+
         Write-Host "--------------------------------------------------------------------------------"
         Write-Host "All ports except AD/DNS disabled."
         Write-Host "--------------------------------------------------------------------------------"
@@ -942,6 +960,8 @@ Start-LoggedJob -JobName "Create Alert for Audit WMI Subscriptions" -ScriptBlock
         
         # Create the script
         @"
+        [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
+
         $wmiSubscriptions = Get-WmiObject -Namespace root\subscription -Class __FilterToConsumerBinding
         $previousSubscriptions = $wmiSubscriptions.PSObject.Properties.Name
         
@@ -951,13 +971,19 @@ Start-LoggedJob -JobName "Create Alert for Audit WMI Subscriptions" -ScriptBlock
             $newSubscriptions = Compare-Object -ReferenceObject $previousSubscriptions -DifferenceObject $currentSubscriptions.PSObject.Properties.Name | Where-Object { $_.SideIndicator -eq '=>' }
             
             if ($newSubscriptions) {
-                [System.Windows.MessageBox]::Show("New WMI subscription detected: $($newSubscriptions.InputObject)")
+                $Template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent(1)
+                $ToastXml = [xml] $Template.GetXml()
+                $ToastXml.GetElementsByTagName("text").Item(0).InnerText = "New WMI subscription detected: $($newSubscriptions.InputObject)"
+                $Toast = [Windows.UI.Notifications.ToastNotification]::new($ToastXml)
+                $Notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("WMI Monitor")
+                $Notifier.Show($Toast)
                 $previousSubscriptions += $newSubscriptions.InputObject
             }
         }
 "@ | Set-Content -Path $scriptPath
+
         # Create the scheduled task
-        $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-File `"$scriptPath`""
+        $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -File `"$scriptPath`""
         $trigger = New-ScheduledTaskTrigger -AtStartup
         Register-ScheduledTask -Action $action -Trigger $trigger -TaskName $taskName -User "SYSTEM" -RunLevel Highest
         Write-Host "--------------------------------------------------------------------------------"
@@ -1006,7 +1032,8 @@ Start-LoggedJob -JobName "Restrict Non-Admin Users from Installing Software" -Sc
         $acl = Get-Acl "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
         $acl.SetAccessRuleProtection($true, $false)
         
-        # Remove existing access rules
+        # Clear existing access rules
+        $acl.SetAccessRuleProtection($true, $true)
         $acl.Access | ForEach-Object { $acl.RemoveAccessRule($_) }
         
         # Add full control for necessary system accounts
@@ -1074,7 +1101,13 @@ Start-LoggedJob -JobName "Block Credential Dumping" -ScriptBlock {
 # block unnecessary winrm traffic
 Start-LoggedJob -JobName "Block Unnecessary WinRM Traffic" -ScriptBlock {
     try {
-        $regPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Firewall"
+        $regPath = "HKLM:\SOFTWARE\Policies\Microsoft\WindowsFirewall"
+        
+        # Ensure the registry path exists
+        if (-not (Test-Path $regPath)) {
+            New-Item -Path $regPath -Force | Out-Null
+        }
+        
         Set-ItemProperty -Path $regPath -Name "AllowWinRM" -Value 0
         Set-ItemProperty -Path $regPath -Name "AllowWinRMHTTP" -Value 0
         Set-ItemProperty -Path $regPath -Name "AllowWinRMHTTPS" -Value 0
@@ -1159,7 +1192,25 @@ Start-LoggedJob -JobName "Disable WDigest" -ScriptBlock {
 # disable powershell remoting
 Start-LoggedJob -JobName "Disable PowerShell Remoting" -ScriptBlock {
     try {
+        # Disable PSRemoting
         Disable-PSRemoting -Force
+
+        # Stop and disable the WinRM service
+        Stop-Service -Name WinRM -Force
+        Set-Service -Name WinRM -StartupType Disabled
+
+        # Delete the listener that accepts requests on any IP address
+        winrm delete winrm/config/Listener?Address=*+Transport=HTTP
+        winrm delete winrm/config/Listener?Address=*+Transport=HTTPS
+
+        # Disable the firewall exceptions for WS-Management communications
+        Set-NetFirewallRule -Name "WINRM-HTTP-In-TCP" -Enabled False
+        Set-NetFirewallRule -Name "WINRM-HTTPS-In-TCP" -Enabled False
+
+        # Restore the value of the LocalAccountTokenFilterPolicy to 0
+        $regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+        Set-ItemProperty -Path $regPath -Name "LocalAccountTokenFilterPolicy" -Value 0
+
         Write-Host "--------------------------------------------------------------------------------"
         Write-Host "PowerShell remoting disabled."
         Write-Host "--------------------------------------------------------------------------------"
@@ -1174,7 +1225,11 @@ Start-LoggedJob -JobName "Disable PowerShell Remoting" -ScriptBlock {
 Start-LoggedJob -JobName "Configure Windows Defender Exploit Guard" -ScriptBlock {
     try {
         Set-MpPreference -EnableControlledFolderAccess Enabled
-        Set-MpPreference -EnableExploitProtection Enabled
+        
+        # Configure system-level mitigations
+        Set-ProcessMitigation -System -Enable DEP, SEHOP, ForceRelocateImages, BottomUp, HighEntropy
+        
+        # Configure attack surface reduction rules
         Set-MpPreference -AttackSurfaceReductionRules_Ids @(
             "D4F940AB-401B-4EFC-AADC-AD5F3C50688A",  # Block executable content from email and webmail clients
             "3B576869-A4EC-4529-8536-B80A7769E899",  # Block executable content from Office files
@@ -1182,6 +1237,7 @@ Start-LoggedJob -JobName "Configure Windows Defender Exploit Guard" -ScriptBlock
             "D1E49AAC-8F56-4280-B9BA-993A6D77406C"   # Block executable content from Office files that contain macros
         )
         Set-MpPreference -AttackSurfaceReductionRules_Actions @("Enable", "Enable", "Enable", "Enable")
+        
         Write-Host "--------------------------------------------------------------------------------"
         Write-Host "Windows Defender Exploit Guard configured."
         Write-Host "--------------------------------------------------------------------------------"
@@ -1250,19 +1306,19 @@ Start-LoggedJob -JobName "Configure Windows Update to Install Updates Automatica
     }
 }
 
-Start-LoggedJob -JobName "Enable Logging for PowerShell" -ScriptBlock {
-    try {
-        Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging' -Name "EnableScriptBlockLogging" -Value 1
-        Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\Transcription' -Name "EnableTranscripting" -Value 1
-        Write-Host "--------------------------------------------------------------------------------"
-        Write-Host "Logging for PowerShell enabled."
-        Write-Host "--------------------------------------------------------------------------------"
-    } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        Write-Host "An error occurred while enabling logging for PowerShell: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-    }
-}
+# Start-LoggedJob -JobName "Enable Logging for PowerShell" -ScriptBlock {
+#     try {
+#         Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging' -Name "EnableScriptBlockLogging" -Value 1
+#         Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\Transcription' -Name "EnableTranscripting" -Value 1
+#         Write-Host "--------------------------------------------------------------------------------"
+#         Write-Host "Logging for PowerShell enabled."
+#         Write-Host "--------------------------------------------------------------------------------"
+#     } catch {
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#         Write-Host "An error occurred while enabling logging for PowerShell: $_"
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#     }
+# }
 
 # Disable PSExec
 Start-LoggedJob -JobName "Disable PSExec" -ScriptBlock {
@@ -1300,7 +1356,6 @@ Start-LoggedJob -JobName "Disable Sign-in for Non-Admin Users" -ScriptBlock {
             Set-LocalUser -Name $user.Name -UserMayNotChangePassword $true
             Set-LocalUser -Name $user.Name -PasswordRequired $true
             Set-LocalUser -Name $user.Name -Description "Disabled for security reasons"
-            Set-LocalUser -Name $user.Name -UserMayNotChangePassword $true
 
             Write-Host "--------------------------------------------------------------------------------"
             Write-Host "Sign-in for user $($user.Name) has been disabled."
@@ -1364,6 +1419,20 @@ Start-LoggedJob -JobName "Quick Scan with Windows Defender" -ScriptBlock {
         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++" 
     }
 }
+
+# Monitor jobs
+while ($global:jobs.Count -gt 0) {
+    foreach ($job in $global:jobs) {
+        if ($job.State -eq 'Completed') {
+            Write-Host "$(Get-Date -Format 'HH:mm:ss') - $($job.Name) has completed."
+            $job | Receive-Job
+            Remove-Job -Job $job
+            $global:jobs = $global:jobs | Where-Object { $_.Id -ne $job.Id }
+        }
+    }
+    Start-Sleep -Seconds 5
+}
+
 # Wait for all jobs to complete
 Get-Job | Wait-Job
 # Restart the computer
