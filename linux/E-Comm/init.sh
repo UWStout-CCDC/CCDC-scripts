@@ -266,6 +266,10 @@ else
 <IfModule autoindex_module>
     Options -Indexes
 </IfModule>
+
+# Disable TRACE and TRACK HTTP methods
+TraceEnable off
+
 EOF
 fi
 
@@ -484,6 +488,7 @@ kernel.dmesg_restrict = 1
 kernel.yama.ptrace_scope = 3
 kernel.exec_shield = 1
 kernel.randomize_va_space = 2
+fs.suid_dumpable = 0
 EOF
 
 #kernel.modules_disabled = 1
@@ -522,7 +527,7 @@ Systemctl daemon-reload
 
 
 # Bulk remove services
-yum remove xinetd telnet-server rsh-server telnet rsh ypbind ypserv tftp-server cronie-anacron bind vsftpd dovecot squid net-snmpd postfix -y
+yum remove xinetd telnet-server rsh-server telnet rsh ypbind ypserv tftp-server cronie-anacron bind vsftpd dovecot squid net-snmpd postfix vim httpd-manual -y
 
 # Bulk disable services
 systemctl disable xinetd
@@ -583,7 +588,7 @@ systemctl disable nfs
 systemctl enable --now ccdc_firewall.service
 
 yum update -y && yum upgrade -y
-yum install -y screen netcat aide clamav tmux
+yum install -y screen netcat aide clamav tmux lynis
 
 # Set up AIDE
 echo "Initializing AIDE..."
