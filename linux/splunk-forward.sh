@@ -32,30 +32,31 @@ mkdir $SPLUNK_HOME
 # Install Splunk Forwarder
 wget -O splunkforwarder-9.1.1-64e843ea36b1-Linux-x86_64.tgz "https://download.splunk.com/products/universalforwarder/releases/9.1.1/linux/splunkforwarder-9.1.1-64e843ea36b1-Linux-x86_64.tgz"
 tar -xzvf splunkforwarder-9.1.1-64e843ea36b1-Linux-x86_64.tgz -C /opt
-cd /opt/splunkforwarder/bin
 
 # Set permissions
 chown -R splunkfwd:splunkfwd $SPLUNK_HOME
+
+# Start the splunk forwarder, and automatically accept the license
+echo "Starting Splunk and accepting license"
+$SPLUNK_HOME/bin/splunk start --accept-license --answer-yes --no-prompt
+$SPLUNK_HOME/bin/splunk enable boot-start
 
 # Changing default admin password
 cd /opt/splunkforwarder/bin
 default_password=changeme
 echo "Enter new Splunk admin password:"
 read -s password
-./splunk edit user admin -auth admin:$default_password -password $password
+$SPLUNK_HOME/bin/splunk edit user admin -auth admin:$default_password -password $password
 
-# Start the splunk forwarder, and automatically accept the license
-echo "Starting Splunk and accepting license"
-./splunk start --accept-license
 # Add the server to forward to (ip needs to be the first param)
 echo "Adding server to forward to $SPLUNK_SERVER_IP. Use admin credentials"
-./splunk add forward-server $SPLUNK_SERVER_IP:9997 -auth admin:$password # User will have to input the same creds here
+$SPLUNK_HOME/bin/splunk add forward-server $SPLUNK_SERVER_IP:9997 -auth admin:$password # User will have to input the same creds here
 
 # Quick function to check if a file exists, and monitor it
 monitor() {
   if [ -f $1 ]
   then
-    ./splunk add monitor $1
+    $SPLUNK_HOME/bin/splunk add monitor $1
   fi
 }
 
@@ -73,11 +74,3 @@ monitor /var/log/httpd/
 monitor /var/log/mysql.log
 monitor /var/log/mysqld.log
 # TODO: add more files
-
-# == Configure options ==
-
-# Set Splunk to start as Splunk user
-./splunk enable boot-start -user splunkfwd
-
-# Restart Splunk
-./splunk restart
