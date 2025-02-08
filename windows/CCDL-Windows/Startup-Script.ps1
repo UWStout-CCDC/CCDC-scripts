@@ -328,6 +328,38 @@ try {
     Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
 }
 
+# Set Password for all other accounts to lock them out:
+$allPassword = Read-Host -AsSecureString "Enter new password for all other accounts"
+
+# Convert the secure string to plain text for use with dsmod
+$allPasswordPlain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($allPassword))
+
+# Query all users in the domain and change their password
+try {
+    $users = dsquery user -limit 0
+    foreach ($user in $users) {
+        # Get the username from the distinguished name
+        $username = ($user -split ',')[0] -replace 'CN=', ''
+        
+        # Skip the Administrator account
+        if ($username -ne "Administrator") {
+            dsmod user $user -pwd $allPasswordPlain -mustchpwd yes
+            Write-Host "Password for user $user has been changed and must change password at next logon."
+        } else {
+            Write-Host "Skipping Administrator account."
+        }
+    }
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "Passwords for all users in the domain (except Administrator) have been changed."
+    Write-Host "--------------------------------------------------------------------------------"
+} catch {
+    Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+    Write-Host "An error occurred while changing passwords for users in the domain: $_"
+    Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+}
+
+
+
 # Create directories
 $ccdcPath = "C:\CCDC"
 $toolsPath = "$ccdcPath\tools-Windows"
@@ -723,95 +755,95 @@ Start-LoggedJob -JobName "Backup Active Directory" -ScriptBlock {
     }
 }
 
-# Backup SAM and System Hives
-Start-LoggedJob -JobName "Backup SAM and System Hives" -ScriptBlock {
-    try {
-        $registryPath = "$ccdcPath\Registry"
-        $backupPath = "$registryPath\RegistryBackupSamSystem"
+# # Backup SAM and System Hives
+# Start-LoggedJob -JobName "Backup SAM and System Hives" -ScriptBlock {
+#     try {
+#         $registryPath = "$ccdcPath\Registry"
+#         $backupPath = "$registryPath\RegistryBackupSamSystem"
 
-        # Ensure the backup paths exist
-        if (-not (Test-Path $registryPath)) {
-            mkdir $registryPath
-        }
-        if (-not (Test-Path $backupPath)) {
-            mkdir $backupPath
-        }
+#         # Ensure the backup paths exist
+#         if (-not (Test-Path $registryPath)) {
+#             mkdir $registryPath
+#         }
+#         if (-not (Test-Path $backupPath)) {
+#             mkdir $backupPath
+#         }
 
-        # Backup the SAM and SYSTEM hives with elevated privileges
-        Start-Process -FilePath "reg.exe" -ArgumentList "save HKLM\SAM $backupPath\SAM.bak" -Verb RunAs -Wait
-        Start-Process -FilePath "reg.exe" -ArgumentList "save HKLM\SYSTEM $backupPath\SYSTEM.bak" -Verb RunAs -Wait
+#         # Backup the SAM and SYSTEM hives with elevated privileges
+#         Start-Process -FilePath "reg.exe" -ArgumentList "save HKLM\SAM $backupPath\SAM.bak" -Verb RunAs -Wait
+#         Start-Process -FilePath "reg.exe" -ArgumentList "save HKLM\SYSTEM $backupPath\SYSTEM.bak" -Verb RunAs -Wait
 
-        Write-Host "--------------------------------------------------------------------------------"
-        Write-Host "SAM and System hives backed up."
-        Write-Host "--------------------------------------------------------------------------------"
-    } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        Write-Host "An error occurred while backing up SAM and System hives: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-    }
-}
+#         Write-Host "--------------------------------------------------------------------------------"
+#         Write-Host "SAM and System hives backed up."
+#         Write-Host "--------------------------------------------------------------------------------"
+#     } catch {
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#         Write-Host "An error occurred while backing up SAM and System hives: $_"
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#     }
+# }
 
-# Restrict access to the SAM and System hives to just necessary system accounts
-Start-LoggedJob -JobName "Restrict Access to SAM and System Hives" -ScriptBlock {
-    try {
-        $backupPath = "$ccdcPath\Registry\RegistryBackupSamSystem"
+# # Restrict access to the SAM and System hives to just necessary system accounts
+# Start-LoggedJob -JobName "Restrict Access to SAM and System Hives" -ScriptBlock {
+#     try {
+#         $backupPath = "$ccdcPath\Registry\RegistryBackupSamSystem"
         
-        # Ensure the backup path exists
-        if (-not (Test-Path $backupPath)) {
-            mkdir $backupPath
-        }
+#         # Ensure the backup path exists
+#         if (-not (Test-Path $backupPath)) {
+#             mkdir $backupPath
+#         }
 
-        # Backup the SAM and SYSTEM hives
-        reg save HKLM\SAM "$backupPath\SAM.bak"
-        reg save HKLM\SYSTEM "$backupPath\SYSTEM.bak"
+#         # Backup the SAM and SYSTEM hives
+#         reg save HKLM\SAM "$backupPath\SAM.bak"
+#         reg save HKLM\SYSTEM "$backupPath\SYSTEM.bak"
 
-        # Define necessary system accounts
-        $adminUser = [System.Security.Principal.NTAccount]"Administrator"
-        $systemUser = [System.Security.Principal.NTAccount]"SYSTEM"
-        $trustedInstaller = [System.Security.Principal.NTAccount]"NT SERVICE\TrustedInstaller"
+#         # Define necessary system accounts
+#         $adminUser = [System.Security.Principal.NTAccount]"Administrator"
+#         $systemUser = [System.Security.Principal.NTAccount]"SYSTEM"
+#         $trustedInstaller = [System.Security.Principal.NTAccount]"NT SERVICE\TrustedInstaller"
 
-        # Function to set ACL for a registry hive
-        function Set-RegistryAcl {
-            param (
-                [string]$hivePath,
-                [System.Security.Principal.NTAccount]$adminUser,
-                [System.Security.Principal.NTAccount]$systemUser,
-                [System.Security.Principal.NTAccount]$trustedInstaller
-            )
+#         # Function to set ACL for a registry hive
+#         function Set-RegistryAcl {
+#             param (
+#                 [string]$hivePath,
+#                 [System.Security.Principal.NTAccount]$adminUser,
+#                 [System.Security.Principal.NTAccount]$systemUser,
+#                 [System.Security.Principal.NTAccount]$trustedInstaller
+#             )
 
-            $acl = Get-Acl $hivePath
-            $acl.SetAccessRuleProtection($true, $false)
+#             $acl = Get-Acl $hivePath
+#             $acl.SetAccessRuleProtection($true, $false)
 
-            # Remove existing access rules
-            $acl.Access | ForEach-Object { $acl.RemoveAccessRule($_) }
+#             # Remove existing access rules
+#             $acl.Access | ForEach-Object { $acl.RemoveAccessRule($_) }
 
-            # Add full control for necessary system accounts
-            $adminRule = New-Object System.Security.AccessControl.RegistryAccessRule($adminUser, "FullControl", "Allow")
-            $systemRule = New-Object System.Security.AccessControl.RegistryAccessRule($systemUser, "FullControl", "Allow")
-            $trustedInstallerRule = New-Object System.Security.AccessControl.RegistryAccessRule($trustedInstaller, "FullControl", "Allow")
-            $acl.AddAccessRule($adminRule)
-            $acl.AddAccessRule($systemRule)
-            $acl.AddAccessRule($trustedInstallerRule)
+#             # Add full control for necessary system accounts
+#             $adminRule = New-Object System.Security.AccessControl.RegistryAccessRule($adminUser, "FullControl", "Allow")
+#             $systemRule = New-Object System.Security.AccessControl.RegistryAccessRule($systemUser, "FullControl", "Allow")
+#             $trustedInstallerRule = New-Object System.Security.AccessControl.RegistryAccessRule($trustedInstaller, "FullControl", "Allow")
+#             $acl.AddAccessRule($adminRule)
+#             $acl.AddAccessRule($systemRule)
+#             $acl.AddAccessRule($trustedInstallerRule)
 
-            # Apply the modified ACL
-            Set-Acl $hivePath $acl
-        }
+#             # Apply the modified ACL
+#             Set-Acl $hivePath $acl
+#         }
 
-        # Set ACL for SAM hive
-        Set-RegistryAcl -hivePath "HKLM\SAM" -adminUser $adminUser -systemUser $systemUser -trustedInstaller $trustedInstaller
+#         # Set ACL for SAM hive
+#         Set-RegistryAcl -hivePath "HKLM\SAM" -adminUser $adminUser -systemUser $systemUser -trustedInstaller $trustedInstaller
 
-        # Set ACL for SYSTEM hive
-        Set-RegistryAcl -hivePath "HKLM\SYSTEM" -adminUser $adminUser -systemUser $systemUser -trustedInstaller $trustedInstaller
+#         # Set ACL for SYSTEM hive
+#         Set-RegistryAcl -hivePath "HKLM\SYSTEM" -adminUser $adminUser -systemUser $systemUser -trustedInstaller $trustedInstaller
 
-        Write-Host "--------------------------------------------------------------------------------"
-        Write-Host "Access to SAM and System hives restricted."
-        Write-Host "--------------------------------------------------------------------------------"
-    } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        Write-Host "An error occurred while restricting access to SAM and System hives: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-    }
-}
+#         Write-Host "--------------------------------------------------------------------------------"
+#         Write-Host "Access to SAM and System hives restricted."
+#         Write-Host "--------------------------------------------------------------------------------"
+#     } catch {
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#         Write-Host "An error occurred while restricting access to SAM and System hives: $_"
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#     }
+# }
 
 # Create alert for new startup items, create toast notification when new startup item is created, check every 5 seconds, this should be run as a scheduled task
 Start-LoggedJob -JobName "Create Alert for New Startup Items" -ScriptBlock {
