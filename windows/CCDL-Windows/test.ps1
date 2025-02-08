@@ -1031,21 +1031,21 @@ Start-LoggedJob -JobName "Configure Windows Firewall" -ScriptBlock {
 # }
 
 # Enable audit policies for key events like login, account management, file system changes, and registry changes
-Start-LoggedJob -JobName "Enable Audit Policies" -ScriptBlock {
-    try {
-        AuditPol.exe /set /subcategory:"Logon" /success:enable /failure:enable
-        AuditPol.exe /set /subcategory:"User Account Management" /success:enable /failure:enable
-        AuditPol.exe /set /subcategory:"File System" /success:enable /failure:enable
-        AuditPol.exe /set /subcategory:"Registry" /success:enable /failure:enable
-        Write-Host "--------------------------------------------------------------------------------"
-        Write-Host "Audit policies for login, account management, file system changes, and registry changes enabled."
-        Write-Host "--------------------------------------------------------------------------------"
-    } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        Write-Host "An error occurred while enabling audit policies: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-    }
-}
+# Start-LoggedJob -JobName "Enable Audit Policies" -ScriptBlock {
+#     try {
+#         AuditPol.exe /set /subcategory:"Logon" /success:enable /failure:enable
+#         AuditPol.exe /set /subcategory:"User Account Management" /success:enable /failure:enable
+#         AuditPol.exe /set /subcategory:"File System" /success:enable /failure:enable
+#         AuditPol.exe /set /subcategory:"Registry" /success:enable /failure:enable
+#         Write-Host "--------------------------------------------------------------------------------"
+#         Write-Host "Audit policies for login, account management, file system changes, and registry changes enabled."
+#         Write-Host "--------------------------------------------------------------------------------"
+#     } catch {
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#         Write-Host "An error occurred while enabling audit policies: $_"
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#     }
+# }
 
 # # Remove unnecessary network shares
 # Start-LoggedJob -JobName "Remove Unnecessary Network Shares" -ScriptBlock {
@@ -1331,37 +1331,37 @@ Start-LoggedJob -JobName "Reaffirm Windows Firewall" -ScriptBlock {
 #     }
 # }
 
-# Restrict access to running any commands to Administrator
-Start-LoggedJob -JobName "Restrict Access to Commands" -ScriptBlock {
-    try {
-        $acl = Get-Acl "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
-        $acl.SetAccessRuleProtection($true, $false)
+# # Restrict access to running any commands to Administrator
+# Start-LoggedJob -JobName "Restrict Access to Commands" -ScriptBlock {
+#     try {
+#         $acl = Get-Acl "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+#         $acl.SetAccessRuleProtection($true, $false)
         
-        # Remove existing access rules
-        $acl.Access | ForEach-Object { $acl.RemoveAccessRule($_) }
+#         # Remove existing access rules
+#         $acl.Access | ForEach-Object { $acl.RemoveAccessRule($_) }
         
-        # Add full control for necessary system accounts
-        $adminUser = [System.Security.Principal.NTAccount]"Administrator"
-        $systemUser = [System.Security.Principal.NTAccount]"SYSTEM"
-        $trustedInstaller = [System.Security.Principal.NTAccount]"NT SERVICE\TrustedInstaller"
-        $adminRule = New-Object System.Security.AccessControl.RegistryAccessRule($adminUser, "FullControl", "Allow")
-        $systemRule = New-Object System.Security.AccessControl.RegistryAccessRule($systemUser, "FullControl", "Allow")
-        $trustedInstallerRule = New-Object System.Security.AccessControl.RegistryAccessRule($trustedInstaller, "FullControl", "Allow")
-        $acl.AddAccessRule($adminRule)
-        $acl.AddAccessRule($systemRule)
-        $acl.AddAccessRule($trustedInstallerRule)
+#         # Add full control for necessary system accounts
+#         $adminUser = [System.Security.Principal.NTAccount]"Administrator"
+#         $systemUser = [System.Security.Principal.NTAccount]"SYSTEM"
+#         $trustedInstaller = [System.Security.Principal.NTAccount]"NT SERVICE\TrustedInstaller"
+#         $adminRule = New-Object System.Security.AccessControl.RegistryAccessRule($adminUser, "FullControl", "Allow")
+#         $systemRule = New-Object System.Security.AccessControl.RegistryAccessRule($systemUser, "FullControl", "Allow")
+#         $trustedInstallerRule = New-Object System.Security.AccessControl.RegistryAccessRule($trustedInstaller, "FullControl", "Allow")
+#         $acl.AddAccessRule($adminRule)
+#         $acl.AddAccessRule($systemRule)
+#         $acl.AddAccessRule($trustedInstallerRule)
         
-        # Apply the modified ACL to the registry key
-        Set-Acl -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -AclObject $acl
-        Write-Host "--------------------------------------------------------------------------------"
-        Write-Host "Access to running commands restricted to Administrator."
-        Write-Host "--------------------------------------------------------------------------------"
-    } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        Write-Host "An error occurred while restricting access to running commands: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-    }
-}
+#         # Apply the modified ACL to the registry key
+#         Set-Acl -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -AclObject $acl
+#         Write-Host "--------------------------------------------------------------------------------"
+#         Write-Host "Access to running commands restricted to Administrator."
+#         Write-Host "--------------------------------------------------------------------------------"
+#     } catch {
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#         Write-Host "An error occurred while restricting access to running commands: $_"
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#     }
+# }
 
 # # Disable all ports except the ones needed for AD/DNS
 # try {
