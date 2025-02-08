@@ -1,4 +1,5 @@
 #!/bin/bash
+# https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master/linux/E-Comm/init.sh
 BASEURL=https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master
 read -p "Enter the default password for the PrestaShop database: " -s DEFAULT_PRESTA_PASS
 
@@ -66,6 +67,15 @@ prompt() {
   esac
 }
 
+
+# change DNS in network config file by replacing the DNS1 and DNS2 values
+echo "Setting up DNS..."
+INTERFACE=$(ip route | grep default | awk '{print $5}')
+sed -i 's/DNS1='.*'/DNS1=1.1.1.1/g' /etc/sysconfig/network-scripts/ifcfg-$INTERFACE
+sed -i 's/DNS2='.*'/DNS2=9.9.9.9/g' /etc/sysconfig/network-scripts/ifcfg-$INTERFACE
+
+# Restart the network service
+systemctl restart network
 
 # Lock all users except root and sysadmin
 USER_LOCK_SCRIPT="$SCRIPT_DIR/linux/user_lock.sh"
@@ -256,6 +266,10 @@ else
 <IfModule autoindex_module>
     Options -Indexes
 </IfModule>
+
+# Disable TRACE and TRACK HTTP methods
+TraceEnable off
+
 EOF
 fi
 
@@ -279,6 +293,25 @@ else
     php_flag engine off
 </Directory>
 EOF
+fi
+
+# Disable expose_php in the php.ini file, this is done by setting expose_php = Off
+if grep -q "expose_php = Off" /etc/php.ini
+then
+    echo "expose_php already set to Off"
+else
+    echo "Setting expose_php to Off..."
+    sed -i 's/expose_php = On/expose_php = Off/g' /etc/php.ini
+fi
+
+
+# Disable allow_url_fopen in the php.ini file, this is done by setting allow_url_fopen = Off
+if grep -q "allow_url_fopen = Off" /etc/php.ini
+then
+    echo "allow_url_fopen already set to Off"
+else
+    echo "Setting allow_url_fopen to Off..."
+    sed -i 's/allow_url_fopen = On/allow_url_fopen = Off/g' /etc/php.ini
 fi
 
 
@@ -327,11 +360,235 @@ replace /etc issue.net general/legal_banner.txt
 systemctl disable --now firewalld
 systemctl disable --now ufw
 
+
+##################################################
+#
+#           CENTOS HARDENING
+#
+##################################################
+
+# Ensure NTP is installed and running
+yum install ntpdate -y
+ntpdate pool.ntp.org
+
+# Disable prelinking altogether for aide
+#
+if grep -q ^PRELINKING /etc/sysconfig/prelink
+then
+  sed -i 's/PRELINKING.*/PRELINKING=no/g' /etc/sysconfig/prelink
+else
+  echo -e "\n# Set PRELINKING=no per security requirements" >> /etc/sysconfig/prelink
+  echo "PRELINKING=no" >> /etc/sysconfig/prelink
+fi
+
+# Enable SHA512 password hashing
+authconfig --passalgo=sha512 —update
+
+# Set Last Login/Access Notification
+# Edit /etc/pam.d/system-auth, and add following line imeediatley after session required pam_limits.so: session       required     pam_lastlog.so showfailed
+
+if grep -q pam_lastlog.so /etc/pam.d/system-auth
+then
+    echo "pam_lastlog.so already in system-auth"
+else
+    echo "Adding pam_lastlog.so to system-auth..."
+    sed -i '/pam_limits.so/a session required pam_lastlog.so showfailed' /etc/pam.d/system-auth
+fi
+
+# Disable Ctrl-Alt-Del Reboot Activation
+# change 'exec /sbin/shutdown -r now "Control-Alt-Delete pressed"' to 'exec /usr/bin/logger -p security.info "Control-Alt-Delete pressed"' in /etc/init/control-alt-delete.conf
+
+if grep -q "exec /usr/bin/logger -p security.info" /etc/init/control-alt-delete.conf
+then
+    echo "Control-Alt-Delete already disabled"
+else
+    echo "Disabling Control-Alt-Delete..."
+    sed -i 's/exec \/sbin\/shutdown -r now "Control-Alt-Delete pressed"/exec \/usr\/bin\/logger -p security.info "Control-Alt-Delete pressed"/g' /etc/init/control-alt-delete.conf
+fi
+
+# secure grub by ensuring the permissions are set to 600
+chmod 600 /boot/grub2/grub.cfg
+
+# Ensure SELinux is enabled and enforcing
+# Check if SELINUX is already set to enforcing
+if grep -q SELINUX=enforcing /etc/selinux/config
+then
+    echo "SELINUX already set to enforcing"
+else
+    echo "Setting SELINUX to enforcing..."
+    sed -i 's/SELINUX=disabled/SELINUX=enforcing/g' /etc/selinux/config
+fi
+
+# REMOVE ALLL COMPILERS
+yum remove libgcc -y
+
+# Disable Support for RPC IPv6
+# comment the following lines in /etc/netconfig
+# udp6       tpi_clts      v     inet6    udp     -       -
+# tcp6       tpi_cots_ord  v     inet6    tcp     -       -
+
+if grep -q "udp6" /etc/netconfig
+then
+    echo "Support for RPC IPv6 already disabled"
+else
+    echo "Disabling Support for RPC IPv6..."
+    sed -i 's/udp6       tpi_clts      v     inet6    udp     -       -/#udp6       tpi_clts      v     inet6    udp     -       -/g' /etc/netconfig
+    sed -i 's/tcp6       tpi_cots_ord  v     inet6    tcp     -       -/#tcp6       tpi_cots_ord  v     inet6    tcp     -       -/g' /etc/netconfig
+fi
+
+# Only allow root login from console
+echo "tty1" > /etc/securetty
+chmod 700 /root
+
+# Enable UMASK 077
+perl -npe 's/umask\s+0\d2/umask 077/g' -i /etc/bashrc
+perl -npe 's/umask\s+0\d2/umask 077/g' -i /etc/csh.cshrc
+
+# Secure cron
+echo "Locking down Cron"
+touch /etc/cron.allow
+chmod 600 /etc/cron.allow
+awk -F: '{print $1}' /etc/passwd | grep -v root > /etc/cron.deny
+echo "Locking down AT"
+touch /etc/at.allow
+chmod 600 /etc/at.allow
+awk -F: '{print $1}' /etc/passwd | grep -v root > /etc/at.deny
+chmod 600 /etc/cron.deny
+chmod 600 /etc/at.deny
+chmod 600 /etc/crontab
+
+# Sysctl Security 
+cat <<-EOF > /etc/sysctl.conf
+net.ipv4.ip_forward = 0
+net.ipv4.conf.all.send_redirects = 0
+net.ipv4.conf.default.send_redirects = 0
+net.ipv4.tcp_max_syn_backlog = 1280
+net.ipv4.icmp_echo_ignore_broadcasts = 1
+net.ipv4.conf.all.accept_source_route = 0
+net.ipv4.conf.all.accept_redirects = 0
+net.ipv4.conf.all.secure_redirects = 0
+net.ipv4.conf.all.log_martians = 1
+net.ipv4.conf.default.accept_source_route = 0
+net.ipv4.conf.default.accept_redirects = 0
+net.ipv4.conf.default.secure_redirects = 0
+net.ipv4.icmp_echo_ignore_broadcasts = 1
+net.ipv4.icmp_ignore_bogus_error_responses = 1
+net.ipv4.tcp_syncookies = 1
+net.ipv4.conf.all.rp_filter = 1
+net.ipv4.conf.default.rp_filter = 1
+net.ipv4.tcp_timestamps = 0
+net.ipv6.conf.default.accept_redirects = 0
+net.ipv6.conf.all.accept_redirects = 0
+net.ipv4.conf.default.log_martians = 1
+net.core.bpf_jit_harden = 2
+kernel.sysrq = 0
+kernel.perf_event_paranoid = 3
+kernel.kptr_restrict = 2
+kernel.dmesg_restrict = 1
+kernel.yama.ptrace_scope = 3
+kernel.exec_shield = 1
+kernel.randomize_va_space = 2
+fs.suid_dumpable = 0
+EOF
+
+#kernel.modules_disabled = 1
+
+# kernel.yama.ptrace_scope = 2
+
+# DENY ALL TCP WRAPPERS
+echo "ALL:ALL" > /etc/hosts.deny
+
+# Disable Uncommon Protocols
+echo "install dccp /bin/false" > /etc/modprobe.d/dccp.conf
+echo "install sctp /bin/false" > /etc/modprobe.d/sctp.conf
+echo "install rds /bin/false" > /etc/modprobe.d/rds.conf
+echo "install tipc /bin/false" > /etc/modprobe.d/tipc.conf
+
+# Install and Configure Auditd
+yum install auditd
+systemctl enable auditd
+systemctl start auditd
+wget raw.githubusercontent.com/Neo23x0/auditd/refs/heads/master/audit.rules
+rm /etc/audit/rules.d/audit.rules
+mv audit.rules audit.rules /etc/audit/rules.d/
+# CHANGE VALUE TO RefuseManualStop=no
+if grep -q "RefuseManualStop=no" /usr/lib/systemd/system/auditd.service
+then
+    echo "RefuseManualStop already set to no"
+else
+    echo "Setting RefuseManualStop to no..."
+    sed -i 's/RefuseManualStop=yes/RefuseManualStop=no/g' /usr/lib/systemd/system/auditd.service
+fi
+
+Auditctl -R /etc/audit/rules.d/audit.rules
+systemctl restart auditd
+Service auditd restart
+Systemctl daemon-reload
+
+
+# Bulk remove services
+yum remove xinetd telnet-server rsh-server telnet rsh ypbind ypserv tftp-server cronie-anacron bind vsftpd dovecot squid net-snmpd postfix vim httpd-manual -y
+
+# Bulk disable services
+systemctl disable xinetd
+systemctl disable rexec
+systemctl disable rsh
+systemctl disable rlogin
+systemctl disable ypbind
+systemctl disable tftp
+systemctl disable certmonger
+systemctl disable cgconfig
+systemctl disable cgred
+systemctl disable cpuspeed
+systemctl enable irqbalance
+systemctl disable kdump
+systemctl disable mdmonitor
+systemctl disable messagebus
+systemctl disable netconsole
+systemctl disable ntpdate
+systemctl disable oddjobd
+systemctl disable portreserve
+systemctl enable psacct
+systemctl disable qpidd
+systemctl disable quota_nld
+systemctl disable rdisc
+systemctl disable rhnsd
+systemctl disable rhsmcertd
+systemctl disable saslauthd
+systemctl disable smartd
+systemctl disable sysstat
+systemctl enable crond
+systemctl disable atd
+systemctl disable nfslock
+systemctl disable named
+systemctl disable dovecot
+systemctl disable squid
+systemctl disable snmpd
+systemctl disable postfix
+
+# Disable rpc
+systemctl disable rpcgssd
+systemctl disable rpcsvcgssd
+systemctl disable rpcidmapd
+
+# Disable Network File Systems (netfs)
+systemctl disable netfs
+
+# Disable Network File System (nfs)
+systemctl disable nfs
+
+##################################################
+#
+#           END CENTOS HARDENING
+#
+##################################################
+
+
 # Automatically apply IPTABLES_SCRIPT on boot
 systemctl enable --now ccdc_firewall.service
 
 yum update -y && yum upgrade -y
-yum install -y screen netcat aide clamav tmux
+yum install -y screen netcat aide clamav tmux lynis
 
 # Set up AIDE
 echo "Initializing AIDE..."
@@ -362,7 +619,7 @@ if [ -f "/etc/cron.d/aide" ]; then
     echo "AIDE cron job already exists"
 else
     echo "Setting up AIDE cron job..."
-    echo "*/5 * * * * /usr/sbin/aide --check > /tmp/aide.log && mv /tmp/aide.log /root/aide.log" > /etc/cron.d/aide
+    # echo "*/5 * * * * /usr/sbin/aide --check > /tmp/aide.log && mv /tmp/aide.log /root/aide.log" > /etc/cron.d/aide
 fi
 
 # Check if changes were already made to the network config file
@@ -386,5 +643,7 @@ freshclam
 # Install monitor script
 wget $BASEURL/linux/E-Comm/monitor.sh -O /ccdc/scripts/monitor.sh
 chmod +x /ccdc/scripts/monitor.sh
+
+cp -R /bkp /etc/frr
 
 echo "Finished running init.sh, please reboot the system to apply changes"
