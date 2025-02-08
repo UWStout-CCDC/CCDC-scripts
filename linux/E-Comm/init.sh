@@ -482,6 +482,8 @@ kernel.perf_event_paranoid = 3
 kernel.kptr_restrict = 2
 kernel.dmesg_restrict = 1
 kernel.yama.ptrace_scope = 3
+kernel.exec_shield = 1
+kernel.randomize_va_space = 2
 EOF
 
 #kernel.modules_disabled = 1
