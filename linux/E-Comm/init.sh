@@ -479,10 +479,12 @@ net.ipv4.conf.default.log_martians = 1
 net.core.bpf_jit_harden = 2
 kernel.sysrq = 0
 kernel.perf_event_paranoid = 3
-kernel.modules_disabled = 1
 kernel.kptr_restrict = 2
 kernel.dmesg_restrict = 1
+kernel.yama.ptrace_scope = 3
 EOF
+
+#kernel.modules_disabled = 1
 
 # kernel.yama.ptrace_scope = 2
 
