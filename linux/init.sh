@@ -261,11 +261,9 @@ EOF
   # TODO: secure ?
 fi
 
-SPLUNK="n"
 if prompt "Splunk Server?" n
 then
   IS_SPLUNK_SERVER="y"
-  SPLUNK="y"
   cat <<-EOF >> $IPTABLES_SCRIPT
   # Splunk Web UI
   iptables -t filter -A INPUT -p tcp --dport 8000 -j ACCEPT
@@ -405,7 +403,7 @@ fi
 
 # Splunk forwarder
 # We need to check to make sure this actually applies... the get sometimes fails
-if [[ $SPLUNK != "y" ]]
+if [[ $IS_SPLUNK_SERVER != "y" ]]
 then
   if prompt "Install Splunk Forwarder?" y
   then

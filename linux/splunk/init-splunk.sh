@@ -69,12 +69,15 @@ echo -e "\e[33mSetting up AIDE\e[0m"
 aide --init
 mv /var/lib/aide/aide.db.new.gz /var/lib/aide/aide.db.gz
 
+# Set DNS
+echo -e "\e[33mSetting DNS\e[0m"
+sed -i '/^nameserver/ i\nameserver 1.1.1.1' /etc/resolv.conf
+
 # Auditd setup
 echo -e "\e[33mSetting up Auditd\e[0m"
+cat audit.rules >> /etc/audit/audit.rules
 systemctl enable auditd.service
 systemctl start auditd.service
-
-cat audit.rules >> /etc/audit/audit.rules
 
 # Disable uncommon protocols
 echo -e "\e[33mDisabling uncommon protocols\e[0m"
