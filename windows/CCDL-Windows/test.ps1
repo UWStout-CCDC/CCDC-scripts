@@ -902,16 +902,16 @@ Start-LoggedJob -JobName "Set Password Policies" -ScriptBlock {
 }
 
 
-# Disable unnecessary services
-$servicesToDisable = @("Spooler", "RemoteRegistry", "Fax")
-foreach ($service in $servicesToDisable) {
-    Start-LoggedJob -JobName "Disable Service: $service" -ScriptBlock {
-        param ($service)
-        Write-Host "Disabling service: $service"
-        Stop-Service -Name $service -Force
-        Set-Service -Name $service -StartupType Disabled
-    } -ArgumentList $service
-}
+# # Disable unnecessary services
+# $servicesToDisable = @("Spooler", "RemoteRegistry", "Fax")
+# foreach ($service in $servicesToDisable) {
+#     Start-LoggedJob -JobName "Disable Service: $service" -ScriptBlock {
+#         param ($service)
+#         Write-Host "Disabling service: $service"
+#         Stop-Service -Name $service -Force
+#         Set-Service -Name $service -StartupType Disabled
+#     } -ArgumentList $service
+# }
 
 # Enable Windows Defender with real-time protection and PUA protection
 Start-LoggedJob -JobName "Enable Windows Defender" -ScriptBlock {
