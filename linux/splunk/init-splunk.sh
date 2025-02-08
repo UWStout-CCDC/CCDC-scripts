@@ -48,6 +48,10 @@ echo -e "\e[33mRunning init script\e[0m"
 chmod +x init.sh
 ./init.sh
 
+#################################
+##   Start Security Configs    ##
+#################################
+
 # Cron and AT security
 echo -e "\e[33mSetting cron and at security\e[0m"
 echo "Locking down Cron"
@@ -79,6 +83,57 @@ cat audit.rules >> /etc/audit/audit.rules
 systemctl enable auditd.service
 systemctl start auditd.service
 
+# Bulk remove services
+yum remove xinetd telnet-server rsh-server telnet rsh ypbind ypserv tftp-server cronie-anacron bind vsftpd dovecot squid net-snmpd postfix -y
+
+# Bulk disable services
+systemctl disable xinetd
+systemctl disable rexec
+systemctl disable rsh
+systemctl disable rlogin
+systemctl disable ypbind
+systemctl disable tftp
+systemctl disable certmonger
+systemctl disable cgconfig
+systemctl disable cgred
+systemctl disable cpuspeed
+systemctl enable irqbalance
+systemctl disable kdump
+systemctl disable mdmonitor
+systemctl disable messagebus
+systemctl disable netconsole
+systemctl disable ntpdate
+systemctl disable oddjobd
+systemctl disable portreserve
+systemctl enable psacct
+systemctl disable qpidd
+systemctl disable quota_nld
+systemctl disable rdisc
+systemctl disable rhnsd
+systemctl disable rhsmcertd
+systemctl disable saslauthd
+systemctl disable smartd
+systemctl disable sysstat
+systemctl enable crond
+systemctl disable atd
+systemctl disable nfslock
+systemctl disable named
+systemctl disable dovecot
+systemctl disable squid
+systemctl disable snmpd
+systemctl disable postfix
+
+# Disable rpc
+systemctl disable rpcgssd
+systemctl disable rpcsvcgssd
+systemctl disable rpcidmapd
+
+# Disable Network File Systems (netfs)
+systemctl disable netfs
+
+# Disable Network File System (nfs)
+systemctl disable nfs
+
 # Disable uncommon protocols
 echo -e "\e[33mDisabling uncommon protocols\e[0m"
 echo "install dccp /bin/false" >> /etc/modprobe.d/dccp.conf
@@ -90,29 +145,44 @@ echo "install tipc /bin/false" >> /etc/modprobe.d/tipc.conf
 echo -e "\e[33mDisabling core dumps for users\e[0m"
 echo "* hard core 0" >> /etc/security/limits.conf
 
-# Disable core dumps for SUID programs
-echo -e "\e[33mDisabling core dumps for SUID programs\e[0m"
-# Set runtime for fs.suid_dumpable
-sysctl -q -n -w fs.suid_dumpable=0
+# Secure sysctl.conf
+echo -e "\e[33mSecuring sysctl.conf\e[0m"
+cat <<-EOF >> /etc/sysctl.conf
+fs.suid_dumpable = 0
+kernel.exec_shield = 1
+kernel.randomize_va_space = 2
+net.ipv4.ip_forward = 0
+net.ipv4.conf.all.send_redirects = 0
+net.ipv4.conf.default.send_redirects = 0
+net.ipv4.tcp_max_syn_backlog = 1280
+net.ipv4.icmp_echo_ignore_broadcasts = 1
+net.ipv4.conf.all.accept_source_route = 0
+net.ipv4.conf.all.accept_redirects = 0
+net.ipv4.conf.all.secure_redirects = 0
+net.ipv4.conf.all.log_martians = 1
+net.ipv4.conf.default.accept_source_route = 0
+net.ipv4.conf.default.accept_redirects = 0
+net.ipv4.conf.default.secure_redirects = 0
+net.ipv4.icmp_echo_ignore_broadcasts = 1
+net.ipv4.icmp_ignore_bogus_error_responses = 1
+net.ipv4.tcp_syncookies = 1
+net.ipv4.conf.all.rp_filter = 1
+net.ipv4.conf.default.rp_filter = 1
+net.ipv4.tcp_timestamps = 0
+net.ipv6.conf.default.accept_redirects = 0
+net.ipv6.conf.all.accept_redirects = 0
+net.ipv4.conf.default.log_martians = 1
+net.core.bpf_jit_harden = 2
+kernel.sysrq = 0
+kernel.perf_event_paranoid = 3
+kernel.kptr_restrict = 2
+kernel.dmesg_restrict = 1
+kernel.yama.ptrace_scope = 3
+EOF
 
-# If fs.suid_dumpable present in /etc/sysctl.conf, change value to "0"
-#     else, add "fs.suid_dumpable = 0" to /etc/sysctl.conf
-if grep --silent ^fs.suid_dumpable /etc/sysctl.conf ; then
-    sed -i 's/^fs.suid_dumpable.*/fs.suid_dumpable = 0/g' /etc/sysctl.conf
-else
-    echo "" >> /etc/sysctl.conf
-    echo "# Set fs.suid_dumpable to 0 per security requirements" >> /etc/sysctl.conf
-    echo "fs.suid_dumpable = 0" >> /etc/sysctl.conf
-fi
-
-# Buffer Overflow Protection
-echo -e "\e[33mSetting up buffer overflow protection\e[0m"
-# Enables exec-shield
-sysctl -w kernel.exec-shield=1
-echo "kernel.exec-shield = 1" >> /etc/sysctl.conf
-# Enable ASLR
-sysctl -q -n -w kernel.randomize_va_space=2
-echo "kernel.randomize_va_space = 2" >> /etc/sysctl.conf
+################################
+##    End Security Configs    ##
+################################
 
 # Enable Splunk reciever
 echo -e "\e[33mEnabling Splunk receiver\e[0m"
