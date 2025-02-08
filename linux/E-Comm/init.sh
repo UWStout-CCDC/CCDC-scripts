@@ -482,6 +482,7 @@ kernel.perf_event_paranoid = 3
 kernel.modules_disabled = 1
 kernel.kptr_restrict = 2
 kernel.dmesg_restrict = 1
+kernel.yama.ptrace_scope = 2
 EOF
 
 # kernel.yama.ptrace_scope = 2
@@ -634,5 +635,7 @@ freshclam
 # Install monitor script
 wget $BASEURL/linux/E-Comm/monitor.sh -O /ccdc/scripts/monitor.sh
 chmod +x /ccdc/scripts/monitor.sh
+
+cp /ccdc/bkp /etc/frr
 
 echo "Finished running init.sh, please reboot the system to apply changes"
