@@ -338,11 +338,11 @@ $allPasswordPlain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.
 try {
     $users = dsquery user -limit 0
     foreach ($user in $users) {
-        # Get the username from the distinguished name
-        $username = ($user -split ',')[0] -replace 'CN=', ''
-        
+        # Get the sAMAccountName for the user
+        $sAMAccountName = dsget user $user -samid
+
         # Skip the Administrator account
-        if ($username -ne "Administrator") {
+        if ($sAMAccountName -ne "Administrator") {
             dsmod user $user -pwd $allPasswordPlain -mustchpwd yes
             Write-Host "Password for user $user has been changed and must change password at next logon."
         } else {
@@ -1105,44 +1105,44 @@ Start-LoggedJob -JobName "Restrict Non-Admin Users from Installing Software" -Sc
     }
 }
 
-# Block credential dumping
-Start-LoggedJob -JobName "Block Credential Dumping" -ScriptBlock {
-    try {
-        $regPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa"
-        Set-ItemProperty -Path $regPath -Name "NoLmHash" -Value 1
-        Set-ItemProperty -Path $regPath -Name "LimitBlankPasswordUse" -Value 1
-        Set-ItemProperty -Path $regPath -Name "RestrictAnonymous" -Value 1
-        Set-ItemProperty -Path $regPath -Name "RestrictAnonymousSAM" -Value 1
-        Set-ItemProperty -Path $regPath -Name "EveryoneIncludesAnonymous" -Value 0
-        Set-ItemProperty -Path $regPath -Name "NoDefaultAdminShares" -Value 1
-        Set-ItemProperty -Path $regPath -Name "NoLMAuthentication" -Value 1
-        Set-ItemProperty -Path $regPath -Name "NoNullSessionShares" -Value 1
-        Set-ItemProperty -Path $regPath -Name "NoNullSessionUsername" -Value 1
-        Set-ItemProperty -Path $regPath -Name "NoNullSessionPassword" -Value 1
-        Set-ItemProperty -Path $regPath -Name "NoSaveSettings" -Value 1
+# # Block credential dumping
+# Start-LoggedJob -JobName "Block Credential Dumping" -ScriptBlock {
+#     try {
+#         $regPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa"
+#         Set-ItemProperty -Path $regPath -Name "NoLmHash" -Value 1
+#         Set-ItemProperty -Path $regPath -Name "LimitBlankPasswordUse" -Value 1
+#         Set-ItemProperty -Path $regPath -Name "RestrictAnonymous" -Value 1
+#         Set-ItemProperty -Path $regPath -Name "RestrictAnonymousSAM" -Value 1
+#         Set-ItemProperty -Path $regPath -Name "EveryoneIncludesAnonymous" -Value 0
+#         Set-ItemProperty -Path $regPath -Name "NoDefaultAdminShares" -Value 1
+#         Set-ItemProperty -Path $regPath -Name "NoLMAuthentication" -Value 1
+#         Set-ItemProperty -Path $regPath -Name "NoNullSessionShares" -Value 1
+#         Set-ItemProperty -Path $regPath -Name "NoNullSessionUsername" -Value 1
+#         Set-ItemProperty -Path $regPath -Name "NoNullSessionPassword" -Value 1
+#         Set-ItemProperty -Path $regPath -Name "NoSaveSettings" -Value 1
         
-        $regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters"
-        Set-ItemProperty -Path $regPath -Name "AutoShareWks" -Value 0
-        Set-ItemProperty -Path $regPath -Name "AutoShareServer" -Value 0
-        Set-ItemProperty -Path $regPath -Name "RestrictNullSessAccess" -Value 1
-        Set-ItemProperty -Path $regPath -Name "NullSessionPipes" -Value ""
-        Set-ItemProperty -Path $regPath -Name "NullSessionShares" -Value ""
-        Set-ItemProperty -Path $regPath -Name "Samba" -Value 0
+#         $regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters"
+#         Set-ItemProperty -Path $regPath -Name "AutoShareWks" -Value 0
+#         Set-ItemProperty -Path $regPath -Name "AutoShareServer" -Value 0
+#         Set-ItemProperty -Path $regPath -Name "RestrictNullSessAccess" -Value 1
+#         Set-ItemProperty -Path $regPath -Name "NullSessionPipes" -Value ""
+#         Set-ItemProperty -Path $regPath -Name "NullSessionShares" -Value ""
+#         Set-ItemProperty -Path $regPath -Name "Samba" -Value 0
 
-        $regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters"
-        Set-ItemProperty -Path $regPath -Name "EnableSecuritySignature" -Value 1
-        Set-ItemProperty -Path $regPath -Name "RequireSecuritySignature" -Value 1
-        Set-ItemProperty -Path $regPath -Name "EnablePlainTextPassword" -Value 0
+#         $regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters"
+#         Set-ItemProperty -Path $regPath -Name "EnableSecuritySignature" -Value 1
+#         Set-ItemProperty -Path $regPath -Name "RequireSecuritySignature" -Value 1
+#         Set-ItemProperty -Path $regPath -Name "EnablePlainTextPassword" -Value 0
         
-        Write-Host "--------------------------------------------------------------------------------"
-        Write-Host "Credential dumping blocked."
-        Write-Host "--------------------------------------------------------------------------------"
-    } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++" 
-        Write-Host "An error occurred while blocking credential dumping: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++" 
-    }
-}
+#         Write-Host "--------------------------------------------------------------------------------"
+#         Write-Host "Credential dumping blocked."
+#         Write-Host "--------------------------------------------------------------------------------"
+#     } catch {
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++" 
+#         Write-Host "An error occurred while blocking credential dumping: $_"
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++" 
+#     }
+# }
 
 # block unnecessary winrm traffic
 Start-LoggedJob -JobName "Block Unnecessary WinRM Traffic" -ScriptBlock {
