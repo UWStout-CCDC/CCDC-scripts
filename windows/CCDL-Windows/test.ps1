@@ -1819,32 +1819,22 @@ Start-LoggedJob -JobName "Disable PSExec" -ScriptBlock {
     }
 }
 
-# Disable Sign-in for users not Administrator
-Start-LoggedJob -JobName "Disable Sign-in for Non-Admin Users" -ScriptBlock {
-    try {
-        $users = Get-LocalUser | Where-Object { $_.Name -ne "Administrator" }
-        foreach ($user in $users) {
-            Set-LocalUser -Name $user.Name -PasswordNeverExpires $true
-            Set-LocalUser -Name $user.Name -AccountNeverExpires $true
-            Set-LocalUser -Name $user.Name -Enabled $false
-            # Generate a random 64 character password
-            $password = [System.Web.Security.Membership]::GeneratePassword(64, 0)
-            # Set the password to the random password
-            $securePassword = ConvertTo-SecureString $password -AsPlainText -Force
-            Set-LocalUser -Name $user.Name -Password $securePassword
-            Set-LocalUser -Name $user.Name -UserMayNotChangePassword $true
-            Set-LocalUser -Name $user.Name -PasswordRequired $true
-            Set-LocalUser -Name $user.Name -Description "Disabled for security reasons"
-
+# Disable Sign-in for users not in the Administrators group
+try {
+    $users = Get-LocalUser | Where-Object { $_.Name -ne "Administrator" -and $_.PrincipalSource -eq 'Local' }
+    foreach ($user in $users) {
+        $userGroups = (Get-LocalGroupMember -Group "Administrators").Name
+        if ($user.Name -notin $userGroups) {
+            Disable-LocalUser -Name $user.Name
             Write-Host "--------------------------------------------------------------------------------"
             Write-Host "Sign-in for user $($user.Name) has been disabled."
             Write-Host "--------------------------------------------------------------------------------"
         }
-    } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        Write-Host "An error occurred: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
     }
+} catch {
+    Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+    Write-Host "An error occurred: $_"
+    Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
 }
 
 # Disable RDP
