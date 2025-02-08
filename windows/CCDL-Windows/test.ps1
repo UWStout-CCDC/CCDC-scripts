@@ -1819,23 +1819,23 @@ Start-LoggedJob -JobName "Disable PSExec" -ScriptBlock {
     }
 }
 
-# Disable Sign-in for users not in the Administrators group
-try {
-    $users = Get-LocalUser | Where-Object { $_.Name -ne "Administrator" -and $_.PrincipalSource -eq 'Local' }
-    foreach ($user in $users) {
-        $userGroups = (Get-LocalGroupMember -Group "Administrators").Name
-        if ($user.Name -notin $userGroups) {
-            Disable-LocalUser -Name $user.Name
-            Write-Host "--------------------------------------------------------------------------------"
-            Write-Host "Sign-in for user $($user.Name) has been disabled."
-            Write-Host "--------------------------------------------------------------------------------"
-        }
-    }
-} catch {
-    Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-    Write-Host "An error occurred: $_"
-    Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-}
+# # Disable Sign-in for users not in the Administrators group
+# try {
+#     $users = Get-LocalUser | Where-Object { $_.Name -ne "Administrator" -and $_.PrincipalSource -eq 'Local' }
+#     foreach ($user in $users) {
+#         $userGroups = (Get-LocalGroupMember -Group "Administrators").Name
+#         if ($user.Name -notin $userGroups) {
+#             Disable-LocalUser -Name $user.Name
+#             Write-Host "--------------------------------------------------------------------------------"
+#             Write-Host "Sign-in for user $($user.Name) has been disabled."
+#             Write-Host "--------------------------------------------------------------------------------"
+#         }
+#     }
+# } catch {
+#     Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#     Write-Host "An error occurred: $_"
+#     Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+# }
 
 # Disable RDP
 Start-LoggedJob -JobName "Disable RDP" -ScriptBlock {
