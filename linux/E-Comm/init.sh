@@ -644,6 +644,6 @@ freshclam
 wget $BASEURL/linux/E-Comm/monitor.sh -O /ccdc/scripts/monitor.sh
 chmod +x /ccdc/scripts/monitor.sh
 
-cp /bkp /etc/frr
+cp -R /bkp /etc/frr
 
 echo "Finished running init.sh, please reboot the system to apply changes"
