@@ -14,8 +14,8 @@ then
   exit 1
 fi
 
-#BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master"
-BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/splunk-automation" # Used for testing in branch
+BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master"
+#BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/splunk-automation" # Used for testing in branch
 
 # Install script dependencies
 wget $BASE_URL/linux/splunk/CentOS-Base.repo -O CentOS-Base.repo
