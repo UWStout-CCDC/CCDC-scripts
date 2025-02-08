@@ -1047,22 +1047,22 @@ Start-LoggedJob -JobName "Enable Audit Policies" -ScriptBlock {
     }
 }
 
-# Remove unnecessary network shares
-Start-LoggedJob -JobName "Remove Unnecessary Network Shares" -ScriptBlock {
-    try {
-        Get-SmbShare | Where-Object { $_.Name -ne "ADMIN$" -and $_.Name -ne "C$" -and $_.Name -ne "IPC$" } | ForEach-Object {
-            Write-Host "Removing share: $($_.Name)"
-            Remove-SmbShare -Name $_.Name -Force
-        }
-        Write-Host "--------------------------------------------------------------------------------"
-        Write-Host "Unnecessary network shares removed."
-        Write-Host "--------------------------------------------------------------------------------"
-    } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        Write-Host "An error occurred while removing unnecessary network shares: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-    }
-}
+# # Remove unnecessary network shares
+# Start-LoggedJob -JobName "Remove Unnecessary Network Shares" -ScriptBlock {
+#     try {
+#         Get-SmbShare | Where-Object { $_.Name -ne "ADMIN$" -and $_.Name -ne "C$" -and $_.Name -ne "IPC$" } | ForEach-Object {
+#             Write-Host "Removing share: $($_.Name)"
+#             Remove-SmbShare -Name $_.Name -Force
+#         }
+#         Write-Host "--------------------------------------------------------------------------------"
+#         Write-Host "Unnecessary network shares removed."
+#         Write-Host "--------------------------------------------------------------------------------"
+#     } catch {
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#         Write-Host "An error occurred while removing unnecessary network shares: $_"
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#     }
+# }
 
 # Enable Windows Firewall (reaffirm if previously configured)
 Start-LoggedJob -JobName "Reaffirm Windows Firewall" -ScriptBlock {
@@ -1862,19 +1862,19 @@ else {
     $entryName = "MyStartupScript"
     Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name $entryName -Value "powershell.exe -File `"$scriptPath`""
 }
-# Perform a quick scan with Windows Defender
-Start-LoggedJob -JobName "Quick Scan with Windows Defender" -ScriptBlock { 
-    try {
-        Start-MpScan -ScanType QuickScan
-        Write-Host "--------------------------------------------------------------------------------"
-        Write-Host "Quick scan with Windows Defender completed."
-        Write-Host "--------------------------------------------------------------------------------"
-    } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++" 
-        Write-Host "An error occurred while performing a quick scan with Windows Defender: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++" 
-    }
-}
+# # Perform a quick scan with Windows Defender
+# Start-LoggedJob -JobName "Quick Scan with Windows Defender" -ScriptBlock { 
+#     try {
+#         Start-MpScan -ScanType QuickScan
+#         Write-Host "--------------------------------------------------------------------------------"
+#         Write-Host "Quick scan with Windows Defender completed."
+#         Write-Host "--------------------------------------------------------------------------------"
+#     } catch {
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++" 
+#         Write-Host "An error occurred while performing a quick scan with Windows Defender: $_"
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++" 
+#     }
+# }
 
 # Monitor jobs
 while ($global:jobs.Count -gt 0) {
