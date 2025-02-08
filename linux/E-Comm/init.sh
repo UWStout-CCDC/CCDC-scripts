@@ -1,6 +1,6 @@
 #!/bin/bash
-# https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/feature/ecomm-hardening/linux/E-Comm/init.sh
-BASEURL=https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/feature/ecomm-hardening
+# https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master/linux/E-Comm/init.sh
+BASEURL=https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master
 read -p "Enter the default password for the PrestaShop database: " -s DEFAULT_PRESTA_PASS
 
 # Test if the password is correct
@@ -644,6 +644,6 @@ freshclam
 wget $BASEURL/linux/E-Comm/monitor.sh -O /ccdc/scripts/monitor.sh
 chmod +x /ccdc/scripts/monitor.sh
 
-cp /ccdc/bkp /etc/frr
+cp /bkp /etc/frr
 
 echo "Finished running init.sh, please reboot the system to apply changes"
