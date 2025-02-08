@@ -212,6 +212,8 @@ iptables -A OUTPUT -p tcp --sport 22 -m conntrack --ctstate ESTABLISHED -j ACCEP
 
 EOF
 
+chmod +x $IPTABLES_SCRIPT
+
 if prompt "HTTP(S) Server?" n
 then
   IS_HTTP_SERVER="y"

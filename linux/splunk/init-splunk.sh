@@ -41,7 +41,7 @@ yum makecache
 
 # Install tools (if not already)
 echo -e "\e[33mInstalling tools\e[0m"
-yum install iptables wget git aide net-tools audit audit-libs epel-release -y
+yum install iptables wget git aide net-tools audit audit-libs lynis epel-release -y
 
 # Run init script
 echo -e "\e[33mRunning init script\e[0m"
