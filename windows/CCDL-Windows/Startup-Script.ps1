@@ -1352,7 +1352,18 @@ else {
     Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name $entryName -Value "powershell.exe -File `"$scriptPath`""
 }
 # Perform a quick scan with Windows Defender
-Start-LoggedJob -JobName "Quick Scan with Windows Defender" -ScriptBlock { Start-MpScan -ScanType QuickScan }
+Start-LoggedJob -JobName "Quick Scan with Windows Defender" -ScriptBlock { 
+    try {
+        Start-MpScan -ScanType QuickScan
+        Write-Host "--------------------------------------------------------------------------------"
+        Write-Host "Quick scan with Windows Defender completed."
+        Write-Host "--------------------------------------------------------------------------------"
+    } catch {
+        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++" 
+        Write-Host "An error occurred while performing a quick scan with Windows Defender: $_"
+        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++" 
+    }
+}
 # Wait for all jobs to complete
 Get-Job | Wait-Job
 # Restart the computer
