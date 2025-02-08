@@ -29,7 +29,7 @@ groupadd splunkfwd
 export SPLUNK_HOME="/opt/splunkforwarder"
 mkdir $SPLUNK_HOME
 
-# Install Splunk
+# Install Splunk Forwarder
 wget -O splunkforwarder-9.1.1-64e843ea36b1-Linux-x86_64.tgz "https://download.splunk.com/products/universalforwarder/releases/9.1.1/linux/splunkforwarder-9.1.1-64e843ea36b1-Linux-x86_64.tgz"
 tar -xzvf splunkforwarder-9.1.1-64e843ea36b1-Linux-x86_64.tgz -C /opt
 cd /opt/splunkforwarder/bin
@@ -39,21 +39,17 @@ chown -R splunkfwd:splunkfwd $SPLUNK_HOME
 
 # Changing default admin password
 cd /opt/splunkforwarder/bin
-echo "Enter Splunk Web UI admin password:"
-read -s admin_password
-echo "Enter new Splunk Web UI admin password:"
+default_password=changeme
+echo "Enter new Splunk admin password:"
 read -s password
-./splunk edit user admin -auth admin:$admin_password -password $password
+./splunk edit user admin -auth admin:$default_password -password $password
 
 # Start the splunk forwarder, and automatically accept the license
 echo "Starting Splunk and accepting license"
-./splunk start --accept-license --answer-yes --auto-ports --no-prompt
+./splunk start --accept-license
 # Add the server to forward to (ip needs to be the first param)
 echo "Adding server to forward to $SPLUNK_SERVER_IP. Use admin credentials"
-./splunk add forward-server "$SPLUNK_SERVER_IP":9997 # User will have to input the same creds here
-# Server to poll updates from (same as above, but a different port)
-echo "Setting deployment server. Use admin credentials"
-./splunk set deploy-poll "$SPLUNK_SERVER_IP":8089 # User will have to input the same creds here
+./splunk add forward-server $SPLUNK_SERVER_IP:9997 -auth admin:$password # User will have to input the same creds here
 
 # Quick function to check if a file exists, and monitor it
 monitor() {
