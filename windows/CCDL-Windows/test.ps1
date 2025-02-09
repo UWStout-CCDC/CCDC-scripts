@@ -1013,22 +1013,22 @@ Start-LoggedJob -JobName "Enable Windows Defender" -ScriptBlock {
 #     }
 # }
 
-# Disable SMBv1 to mitigate vulnerabilities
-Start-LoggedJob -JobName "Disable SMBv1" -ScriptBlock {
-    try {
-        Set-SmbServerConfiguration -EnableSMB1Protocol $false -Force
-        Disable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -NoRestart
-        $regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters"
-        Set-ItemProperty -Path $regPath -Name "SMB1" -Value 0
-        Write-Host "--------------------------------------------------------------------------------"
-        Write-Host "SMBv1 protocol disabled."
-        Write-Host "--------------------------------------------------------------------------------"
-    } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++" 
-        Write-Host "An error occurred while disabling SMBv1: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++" 
-    }
-}
+# # Disable SMBv1 to mitigate vulnerabilities
+# Start-LoggedJob -JobName "Disable SMBv1" -ScriptBlock {
+#     try {
+#         Set-SmbServerConfiguration -EnableSMB1Protocol $false -Force
+#         Disable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -NoRestart
+#         $regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters"
+#         Set-ItemProperty -Path $regPath -Name "SMB1" -Value 0
+#         Write-Host "--------------------------------------------------------------------------------"
+#         Write-Host "SMBv1 protocol disabled."
+#         Write-Host "--------------------------------------------------------------------------------"
+#     } catch {
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++" 
+#         Write-Host "An error occurred while disabling SMBv1: $_"
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++" 
+#     }
+# }
 
 # Configure Remote Desktop settings (disable if not needed)
 Start-LoggedJob -JobName "Disable Remote Desktop" -ScriptBlock {
@@ -1121,60 +1121,60 @@ Start-LoggedJob -JobName "Remove Unnecessary Network Shares" -ScriptBlock {
 #     }
 # }
 
-# Ensure Windows Update is set to automatic
-Start-LoggedJob -JobName "Set Windows Update to Automatic" -ScriptBlock {
-    try {
-        Set-Service -Name wuauserv -StartupType Automatic
-        Write-Host "Checking for Windows updates..."
-        Install-WindowsUpdate -AcceptAll -Install
-        Write-Host "--------------------------------------------------------------------------------"
-        Write-Host "Windows Update set to automatic and updates installed."
-        Write-Host "--------------------------------------------------------------------------------"
-    } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        Write-Host "An error occurred while setting Windows Update to automatic: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-    }
-}
+# # Ensure Windows Update is set to automatic
+# Start-LoggedJob -JobName "Set Windows Update to Automatic" -ScriptBlock {
+#     try {
+#         Set-Service -Name wuauserv -StartupType Automatic
+#         Write-Host "Checking for Windows updates..."
+#         Install-WindowsUpdate -AcceptAll -Install
+#         Write-Host "--------------------------------------------------------------------------------"
+#         Write-Host "Windows Update set to automatic and updates installed."
+#         Write-Host "--------------------------------------------------------------------------------"
+#     } catch {
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#         Write-Host "An error occurred while setting Windows Update to automatic: $_"
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#     }
+# }
 
-# Install Windows updates
-Start-LoggedJob -JobName "Install Windows Updates" -ScriptBlock {
-    try {
-        Write-Host "Installing Windows updates..."
-        Start-Sleep -Seconds 60
+# # Install Windows updates
+# Start-LoggedJob -JobName "Install Windows Updates" -ScriptBlock {
+#     try {
+#         Write-Host "Installing Windows updates..."
+#         Start-Sleep -Seconds 60
 
-        $maxRetries = 3
-        $retryCount = 0
-        $success = $false
+#         $maxRetries = 3
+#         $retryCount = 0
+#         $success = $false
 
-        while (-not $success -and $retryCount -lt $maxRetries) {
-            try {
-                Install-WindowsUpdate -AcceptAll -Install
-                Write-Host "--------------------------------------------------------------------------------"
-                Write-Host "Windows updates installed."
-                Write-Host "--------------------------------------------------------------------------------"
-                $success = $true
-            } catch {
-                $retryCount++
-                Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-                Write-Host "An error occurred while installing Windows updates: $_"
-                Write-Host "Retrying... ($retryCount/$maxRetries)"
-                Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-                Start-Sleep -Seconds 60
-            }
-        }
+#         while (-not $success -and $retryCount -lt $maxRetries) {
+#             try {
+#                 Install-WindowsUpdate -AcceptAll -Install
+#                 Write-Host "--------------------------------------------------------------------------------"
+#                 Write-Host "Windows updates installed."
+#                 Write-Host "--------------------------------------------------------------------------------"
+#                 $success = $true
+#             } catch {
+#                 $retryCount++
+#                 Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#                 Write-Host "An error occurred while installing Windows updates: $_"
+#                 Write-Host "Retrying... ($retryCount/$maxRetries)"
+#                 Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#                 Start-Sleep -Seconds 60
+#             }
+#         }
 
-        if (-not $success) {
-            Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-            Write-Host "Failed to install Windows updates after $maxRetries attempts."
-            Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        }
-    } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        Write-Host "An unexpected error occurred: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-    }
-}
+#         if (-not $success) {
+#             Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#             Write-Host "Failed to install Windows updates after $maxRetries attempts."
+#             Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#         }
+#     } catch {
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#         Write-Host "An unexpected error occurred: $_"
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#     }
+# }
 
 # Secure and backup DNS to ccdc folder
 Start-LoggedJob -JobName "Secure and Backup DNS" -ScriptBlock {
@@ -1799,18 +1799,18 @@ Start-LoggedJob -JobName "Enable Windows Defender Credential Guard" -ScriptBlock
     }
 }
 
-Start-LoggedJob -JobName "Configure Windows Update to Install Updates Automatically" -ScriptBlock { 
-    try {
-        Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU' -Name "AUOptions" -Value 4 
-        Write-Host "--------------------------------------------------------------------------------"
-        Write-Host "Windows Update configured to install updates automatically."
-        Write-Host "--------------------------------------------------------------------------------"
-    } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        Write-Host "An error occurred while configuring Windows Update: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-    }
-}
+# Start-LoggedJob -JobName "Configure Windows Update to Install Updates Automatically" -ScriptBlock { 
+#     try {
+#         Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU' -Name "AUOptions" -Value 4 
+#         Write-Host "--------------------------------------------------------------------------------"
+#         Write-Host "Windows Update configured to install updates automatically."
+#         Write-Host "--------------------------------------------------------------------------------"
+#     } catch {
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#         Write-Host "An error occurred while configuring Windows Update: $_"
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#     }
+# }
 
 # Start-LoggedJob -JobName "Enable Logging for PowerShell" -ScriptBlock {
 #     try {
