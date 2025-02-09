@@ -851,22 +851,7 @@ function Start-LoggedJob {
     Write-Host "Started job: $JobName"
 }
 
-# Monitor jobs
-while ($global:jobs.Count -gt 0) {
-    foreach ($job in $global:jobs) {
-        if ($job.State -eq 'Completed') {
-            Write-Host "$(Get-Date -Format 'HH:mm:ss') - $($job.Name) has completed."
-            $job | Receive-Job
-            Remove-Job -Job $job
-            $global:jobs = $global:jobs | Where-Object { $_.Id -ne $job.Id }
-        }
-    }
-    Start-Sleep -Seconds 5
-}
 
-
-
-Write-Host "All jobs have completed or maximum wait time exceeded."
 
 # Sync system time
 Start-LoggedJob -JobName "Synchronize System Time" -ScriptBlock {
@@ -1870,16 +1855,16 @@ Start-LoggedJob -JobName "Disable RDP" -ScriptBlock {
 
 
 
-# Monitor jobs
-while ($jobs.Count -gt 0) {
-    foreach ($job in $jobs) {
-        if ($job.State -eq 'Completed') {
-            $job | Receive-Job
-            $jobs = $jobs | Where-Object { $_.Id -ne $job.Id }
-        }
-    }
-    Start-Sleep -Seconds 5
-}
+# # Monitor jobs
+# while ($jobs.Count -gt 0) {
+#     foreach ($job in $jobs) {
+#         if ($job.State -eq 'Completed') {
+#             $job | Receive-Job
+#             $jobs = $jobs | Where-Object { $_.Id -ne $job.Id }
+#         }
+#     }
+#     Start-Sleep -Seconds 5
+# }
 # Ask the user if they want to run the installs
 $runInstalls = Read-Host "Do you want to run the installs? (yes/no)"
 if ($runInstalls -ne "yes") {
@@ -1892,19 +1877,20 @@ else {
     $entryName = "MyStartupScript"
     Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name $entryName -Value "powershell.exe -File `"$scriptPath`""
 }
-# Perform a quick scan with Windows Defender
-Start-LoggedJob -JobName "Quick Scan with Windows Defender" -ScriptBlock { 
-    try {
-        Start-MpScan -ScanType QuickScan
-        Write-Host "--------------------------------------------------------------------------------"
-        Write-Host "Quick scan with Windows Defender completed."
-        Write-Host "--------------------------------------------------------------------------------"
-    } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++" 
-        Write-Host "An error occurred while performing a quick scan with Windows Defender: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++" 
-    }
-}
+# # Perform a quick scan with Windows Defender
+# Start-LoggedJob -JobName "Quick Scan with Windows Defender" -ScriptBlock { 
+#     try {
+#         Start-MpScan -ScanType QuickScan
+#         Write-Host "--------------------------------------------------------------------------------"
+#         Write-Host "Quick scan with Windows Defender completed."
+#         Write-Host "--------------------------------------------------------------------------------"
+#     } catch {
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++" 
+#         Write-Host "An error occurred while performing a quick scan with Windows Defender: $_"
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++" 
+#     }
+# }
+
 
 # # Monitor jobs
 # while ($global:jobs.Count -gt 0) {
@@ -1919,6 +1905,9 @@ Start-LoggedJob -JobName "Quick Scan with Windows Defender" -ScriptBlock {
 #     Start-Sleep -Seconds 5
 # }
 
+
+
+Write-Host "All jobs have completed or maximum wait time exceeded."
 # Wait for all jobs to complete
 Get-Job | Wait-Job
 Write-Host "All jobs have completed."
