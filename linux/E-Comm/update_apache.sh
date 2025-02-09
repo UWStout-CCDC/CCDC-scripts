@@ -41,7 +41,10 @@ else
     make
     make install
     systemctl stop httpd
-    mv /usr/sbin/httpd /root/httpd.old
+    # take a backup only if the /root/httpd.old does not exist
+    if [ ! -f /root/httpd.old ]; then
+        mv /usr/sbin/httpd /root/httpd.old
+    fi
     mv httpd /usr/sbin/httpd
     cd ..
     # rm -rf httpd-2.4.60
