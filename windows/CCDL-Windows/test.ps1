@@ -1506,38 +1506,38 @@ Start-LoggedJob -JobName "Create Alert for Audit WMI Subscriptions" -ScriptBlock
 #     }
 # }
 
-# # Stop non admin users from installing software or running commands
-# Start-LoggedJob -JobName "Restrict Non-Admin Users from Installing Software" -ScriptBlock {
-#     try {
-#         $acl = Get-Acl "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
-#         $acl.SetAccessRuleProtection($true, $false)
+# Stop non admin users from installing software or running commands
+Start-LoggedJob -JobName "Restrict Non-Admin Users from Installing Software" -ScriptBlock {
+    try {
+        $acl = Get-Acl "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
+        $acl.SetAccessRuleProtection($true, $false)
         
-#         # Clear existing access rules
-#         $acl.SetAccessRuleProtection($true, $true)
-#         $acl.Access | ForEach-Object { $acl.RemoveAccessRule($_) }
+        # Clear existing access rules
+        $acl.SetAccessRuleProtection($true, $true)
+        $acl.Access | ForEach-Object { $acl.RemoveAccessRule($_) }
         
-#         # Add full control for necessary system accounts
-#         $adminUser = [System.Security.Principal.NTAccount]"Administrator"
-#         $systemUser = [System.Security.Principal.NTAccount]"SYSTEM"
-#         $trustedInstaller = [System.Security.Principal.NTAccount]"NT SERVICE\TrustedInstaller"
-#         $adminRule = New-Object System.Security.AccessControl.RegistryAccessRule($adminUser, "FullControl", "Allow")
-#         $systemRule = New-Object System.Security.AccessControl.RegistryAccessRule($systemUser, "FullControl", "Allow")
-#         $trustedInstallerRule = New-Object System.Security.AccessControl.RegistryAccessRule($trustedInstaller, "FullControl", "Allow")
-#         $acl.AddAccessRule($adminRule)
-#         $acl.AddAccessRule($systemRule)
-#         $acl.AddAccessRule($trustedInstallerRule)
+        # Add full control for necessary system accounts
+        $adminUser = [System.Security.Principal.NTAccount]"Administrator"
+        $systemUser = [System.Security.Principal.NTAccount]"SYSTEM"
+        $trustedInstaller = [System.Security.Principal.NTAccount]"NT SERVICE\TrustedInstaller"
+        $adminRule = New-Object System.Security.AccessControl.RegistryAccessRule($adminUser, "FullControl", "Allow")
+        $systemRule = New-Object System.Security.AccessControl.RegistryAccessRule($systemUser, "FullControl", "Allow")
+        $trustedInstallerRule = New-Object System.Security.AccessControl.RegistryAccessRule($trustedInstaller, "FullControl", "Allow")
+        $acl.AddAccessRule($adminRule)
+        $acl.AddAccessRule($systemRule)
+        $acl.AddAccessRule($trustedInstallerRule)
         
-#         # Apply the modified ACL to the registry key
-#         Set-Acl -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall" -AclObject $acl
-#         Write-Host "--------------------------------------------------------------------------------"
-#         Write-Host "Non-admin users restricted from installing software."
-#         Write-Host "--------------------------------------------------------------------------------"
-#     } catch {
-#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-#         Write-Host "An error occurred while restricting non-admin users from installing software: $_"
-#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-#     }
-# }
+        # Apply the modified ACL to the registry key
+        Set-Acl -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall" -AclObject $acl
+        Write-Host "--------------------------------------------------------------------------------"
+        Write-Host "Non-admin users restricted from installing software."
+        Write-Host "--------------------------------------------------------------------------------"
+    } catch {
+        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+        Write-Host "An error occurred while restricting non-admin users from installing software: $_"
+        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+    }
+}
 
 # # Block credential dumping
 # Start-LoggedJob -JobName "Block Credential Dumping" -ScriptBlock {
