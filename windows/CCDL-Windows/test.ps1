@@ -1655,19 +1655,19 @@ Start-LoggedJob -JobName "Restrict Debug Privileges" -ScriptBlock {
         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
     }
 }
-Start-LoggedJob -JobName "Disable WDigest" -ScriptBlock {
-    try {
-        $regPath = "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\WDigest"
-        Set-ItemProperty -Path $regPath -Name "UseLogonCredential" -Value 0
-        Write-Host "--------------------------------------------------------------------------------"
-        Write-Host "WDigest disabled."
-        Write-Host "--------------------------------------------------------------------------------"
-    } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        Write-Host "An error occurred while disabling WDigest: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-    }
-}
+# Start-LoggedJob -JobName "Disable WDigest" -ScriptBlock {
+#     try {
+#         $regPath = "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\WDigest"
+#         Set-ItemProperty -Path $regPath -Name "UseLogonCredential" -Value 0
+#         Write-Host "--------------------------------------------------------------------------------"
+#         Write-Host "WDigest disabled."
+#         Write-Host "--------------------------------------------------------------------------------"
+#     } catch {
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#         Write-Host "An error occurred while disabling WDigest: $_"
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#     }
+# }
 
 # # disable powershell remoting
 # Start-LoggedJob -JobName "Disable PowerShell Remoting" -ScriptBlock {
@@ -1742,21 +1742,21 @@ Start-LoggedJob -JobName "Configure Network Level Authentication for Remote Desk
     }
 }
 
-Start-LoggedJob -JobName "Disable LM and NTLMv1 Protocols" -ScriptBlock {
-    try {
-        Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name "LmCompatibilityLevel" -Value 5 
-        Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters' -Name "SMB1" -Value 0
-        Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters' -Name "EnableSecuritySignature" -Value 1
-        Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters' -Name "RequireSecuritySignature" -Value 1
-        Write-Host "--------------------------------------------------------------------------------"
-        Write-Host "LM and NTLMv1 protocols disabled."
-        Write-Host "--------------------------------------------------------------------------------"
-    } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        Write-Host "An error occurred while disabling LM and NTLMv1 protocols: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-    }
-}
+# Start-LoggedJob -JobName "Disable LM and NTLMv1 Protocols" -ScriptBlock {
+#     try {
+#         Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name "LmCompatibilityLevel" -Value 5 
+#         Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters' -Name "SMB1" -Value 0
+#         Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters' -Name "EnableSecuritySignature" -Value 1
+#         Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters' -Name "RequireSecuritySignature" -Value 1
+#         Write-Host "--------------------------------------------------------------------------------"
+#         Write-Host "LM and NTLMv1 protocols disabled."
+#         Write-Host "--------------------------------------------------------------------------------"
+#     } catch {
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#         Write-Host "An error occurred while disabling LM and NTLMv1 protocols: $_"
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#     }
+# }
 
 Start-LoggedJob -JobName "Enable Windows Defender Credential Guard" -ScriptBlock {
     try {
