@@ -1356,37 +1356,37 @@ Start-LoggedJob -JobName "Lockdown CCDC Folder" -ScriptBlock {
     }
 }
 
-# Restrict access to running any commands to Administrator
-Start-LoggedJob -JobName "Restrict Access to Commands" -ScriptBlock {
-    try {
-        $acl = Get-Acl "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
-        $acl.SetAccessRuleProtection($true, $false)
+# # Restrict access to running any commands to Administrator
+# Start-LoggedJob -JobName "Restrict Access to Commands" -ScriptBlock {
+#     try {
+#         $acl = Get-Acl "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+#         $acl.SetAccessRuleProtection($true, $false)
         
-        # Remove existing access rules
-        $acl.Access | ForEach-Object { $acl.RemoveAccessRule($_) }
+#         # Remove existing access rules
+#         $acl.Access | ForEach-Object { $acl.RemoveAccessRule($_) }
         
-        # Add full control for necessary system accounts
-        $adminUser = [System.Security.Principal.NTAccount]"Administrator"
-        $systemUser = [System.Security.Principal.NTAccount]"SYSTEM"
-        $trustedInstaller = [System.Security.Principal.NTAccount]"NT SERVICE\TrustedInstaller"
-        $adminRule = New-Object System.Security.AccessControl.RegistryAccessRule($adminUser, "FullControl", "Allow")
-        $systemRule = New-Object System.Security.AccessControl.RegistryAccessRule($systemUser, "FullControl", "Allow")
-        $trustedInstallerRule = New-Object System.Security.AccessControl.RegistryAccessRule($trustedInstaller, "FullControl", "Allow")
-        $acl.AddAccessRule($adminRule)
-        $acl.AddAccessRule($systemRule)
-        $acl.AddAccessRule($trustedInstallerRule)
+#         # Add full control for necessary system accounts
+#         $adminUser = [System.Security.Principal.NTAccount]"Administrator"
+#         $systemUser = [System.Security.Principal.NTAccount]"SYSTEM"
+#         $trustedInstaller = [System.Security.Principal.NTAccount]"NT SERVICE\TrustedInstaller"
+#         $adminRule = New-Object System.Security.AccessControl.RegistryAccessRule($adminUser, "FullControl", "Allow")
+#         $systemRule = New-Object System.Security.AccessControl.RegistryAccessRule($systemUser, "FullControl", "Allow")
+#         $trustedInstallerRule = New-Object System.Security.AccessControl.RegistryAccessRule($trustedInstaller, "FullControl", "Allow")
+#         $acl.AddAccessRule($adminRule)
+#         $acl.AddAccessRule($systemRule)
+#         $acl.AddAccessRule($trustedInstallerRule)
         
-        # Apply the modified ACL to the registry key
-        Set-Acl -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -AclObject $acl
-        Write-Host "--------------------------------------------------------------------------------"
-        Write-Host "Access to running commands restricted to Administrator."
-        Write-Host "--------------------------------------------------------------------------------"
-    } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        Write-Host "An error occurred while restricting access to running commands: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-    }
-}
+#         # Apply the modified ACL to the registry key
+#         Set-Acl -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -AclObject $acl
+#         Write-Host "--------------------------------------------------------------------------------"
+#         Write-Host "Access to running commands restricted to Administrator."
+#         Write-Host "--------------------------------------------------------------------------------"
+#     } catch {
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#         Write-Host "An error occurred while restricting access to running commands: $_"
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#     }
+# }
 
 # # Disable all ports except the ones needed for AD/DNS
 # try {
@@ -1476,68 +1476,68 @@ Start-LoggedJob -JobName "Create Alert for Audit WMI Subscriptions" -ScriptBlock
     }
 }
 
-# Remove .bat or .lnk files in startup folder using scheduled task to fight persistence
-Start-LoggedJob -JobName "Remove .bat or .lnk Files in Startup Folder" -ScriptBlock {
-    try {
-        $scriptPath = "$toolsPath\RemoveStartupFiles.ps1"
-        $taskName = "RemoveStartupFiles"
+# # Remove .bat or .lnk files in startup folder using scheduled task to fight persistence
+# Start-LoggedJob -JobName "Remove .bat or .lnk Files in Startup Folder" -ScriptBlock {
+#     try {
+#         $scriptPath = "$toolsPath\RemoveStartupFiles.ps1"
+#         $taskName = "RemoveStartupFiles"
         
-        # Create the script
-        @"
-        $startupFolder = [System.Environment]::GetFolderPath('Startup')
-        $filesToRemove = Get-ChildItem -Path $startupFolder -Filter "*.bat", "*.lnk"
+#         # Create the script
+#         @"
+#         $startupFolder = [System.Environment]::GetFolderPath('Startup')
+#         $filesToRemove = Get-ChildItem -Path $startupFolder -Filter "*.bat", "*.lnk"
         
-        foreach ($file in $filesToRemove) {
-            Remove-Item -Path $file.FullName -Force
-            [System.Windows.MessageBox]::Show("Removed startup file: $($file.Name)")
-        }
-"@ | Set-Content -Path $scriptPath
-        # Create the scheduled task
-        $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-File `"$scriptPath`""
-        $trigger = New-ScheduledTaskTrigger -AtStartup
-        Register-ScheduledTask -Action $action -Trigger $trigger -TaskName $taskName -User "SYSTEM" -RunLevel Highest
-        Write-Host "--------------------------------------------------------------------------------"
-        Write-Host "Scheduled task to remove .bat or .lnk files in startup folder created."
-        Write-Host "--------------------------------------------------------------------------------"
-    } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        Write-Host "An error occurred while creating scheduled task to remove .bat or .lnk files in startup folder: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-    }
-}
+#         foreach ($file in $filesToRemove) {
+#             Remove-Item -Path $file.FullName -Force
+#             [System.Windows.MessageBox]::Show("Removed startup file: $($file.Name)")
+#         }
+# "@ | Set-Content -Path $scriptPath
+#         # Create the scheduled task
+#         $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-File `"$scriptPath`""
+#         $trigger = New-ScheduledTaskTrigger -AtStartup
+#         Register-ScheduledTask -Action $action -Trigger $trigger -TaskName $taskName -User "SYSTEM" -RunLevel Highest
+#         Write-Host "--------------------------------------------------------------------------------"
+#         Write-Host "Scheduled task to remove .bat or .lnk files in startup folder created."
+#         Write-Host "--------------------------------------------------------------------------------"
+#     } catch {
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#         Write-Host "An error occurred while creating scheduled task to remove .bat or .lnk files in startup folder: $_"
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#     }
+# }
 
-# Stop non admin users from installing software or running commands
-Start-LoggedJob -JobName "Restrict Non-Admin Users from Installing Software" -ScriptBlock {
-    try {
-        $acl = Get-Acl "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
-        $acl.SetAccessRuleProtection($true, $false)
+# # Stop non admin users from installing software or running commands
+# Start-LoggedJob -JobName "Restrict Non-Admin Users from Installing Software" -ScriptBlock {
+#     try {
+#         $acl = Get-Acl "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
+#         $acl.SetAccessRuleProtection($true, $false)
         
-        # Clear existing access rules
-        $acl.SetAccessRuleProtection($true, $true)
-        $acl.Access | ForEach-Object { $acl.RemoveAccessRule($_) }
+#         # Clear existing access rules
+#         $acl.SetAccessRuleProtection($true, $true)
+#         $acl.Access | ForEach-Object { $acl.RemoveAccessRule($_) }
         
-        # Add full control for necessary system accounts
-        $adminUser = [System.Security.Principal.NTAccount]"Administrator"
-        $systemUser = [System.Security.Principal.NTAccount]"SYSTEM"
-        $trustedInstaller = [System.Security.Principal.NTAccount]"NT SERVICE\TrustedInstaller"
-        $adminRule = New-Object System.Security.AccessControl.RegistryAccessRule($adminUser, "FullControl", "Allow")
-        $systemRule = New-Object System.Security.AccessControl.RegistryAccessRule($systemUser, "FullControl", "Allow")
-        $trustedInstallerRule = New-Object System.Security.AccessControl.RegistryAccessRule($trustedInstaller, "FullControl", "Allow")
-        $acl.AddAccessRule($adminRule)
-        $acl.AddAccessRule($systemRule)
-        $acl.AddAccessRule($trustedInstallerRule)
+#         # Add full control for necessary system accounts
+#         $adminUser = [System.Security.Principal.NTAccount]"Administrator"
+#         $systemUser = [System.Security.Principal.NTAccount]"SYSTEM"
+#         $trustedInstaller = [System.Security.Principal.NTAccount]"NT SERVICE\TrustedInstaller"
+#         $adminRule = New-Object System.Security.AccessControl.RegistryAccessRule($adminUser, "FullControl", "Allow")
+#         $systemRule = New-Object System.Security.AccessControl.RegistryAccessRule($systemUser, "FullControl", "Allow")
+#         $trustedInstallerRule = New-Object System.Security.AccessControl.RegistryAccessRule($trustedInstaller, "FullControl", "Allow")
+#         $acl.AddAccessRule($adminRule)
+#         $acl.AddAccessRule($systemRule)
+#         $acl.AddAccessRule($trustedInstallerRule)
         
-        # Apply the modified ACL to the registry key
-        Set-Acl -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall" -AclObject $acl
-        Write-Host "--------------------------------------------------------------------------------"
-        Write-Host "Non-admin users restricted from installing software."
-        Write-Host "--------------------------------------------------------------------------------"
-    } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        Write-Host "An error occurred while restricting non-admin users from installing software: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-    }
-}
+#         # Apply the modified ACL to the registry key
+#         Set-Acl -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall" -AclObject $acl
+#         Write-Host "--------------------------------------------------------------------------------"
+#         Write-Host "Non-admin users restricted from installing software."
+#         Write-Host "--------------------------------------------------------------------------------"
+#     } catch {
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#         Write-Host "An error occurred while restricting non-admin users from installing software: $_"
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#     }
+# }
 
 # # Block credential dumping
 # Start-LoggedJob -JobName "Block Credential Dumping" -ScriptBlock {
@@ -1701,32 +1701,32 @@ Start-LoggedJob -JobName "Restrict Non-Admin Users from Installing Software" -Sc
 #     }
 # }
 
-# Additional security measures
-Start-LoggedJob -JobName "Configure Windows Defender Exploit Guard" -ScriptBlock {
-    try {
-        Set-MpPreference -EnableControlledFolderAccess Enabled
+# # Additional security measures
+# Start-LoggedJob -JobName "Configure Windows Defender Exploit Guard" -ScriptBlock {
+#     try {
+#         Set-MpPreference -EnableControlledFolderAccess Enabled
         
-        # Configure system-level mitigations
-        Set-ProcessMitigation -System -Enable DEP, SEHOP, ForceRelocateImages, BottomUp, HighEntropy
+#         # Configure system-level mitigations
+#         Set-ProcessMitigation -System -Enable DEP, SEHOP, ForceRelocateImages, BottomUp, HighEntropy
         
-        # Configure attack surface reduction rules
-        Set-MpPreference -AttackSurfaceReductionRules_Ids @(
-            "D4F940AB-401B-4EFC-AADC-AD5F3C50688A",  # Block executable content from email and webmail clients
-            "3B576869-A4EC-4529-8536-B80A7769E899",  # Block executable content from Office files
-            "75668C1F-73B5-4CF0-BB93-3ECF5CB7CC84",  # Block credential stealing from LSASS
-            "D1E49AAC-8F56-4280-B9BA-993A6D77406C"   # Block executable content from Office files that contain macros
-        )
-        Set-MpPreference -AttackSurfaceReductionRules_Actions @("Enable", "Enable", "Enable", "Enable")
+#         # Configure attack surface reduction rules
+#         Set-MpPreference -AttackSurfaceReductionRules_Ids @(
+#             "D4F940AB-401B-4EFC-AADC-AD5F3C50688A",  # Block executable content from email and webmail clients
+#             "3B576869-A4EC-4529-8536-B80A7769E899",  # Block executable content from Office files
+#             "75668C1F-73B5-4CF0-BB93-3ECF5CB7CC84",  # Block credential stealing from LSASS
+#             "D1E49AAC-8F56-4280-B9BA-993A6D77406C"   # Block executable content from Office files that contain macros
+#         )
+#         Set-MpPreference -AttackSurfaceReductionRules_Actions @("Enable", "Enable", "Enable", "Enable")
         
-        Write-Host "--------------------------------------------------------------------------------"
-        Write-Host "Windows Defender Exploit Guard configured."
-        Write-Host "--------------------------------------------------------------------------------"
-    } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        Write-Host "An error occurred while configuring Windows Defender Exploit Guard: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-    }
-}
+#         Write-Host "--------------------------------------------------------------------------------"
+#         Write-Host "Windows Defender Exploit Guard configured."
+#         Write-Host "--------------------------------------------------------------------------------"
+#     } catch {
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#         Write-Host "An error occurred while configuring Windows Defender Exploit Guard: $_"
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#     }
+# }
 
 # Start-LoggedJob -JobName "Configure Network Level Authentication for Remote Desktop" -ScriptBlock { 
 #     try {
