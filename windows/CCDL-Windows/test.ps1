@@ -1539,44 +1539,44 @@ Start-LoggedJob -JobName "Restrict Non-Admin Users from Installing Software" -Sc
     }
 }
 
-# Block credential dumping
-Start-LoggedJob -JobName "Block Credential Dumping" -ScriptBlock {
-    try {
-        $regPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa"
-        Set-ItemProperty -Path $regPath -Name "NoLmHash" -Value 1
-        Set-ItemProperty -Path $regPath -Name "LimitBlankPasswordUse" -Value 1
-        Set-ItemProperty -Path $regPath -Name "RestrictAnonymous" -Value 1
-        Set-ItemProperty -Path $regPath -Name "RestrictAnonymousSAM" -Value 1
-        Set-ItemProperty -Path $regPath -Name "EveryoneIncludesAnonymous" -Value 0
-        Set-ItemProperty -Path $regPath -Name "NoDefaultAdminShares" -Value 1
-        Set-ItemProperty -Path $regPath -Name "NoLMAuthentication" -Value 1
-        Set-ItemProperty -Path $regPath -Name "NoNullSessionShares" -Value 1
-        Set-ItemProperty -Path $regPath -Name "NoNullSessionUsername" -Value 1
-        Set-ItemProperty -Path $regPath -Name "NoNullSessionPassword" -Value 1
-        Set-ItemProperty -Path $regPath -Name "NoSaveSettings" -Value 1
+# # Block credential dumping
+# Start-LoggedJob -JobName "Block Credential Dumping" -ScriptBlock {
+#     try {
+#         $regPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa"
+#         Set-ItemProperty -Path $regPath -Name "NoLmHash" -Value 1
+#         Set-ItemProperty -Path $regPath -Name "LimitBlankPasswordUse" -Value 1
+#         Set-ItemProperty -Path $regPath -Name "RestrictAnonymous" -Value 1
+#         Set-ItemProperty -Path $regPath -Name "RestrictAnonymousSAM" -Value 1
+#         Set-ItemProperty -Path $regPath -Name "EveryoneIncludesAnonymous" -Value 0
+#         Set-ItemProperty -Path $regPath -Name "NoDefaultAdminShares" -Value 1
+#         Set-ItemProperty -Path $regPath -Name "NoLMAuthentication" -Value 1
+#         Set-ItemProperty -Path $regPath -Name "NoNullSessionShares" -Value 1
+#         Set-ItemProperty -Path $regPath -Name "NoNullSessionUsername" -Value 1
+#         Set-ItemProperty -Path $regPath -Name "NoNullSessionPassword" -Value 1
+#         Set-ItemProperty -Path $regPath -Name "NoSaveSettings" -Value 1
         
-        $regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters"
-        Set-ItemProperty -Path $regPath -Name "AutoShareWks" -Value 0
-        Set-ItemProperty -Path $regPath -Name "AutoShareServer" -Value 0
-        Set-ItemProperty -Path $regPath -Name "RestrictNullSessAccess" -Value 1
-        Set-ItemProperty -Path $regPath -Name "NullSessionPipes" -Value ""
-        Set-ItemProperty -Path $regPath -Name "NullSessionShares" -Value ""
-        Set-ItemProperty -Path $regPath -Name "Samba" -Value 0
+#         $regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters"
+#         Set-ItemProperty -Path $regPath -Name "AutoShareWks" -Value 0
+#         Set-ItemProperty -Path $regPath -Name "AutoShareServer" -Value 0
+#         Set-ItemProperty -Path $regPath -Name "RestrictNullSessAccess" -Value 1
+#         Set-ItemProperty -Path $regPath -Name "NullSessionPipes" -Value ""
+#         Set-ItemProperty -Path $regPath -Name "NullSessionShares" -Value ""
+#         Set-ItemProperty -Path $regPath -Name "Samba" -Value 0
 
-        $regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters"
-        Set-ItemProperty -Path $regPath -Name "EnableSecuritySignature" -Value 1
-        Set-ItemProperty -Path $regPath -Name "RequireSecuritySignature" -Value 1
-        Set-ItemProperty -Path $regPath -Name "EnablePlainTextPassword" -Value 0
+#         $regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters"
+#         Set-ItemProperty -Path $regPath -Name "EnableSecuritySignature" -Value 1
+#         Set-ItemProperty -Path $regPath -Name "RequireSecuritySignature" -Value 1
+#         Set-ItemProperty -Path $regPath -Name "EnablePlainTextPassword" -Value 0
         
-        Write-Host "--------------------------------------------------------------------------------"
-        Write-Host "Credential dumping blocked."
-        Write-Host "--------------------------------------------------------------------------------"
-    } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++" 
-        Write-Host "An error occurred while blocking credential dumping: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++" 
-    }
-}
+#         Write-Host "--------------------------------------------------------------------------------"
+#         Write-Host "Credential dumping blocked."
+#         Write-Host "--------------------------------------------------------------------------------"
+#     } catch {
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++" 
+#         Write-Host "An error occurred while blocking credential dumping: $_"
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++" 
+#     }
+# }
 
 # # block unnecessary winrm traffic
 # Start-LoggedJob -JobName "Block Unnecessary WinRM Traffic" -ScriptBlock {
@@ -1619,42 +1619,42 @@ Start-LoggedJob -JobName "Disable Remote Sign-in" -ScriptBlock {
     }
 }
 
-# Enable LSA Protection, restrict debug privileges, disable WDigest
-Start-LoggedJob -JobName "Enable LSA Protection" -ScriptBlock {
-    try {
-        $regPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa"
-        Set-ItemProperty -Path $regPath -Name "LsaCfgFlags" -Value 1
-        Set-ItemProperty -Path $regPath -Name "RunAsPPL" -Value 1
-        Write-Host "--------------------------------------------------------------------------------"
-        Write-Host "LSA Protection enabled."
-        Write-Host "--------------------------------------------------------------------------------"
-    } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        Write-Host "An error occurred while enabling LSA Protection: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-    }
-}
-Start-LoggedJob -JobName "Restrict Debug Privileges" -ScriptBlock {
-    try {
-        $regPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa"
-        Set-ItemProperty -Path $regPath -Name "RestrictAnonymous" -Value 1
-        Set-ItemProperty -Path $regPath -Name "RestrictAnonymousSAM" -Value 1
-        Set-ItemProperty -Path $regPath -Name "EveryoneIncludesAnonymous" -Value 0
-        Set-ItemProperty -Path $regPath -Name "NoDefaultAdminShares" -Value 1
-        Set-ItemProperty -Path $regPath -Name "NoLMAuthentication" -Value 1
-        Set-ItemProperty -Path $regPath -Name "NoNullSessionShares" -Value 1
-        Set-ItemProperty -Path $regPath -Name "NoNullSessionUsername" -Value 1
-        Set-ItemProperty -Path $regPath -Name "NoNullSessionPassword" -Value 1
-        Set-ItemProperty -Path $regPath -Name "NoSaveSettings" -Value 1
-        Write-Host "--------------------------------------------------------------------------------"
-        Write-Host "Debug privileges restricted."
-        Write-Host "--------------------------------------------------------------------------------"
-    } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        Write-Host "An error occurred while restricting debug privileges: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-    }
-}
+# # Enable LSA Protection, restrict debug privileges, disable WDigest
+# Start-LoggedJob -JobName "Enable LSA Protection" -ScriptBlock {
+#     try {
+#         $regPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa"
+#         Set-ItemProperty -Path $regPath -Name "LsaCfgFlags" -Value 1
+#         Set-ItemProperty -Path $regPath -Name "RunAsPPL" -Value 1
+#         Write-Host "--------------------------------------------------------------------------------"
+#         Write-Host "LSA Protection enabled."
+#         Write-Host "--------------------------------------------------------------------------------"
+#     } catch {
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#         Write-Host "An error occurred while enabling LSA Protection: $_"
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#     }
+# }
+# Start-LoggedJob -JobName "Restrict Debug Privileges" -ScriptBlock {
+#     try {
+#         $regPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa"
+#         Set-ItemProperty -Path $regPath -Name "RestrictAnonymous" -Value 1
+#         Set-ItemProperty -Path $regPath -Name "RestrictAnonymousSAM" -Value 1
+#         Set-ItemProperty -Path $regPath -Name "EveryoneIncludesAnonymous" -Value 0
+#         Set-ItemProperty -Path $regPath -Name "NoDefaultAdminShares" -Value 1
+#         Set-ItemProperty -Path $regPath -Name "NoLMAuthentication" -Value 1
+#         Set-ItemProperty -Path $regPath -Name "NoNullSessionShares" -Value 1
+#         Set-ItemProperty -Path $regPath -Name "NoNullSessionUsername" -Value 1
+#         Set-ItemProperty -Path $regPath -Name "NoNullSessionPassword" -Value 1
+#         Set-ItemProperty -Path $regPath -Name "NoSaveSettings" -Value 1
+#         Write-Host "--------------------------------------------------------------------------------"
+#         Write-Host "Debug privileges restricted."
+#         Write-Host "--------------------------------------------------------------------------------"
+#     } catch {
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#         Write-Host "An error occurred while restricting debug privileges: $_"
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#     }
+# }
 # Start-LoggedJob -JobName "Disable WDigest" -ScriptBlock {
 #     try {
 #         $regPath = "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\WDigest"
@@ -1758,20 +1758,20 @@ Start-LoggedJob -JobName "Configure Network Level Authentication for Remote Desk
 #     }
 # }
 
-Start-LoggedJob -JobName "Enable Windows Defender Credential Guard" -ScriptBlock {
-    try {
-        Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard' -Name "EnableVirtualizationBasedSecurity" -Value 1
-        Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name "LsaCfgFlags" -Value 1
-        Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name "RunAsPPL" -Value 1
-        Write-Host "--------------------------------------------------------------------------------"
-        Write-Host "Windows Defender Credential Guard enabled."
-        Write-Host "--------------------------------------------------------------------------------"
-    } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        Write-Host "An error occurred while enabling Windows Defender Credential Guard: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-    }
-}
+# Start-LoggedJob -JobName "Enable Windows Defender Credential Guard" -ScriptBlock {
+#     try {
+#         Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard' -Name "EnableVirtualizationBasedSecurity" -Value 1
+#         Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name "LsaCfgFlags" -Value 1
+#         Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name "RunAsPPL" -Value 1
+#         Write-Host "--------------------------------------------------------------------------------"
+#         Write-Host "Windows Defender Credential Guard enabled."
+#         Write-Host "--------------------------------------------------------------------------------"
+#     } catch {
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#         Write-Host "An error occurred while enabling Windows Defender Credential Guard: $_"
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#     }
+# }
 
 # Start-LoggedJob -JobName "Configure Windows Update to Install Updates Automatically" -ScriptBlock { 
 #     try {
