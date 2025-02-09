@@ -1,3 +1,4 @@
+# https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/feature/ecomm-hardening/linux/E-Comm/update_apache.sh
 #######################################
 #
 #          UPDATE HTTPD TO 2.4.60
@@ -8,13 +9,15 @@ if httpd -v | grep -q "2.4.60"
 then
     echo "httpd version is already 2.4.60"
 else
-    systemctl stop httpd
     echo "Updating httpd to 2.4.60..."
     # Ensure mod_ssl is installed
-    yum install mod_ssl -y
+    # yum install mod_ssl -y
 
-    # Download pre-requisite packages
-    yum install -y gcc make apr-devel apr-util-devel pcre-devel mod_ssl openssl-devel expat expat-devel
+    # # Download pre-requisite packages
+    yum install -y gcc pcre-devel mod_ssl openssl-devel expat expat-devel apr-devel apr-util-devel
+    # yum install -y gcc make apr-devel apr-util-devel pcre-devel mod_ssl openssl-devel expat expat-devel
+
+    cd /opt
 
     # Download the httpd 2.4.60 source code
     wget https://archive.apache.org/dist/httpd/httpd-2.4.60.tar.gz
@@ -34,13 +37,17 @@ else
     cd ..
 
     # Run configure script with specified options
-    ./configure --with-included-apr --with-included-apr-util --enable-ssl --enable-so --prefix=/etc/httpd --with-mpm=event --enable-rewrite --enable-mods-shared=all
+    ./configure --with-included-apr --with-included-apr-util --enable-ssl --enable-so --prefix=/etc/httpd
     make
     make install
-    mv /usr/sbin/httpd /root/httpd.old
+    systemctl stop httpd
+    # take a backup only if the /root/httpd.old does not exist
+    if [ ! -f /root/httpd.old ]; then
+        mv /usr/sbin/httpd /root/httpd.old
+    fi
     mv httpd /usr/sbin/httpd
     cd ..
-    rm -rf httpd-2.4.60
+    # rm -rf httpd-2.4.60
     rm httpd-2.4.60.tar.gz
     cat <<-EOF > /etc/httpd/conf.modules.d/00-mpm.conf
 # Select the MPM module which should be used by uncommenting exactly
