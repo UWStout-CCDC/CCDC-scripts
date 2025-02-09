@@ -1593,31 +1593,31 @@ Start-LoggedJob -JobName "Block Credential Dumping" -ScriptBlock {
     }
 }
 
-# block unnecessary winrm traffic
-Start-LoggedJob -JobName "Block Unnecessary WinRM Traffic" -ScriptBlock {
-    try {
-        $regPath = "HKLM:\SOFTWARE\Policies\Microsoft\WindowsFirewall"
+# # block unnecessary winrm traffic
+# Start-LoggedJob -JobName "Block Unnecessary WinRM Traffic" -ScriptBlock {
+#     try {
+#         $regPath = "HKLM:\SOFTWARE\Policies\Microsoft\WindowsFirewall"
         
-        # Ensure the registry path exists
-        if (-not (Test-Path $regPath)) {
-            New-Item -Path $regPath -Force | Out-Null
-        }
+#         # Ensure the registry path exists
+#         if (-not (Test-Path $regPath)) {
+#             New-Item -Path $regPath -Force | Out-Null
+#         }
         
-        Set-ItemProperty -Path $regPath -Name "AllowWinRM" -Value 0
-        Set-ItemProperty -Path $regPath -Name "AllowWinRMHTTP" -Value 0
-        Set-ItemProperty -Path $regPath -Name "AllowWinRMHTTPS" -Value 0
+#         Set-ItemProperty -Path $regPath -Name "AllowWinRM" -Value 0
+#         Set-ItemProperty -Path $regPath -Name "AllowWinRMHTTP" -Value 0
+#         Set-ItemProperty -Path $regPath -Name "AllowWinRMHTTPS" -Value 0
         
-        $regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
-        Set-ItemProperty -Path $regPath -Name "EnableLUA" -Value 0
-        Write-Host "--------------------------------------------------------------------------------"
-        Write-Host "Unnecessary WinRM traffic blocked."
-        Write-Host "--------------------------------------------------------------------------------"
-    } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        Write-Host "An error occurred while blocking unnecessary WinRM traffic: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-    }
-}
+#         $regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+#         Set-ItemProperty -Path $regPath -Name "EnableLUA" -Value 0
+#         Write-Host "--------------------------------------------------------------------------------"
+#         Write-Host "Unnecessary WinRM traffic blocked."
+#         Write-Host "--------------------------------------------------------------------------------"
+#     } catch {
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#         Write-Host "An error occurred while blocking unnecessary WinRM traffic: $_"
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#     }
+# }
 
 # disable remote sign in
 Start-LoggedJob -JobName "Disable Remote Sign-in" -ScriptBlock {
@@ -1684,37 +1684,37 @@ Start-LoggedJob -JobName "Disable WDigest" -ScriptBlock {
     }
 }
 
-# disable powershell remoting
-Start-LoggedJob -JobName "Disable PowerShell Remoting" -ScriptBlock {
-    try {
-        # Disable PSRemoting
-        Disable-PSRemoting -Force
+# # disable powershell remoting
+# Start-LoggedJob -JobName "Disable PowerShell Remoting" -ScriptBlock {
+#     try {
+#         # Disable PSRemoting
+#         Disable-PSRemoting -Force
 
-        # Stop and disable the WinRM service
-        Stop-Service -Name WinRM -Force
-        Set-Service -Name WinRM -StartupType Disabled
+#         # Stop and disable the WinRM service
+#         Stop-Service -Name WinRM -Force
+#         Set-Service -Name WinRM -StartupType Disabled
 
-        # Delete the listener that accepts requests on any IP address
-        winrm delete winrm/config/Listener?Address=*+Transport=HTTP
-        winrm delete winrm/config/Listener?Address=*+Transport=HTTPS
+#         # Delete the listener that accepts requests on any IP address
+#         winrm delete winrm/config/Listener?Address=*+Transport=HTTP
+#         winrm delete winrm/config/Listener?Address=*+Transport=HTTPS
 
-        # Disable the firewall exceptions for WS-Management communications
-        Set-NetFirewallRule -Name "WINRM-HTTP-In-TCP" -Enabled False
-        Set-NetFirewallRule -Name "WINRM-HTTPS-In-TCP" -Enabled False
+#         # Disable the firewall exceptions for WS-Management communications
+#         Set-NetFirewallRule -Name "WINRM-HTTP-In-TCP" -Enabled False
+#         Set-NetFirewallRule -Name "WINRM-HTTPS-In-TCP" -Enabled False
 
-        # Restore the value of the LocalAccountTokenFilterPolicy to 0
-        $regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
-        Set-ItemProperty -Path $regPath -Name "LocalAccountTokenFilterPolicy" -Value 0
+#         # Restore the value of the LocalAccountTokenFilterPolicy to 0
+#         $regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+#         Set-ItemProperty -Path $regPath -Name "LocalAccountTokenFilterPolicy" -Value 0
 
-        Write-Host "--------------------------------------------------------------------------------"
-        Write-Host "PowerShell remoting disabled."
-        Write-Host "--------------------------------------------------------------------------------"
-    } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        Write-Host "An error occurred while disabling PowerShell remoting: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-    }
-}
+#         Write-Host "--------------------------------------------------------------------------------"
+#         Write-Host "PowerShell remoting disabled."
+#         Write-Host "--------------------------------------------------------------------------------"
+#     } catch {
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#         Write-Host "An error occurred while disabling PowerShell remoting: $_"
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#     }
+# }
 
 # Additional security measures
 Start-LoggedJob -JobName "Configure Windows Defender Exploit Guard" -ScriptBlock {
