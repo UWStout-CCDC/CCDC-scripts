@@ -14,7 +14,8 @@ else
     # yum install mod_ssl -y
 
     # # Download pre-requisite packages
-    yum install -y gcc pcre-devel mod_ssl openssl-devel
+    yum install -y gcc pcre-devel mod_ssl openssl-devel expat expat-devel apr-devel apr-util-devel
+    # yum install -y gcc make apr-devel apr-util-devel pcre-devel mod_ssl openssl-devel expat expat-devel
 
     cd /opt
 
