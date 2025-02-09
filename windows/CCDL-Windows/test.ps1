@@ -851,13 +851,9 @@ function Start-LoggedJob {
     Write-Host "Started job: $JobName"
 }
 
-# Monitor jobs with detailed logging and timeouts
-$maxWaitTime = 600 # Maximum wait time in seconds
-$startTime = Get-Date
-
+# Monitor jobs
 while ($global:jobs.Count -gt 0) {
     foreach ($job in $global:jobs) {
-        Write-Host "$(Get-Date -Format 'HH:mm:ss') - Checking job: $($job.Name) with state: $($job.State)"
         if ($job.State -eq 'Completed') {
             Write-Host "$(Get-Date -Format 'HH:mm:ss') - $($job.Name) has completed."
             $job | Receive-Job
@@ -866,16 +862,9 @@ while ($global:jobs.Count -gt 0) {
         }
     }
     Start-Sleep -Seconds 5
-
-    # Check if the maximum wait time has been exceeded
-    $elapsedTime = (Get-Date) - $startTime
-    if ($elapsedTime.TotalSeconds -gt $maxWaitTime) {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        Write-Host "Maximum wait time exceeded. Exiting job monitoring loop."
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        break
-    }
 }
+
+
 
 Write-Host "All jobs have completed or maximum wait time exceeded."
 
@@ -1215,95 +1204,95 @@ Start-LoggedJob -JobName "Backup Active Directory" -ScriptBlock {
     }
 }
 
-# Backup SAM and System Hives
-Start-LoggedJob -JobName "Backup SAM and System Hives" -ScriptBlock {
-    try {
-        $registryPath = "$ccdcPath\Registry"
-        $backupPath = "$registryPath\RegistryBackupSamSystem"
+# # Backup SAM and System Hives
+# Start-LoggedJob -JobName "Backup SAM and System Hives" -ScriptBlock {
+#     try {
+#         $registryPath = "$ccdcPath\Registry"
+#         $backupPath = "$registryPath\RegistryBackupSamSystem"
 
-        # Ensure the backup paths exist
-        if (-not (Test-Path $registryPath)) {
-            mkdir $registryPath
-        }
-        if (-not (Test-Path $backupPath)) {
-            mkdir $backupPath
-        }
+#         # Ensure the backup paths exist
+#         if (-not (Test-Path $registryPath)) {
+#             mkdir $registryPath
+#         }
+#         if (-not (Test-Path $backupPath)) {
+#             mkdir $backupPath
+#         }
 
-        # Backup the SAM and SYSTEM hives with elevated privileges
-        Start-Process -FilePath "reg.exe" -ArgumentList "save HKLM\SAM $backupPath\SAM.bak" -Verb RunAs -Wait
-        Start-Process -FilePath "reg.exe" -ArgumentList "save HKLM\SYSTEM $backupPath\SYSTEM.bak" -Verb RunAs -Wait
+#         # Backup the SAM and SYSTEM hives with elevated privileges
+#         Start-Process -FilePath "reg.exe" -ArgumentList "save HKLM\SAM $backupPath\SAM.bak" -Verb RunAs -Wait
+#         Start-Process -FilePath "reg.exe" -ArgumentList "save HKLM\SYSTEM $backupPath\SYSTEM.bak" -Verb RunAs -Wait
 
-        Write-Host "--------------------------------------------------------------------------------"
-        Write-Host "SAM and System hives backed up."
-        Write-Host "--------------------------------------------------------------------------------"
-    } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        Write-Host "An error occurred while backing up SAM and System hives: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-    }
-}
+#         Write-Host "--------------------------------------------------------------------------------"
+#         Write-Host "SAM and System hives backed up."
+#         Write-Host "--------------------------------------------------------------------------------"
+#     } catch {
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#         Write-Host "An error occurred while backing up SAM and System hives: $_"
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#     }
+# }
 
-# Restrict access to the SAM and System hives to just necessary system accounts
-Start-LoggedJob -JobName "Restrict Access to SAM and System Hives" -ScriptBlock {
-    try {
-        $backupPath = "$ccdcPath\Registry\RegistryBackupSamSystem"
+# # Restrict access to the SAM and System hives to just necessary system accounts
+# Start-LoggedJob -JobName "Restrict Access to SAM and System Hives" -ScriptBlock {
+#     try {
+#         $backupPath = "$ccdcPath\Registry\RegistryBackupSamSystem"
         
-        # Ensure the backup path exists
-        if (-not (Test-Path $backupPath)) {
-            mkdir $backupPath
-        }
+#         # Ensure the backup path exists
+#         if (-not (Test-Path $backupPath)) {
+#             mkdir $backupPath
+#         }
 
-        # Backup the SAM and SYSTEM hives
-        reg save HKLM\SAM "$backupPath\SAM.bak"
-        reg save HKLM\SYSTEM "$backupPath\SYSTEM.bak"
+#         # Backup the SAM and SYSTEM hives
+#         reg save HKLM\SAM "$backupPath\SAM.bak"
+#         reg save HKLM\SYSTEM "$backupPath\SYSTEM.bak"
 
-        # Define necessary system accounts
-        $adminUser = [System.Security.Principal.NTAccount]"Administrator"
-        $systemUser = [System.Security.Principal.NTAccount]"SYSTEM"
-        $trustedInstaller = [System.Security.Principal.NTAccount]"NT SERVICE\TrustedInstaller"
+#         # Define necessary system accounts
+#         $adminUser = [System.Security.Principal.NTAccount]"Administrator"
+#         $systemUser = [System.Security.Principal.NTAccount]"SYSTEM"
+#         $trustedInstaller = [System.Security.Principal.NTAccount]"NT SERVICE\TrustedInstaller"
 
-        # Function to set ACL for a registry hive
-        function Set-RegistryAcl {
-            param (
-                [string]$hivePath,
-                [System.Security.Principal.NTAccount]$adminUser,
-                [System.Security.Principal.NTAccount]$systemUser,
-                [System.Security.Principal.NTAccount]$trustedInstaller
-            )
+#         # Function to set ACL for a registry hive
+#         function Set-RegistryAcl {
+#             param (
+#                 [string]$hivePath,
+#                 [System.Security.Principal.NTAccount]$adminUser,
+#                 [System.Security.Principal.NTAccount]$systemUser,
+#                 [System.Security.Principal.NTAccount]$trustedInstaller
+#             )
 
-            $acl = Get-Acl $hivePath
-            $acl.SetAccessRuleProtection($true, $false)
+#             $acl = Get-Acl $hivePath
+#             $acl.SetAccessRuleProtection($true, $false)
 
-            # Remove existing access rules
-            $acl.Access | ForEach-Object { $acl.RemoveAccessRule($_) }
+#             # Remove existing access rules
+#             $acl.Access | ForEach-Object { $acl.RemoveAccessRule($_) }
 
-            # Add full control for necessary system accounts
-            $adminRule = New-Object System.Security.AccessControl.RegistryAccessRule($adminUser, "FullControl", "Allow")
-            $systemRule = New-Object System.Security.AccessControl.RegistryAccessRule($systemUser, "FullControl", "Allow")
-            $trustedInstallerRule = New-Object System.Security.AccessControl.RegistryAccessRule($trustedInstaller, "FullControl", "Allow")
-            $acl.AddAccessRule($adminRule)
-            $acl.AddAccessRule($systemRule)
-            $acl.AddAccessRule($trustedInstallerRule)
+#             # Add full control for necessary system accounts
+#             $adminRule = New-Object System.Security.AccessControl.RegistryAccessRule($adminUser, "FullControl", "Allow")
+#             $systemRule = New-Object System.Security.AccessControl.RegistryAccessRule($systemUser, "FullControl", "Allow")
+#             $trustedInstallerRule = New-Object System.Security.AccessControl.RegistryAccessRule($trustedInstaller, "FullControl", "Allow")
+#             $acl.AddAccessRule($adminRule)
+#             $acl.AddAccessRule($systemRule)
+#             $acl.AddAccessRule($trustedInstallerRule)
 
-            # Apply the modified ACL
-            Set-Acl $hivePath $acl
-        }
+#             # Apply the modified ACL
+#             Set-Acl $hivePath $acl
+#         }
 
-        # Set ACL for SAM hive
-        Set-RegistryAcl -hivePath "HKLM\SAM" -adminUser $adminUser -systemUser $systemUser -trustedInstaller $trustedInstaller
+#         # Set ACL for SAM hive
+#         Set-RegistryAcl -hivePath "HKLM\SAM" -adminUser $adminUser -systemUser $systemUser -trustedInstaller $trustedInstaller
 
-        # Set ACL for SYSTEM hive
-        Set-RegistryAcl -hivePath "HKLM\SYSTEM" -adminUser $adminUser -systemUser $systemUser -trustedInstaller $trustedInstaller
+#         # Set ACL for SYSTEM hive
+#         Set-RegistryAcl -hivePath "HKLM\SYSTEM" -adminUser $adminUser -systemUser $systemUser -trustedInstaller $trustedInstaller
 
-        Write-Host "--------------------------------------------------------------------------------"
-        Write-Host "Access to SAM and System hives restricted."
-        Write-Host "--------------------------------------------------------------------------------"
-    } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        Write-Host "An error occurred while restricting access to SAM and System hives: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-    }
-}
+#         Write-Host "--------------------------------------------------------------------------------"
+#         Write-Host "Access to SAM and System hives restricted."
+#         Write-Host "--------------------------------------------------------------------------------"
+#     } catch {
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#         Write-Host "An error occurred while restricting access to SAM and System hives: $_"
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#     }
+# }
 
 # Create alert for new startup items, create toast notification when new startup item is created, check every 5 seconds, this should be run as a scheduled task
 Start-LoggedJob -JobName "Create Alert for New Startup Items" -ScriptBlock {
@@ -1932,6 +1921,7 @@ Start-LoggedJob -JobName "Quick Scan with Windows Defender" -ScriptBlock {
 
 # Wait for all jobs to complete
 Get-Job | Wait-Job
+Write-Host "All jobs have completed."
 # Restart the computer
 Write-Host "--------------------------------------------------------------------------------"
 Write-Host "Restarting Computer"
