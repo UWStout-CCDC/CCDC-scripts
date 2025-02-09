@@ -1,3 +1,4 @@
+# https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/feature/ecomm-hardening/linux/E-Comm/update_apache.sh
 #######################################
 #
 #          UPDATE HTTPD TO 2.4.60
@@ -11,10 +12,12 @@ else
     systemctl stop httpd
     echo "Updating httpd to 2.4.60..."
     # Ensure mod_ssl is installed
-    yum install mod_ssl -y
+    # yum install mod_ssl -y
 
-    # Download pre-requisite packages
-    yum install -y gcc make apr-devel apr-util-devel pcre-devel mod_ssl openssl-devel expat expat-devel
+    # # Download pre-requisite packages
+    # yum install -y gcc make apr-devel apr-util-devel pcre-devel mod_ssl openssl-devel expat expat-devel
+
+    cd /opt
 
     # Download the httpd 2.4.60 source code
     wget https://archive.apache.org/dist/httpd/httpd-2.4.60.tar.gz
