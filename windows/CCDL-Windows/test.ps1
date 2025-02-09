@@ -851,6 +851,34 @@ function Start-LoggedJob {
     Write-Host "Started job: $JobName"
 }
 
+# Monitor jobs with detailed logging and timeouts
+$maxWaitTime = 600 # Maximum wait time in seconds
+$startTime = Get-Date
+
+while ($global:jobs.Count -gt 0) {
+    foreach ($job in $global:jobs) {
+        Write-Host "$(Get-Date -Format 'HH:mm:ss') - Checking job: $($job.Name) with state: $($job.State)"
+        if ($job.State -eq 'Completed') {
+            Write-Host "$(Get-Date -Format 'HH:mm:ss') - $($job.Name) has completed."
+            $job | Receive-Job
+            Remove-Job -Job $job
+            $global:jobs = $global:jobs | Where-Object { $_.Id -ne $job.Id }
+        }
+    }
+    Start-Sleep -Seconds 5
+
+    # Check if the maximum wait time has been exceeded
+    $elapsedTime = (Get-Date) - $startTime
+    if ($elapsedTime.TotalSeconds -gt $maxWaitTime) {
+        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+        Write-Host "Maximum wait time exceeded. Exiting job monitoring loop."
+        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+        break
+    }
+}
+
+Write-Host "All jobs have completed or maximum wait time exceeded."
+
 # Sync system time
 Start-LoggedJob -JobName "Synchronize System Time" -ScriptBlock {
     try {
@@ -1889,18 +1917,18 @@ Start-LoggedJob -JobName "Quick Scan with Windows Defender" -ScriptBlock {
     }
 }
 
-# Monitor jobs
-while ($global:jobs.Count -gt 0) {
-    foreach ($job in $global:jobs) {
-        if ($job.State -eq 'Completed') {
-            Write-Host "$(Get-Date -Format 'HH:mm:ss') - $($job.Name) has completed."
-            $job | Receive-Job
-            Remove-Job -Job $job
-            $global:jobs = $global:jobs | Where-Object { $_.Id -ne $job.Id }
-        }
-    }
-    Start-Sleep -Seconds 5
-}
+# # Monitor jobs
+# while ($global:jobs.Count -gt 0) {
+#     foreach ($job in $global:jobs) {
+#         if ($job.State -eq 'Completed') {
+#             Write-Host "$(Get-Date -Format 'HH:mm:ss') - $($job.Name) has completed."
+#             $job | Receive-Job
+#             Remove-Job -Job $job
+#             $global:jobs = $global:jobs | Where-Object { $_.Id -ne $job.Id }
+#         }
+#     }
+#     Start-Sleep -Seconds 5
+# }
 
 # Wait for all jobs to complete
 Get-Job | Wait-Job
