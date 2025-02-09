@@ -1604,20 +1604,20 @@ Start-LoggedJob -JobName "Restrict Non-Admin Users from Installing Software" -Sc
 #     }
 # }
 
-# disable remote sign in
-Start-LoggedJob -JobName "Disable Remote Sign-in" -ScriptBlock {
-    try {
-        $regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
-        Set-ItemProperty -Path $regPath -Name "EnableLUA" -Value 0
-        Write-Host "--------------------------------------------------------------------------------"
-        Write-Host "Remote sign-in disabled."
-        Write-Host "--------------------------------------------------------------------------------"
-    } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        Write-Host "An error occurred while disabling remote sign-in: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-    }
-}
+# # disable remote sign in
+# Start-LoggedJob -JobName "Disable Remote Sign-in" -ScriptBlock {
+#     try {
+#         $regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+#         Set-ItemProperty -Path $regPath -Name "EnableLUA" -Value 0
+#         Write-Host "--------------------------------------------------------------------------------"
+#         Write-Host "Remote sign-in disabled."
+#         Write-Host "--------------------------------------------------------------------------------"
+#     } catch {
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#         Write-Host "An error occurred while disabling remote sign-in: $_"
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#     }
+# }
 
 # # Enable LSA Protection, restrict debug privileges, disable WDigest
 # Start-LoggedJob -JobName "Enable LSA Protection" -ScriptBlock {
@@ -1728,19 +1728,19 @@ Start-LoggedJob -JobName "Configure Windows Defender Exploit Guard" -ScriptBlock
     }
 }
 
-Start-LoggedJob -JobName "Configure Network Level Authentication for Remote Desktop" -ScriptBlock { 
-    try {
-        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1 
-        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "AllowRemoteRPC" -Value 0
-        Write-Host "--------------------------------------------------------------------------------"
-        Write-Host "Network Level Authentication for Remote Desktop configured."
-        Write-Host "--------------------------------------------------------------------------------"
-    } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        Write-Host "An error occurred while configuring Network Level Authentication for Remote Desktop: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-    }
-}
+# Start-LoggedJob -JobName "Configure Network Level Authentication for Remote Desktop" -ScriptBlock { 
+#     try {
+#         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1 
+#         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "AllowRemoteRPC" -Value 0
+#         Write-Host "--------------------------------------------------------------------------------"
+#         Write-Host "Network Level Authentication for Remote Desktop configured."
+#         Write-Host "--------------------------------------------------------------------------------"
+#     } catch {
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#         Write-Host "An error occurred while configuring Network Level Authentication for Remote Desktop: $_"
+#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#     }
+# }
 
 # Start-LoggedJob -JobName "Disable LM and NTLMv1 Protocols" -ScriptBlock {
 #     try {
