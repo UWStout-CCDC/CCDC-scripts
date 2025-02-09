@@ -9,13 +9,12 @@ if httpd -v | grep -q "2.4.60"
 then
     echo "httpd version is already 2.4.60"
 else
-    systemctl stop httpd
     echo "Updating httpd to 2.4.60..."
     # Ensure mod_ssl is installed
     # yum install mod_ssl -y
 
     # # Download pre-requisite packages
-    # yum install -y gcc make apr-devel apr-util-devel pcre-devel mod_ssl openssl-devel expat expat-devel
+    yum install -y gcc pcre-devel mod_ssl openssl-devel
 
     cd /opt
 
@@ -40,6 +39,7 @@ else
     ./configure --with-included-apr --with-included-apr-util --enable-ssl --enable-so --prefix=/etc/httpd
     make
     make install
+    systemctl stop httpd
     mv /usr/sbin/httpd /root/httpd.old
     mv httpd /usr/sbin/httpd
     cd ..
