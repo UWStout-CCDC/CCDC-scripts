@@ -1701,32 +1701,32 @@ Start-LoggedJob -JobName "Create Alert for Audit WMI Subscriptions" -ScriptBlock
 #     }
 # }
 
-# # Additional security measures
-# Start-LoggedJob -JobName "Configure Windows Defender Exploit Guard" -ScriptBlock {
-#     try {
-#         Set-MpPreference -EnableControlledFolderAccess Enabled
+# Additional security measures
+Start-LoggedJob -JobName "Configure Windows Defender Exploit Guard" -ScriptBlock {
+    try {
+        Set-MpPreference -EnableControlledFolderAccess Enabled
         
-#         # Configure system-level mitigations
-#         Set-ProcessMitigation -System -Enable DEP, SEHOP, ForceRelocateImages, BottomUp, HighEntropy
+        # Configure system-level mitigations
+        Set-ProcessMitigation -System -Enable DEP, SEHOP, ForceRelocateImages, BottomUp, HighEntropy
         
-#         # Configure attack surface reduction rules
-#         Set-MpPreference -AttackSurfaceReductionRules_Ids @(
-#             "D4F940AB-401B-4EFC-AADC-AD5F3C50688A",  # Block executable content from email and webmail clients
-#             "3B576869-A4EC-4529-8536-B80A7769E899",  # Block executable content from Office files
-#             "75668C1F-73B5-4CF0-BB93-3ECF5CB7CC84",  # Block credential stealing from LSASS
-#             "D1E49AAC-8F56-4280-B9BA-993A6D77406C"   # Block executable content from Office files that contain macros
-#         )
-#         Set-MpPreference -AttackSurfaceReductionRules_Actions @("Enable", "Enable", "Enable", "Enable")
+        # Configure attack surface reduction rules
+        Set-MpPreference -AttackSurfaceReductionRules_Ids @(
+            "D4F940AB-401B-4EFC-AADC-AD5F3C50688A",  # Block executable content from email and webmail clients
+            "3B576869-A4EC-4529-8536-B80A7769E899",  # Block executable content from Office files
+            "75668C1F-73B5-4CF0-BB93-3ECF5CB7CC84",  # Block credential stealing from LSASS
+            "D1E49AAC-8F56-4280-B9BA-993A6D77406C"   # Block executable content from Office files that contain macros
+        )
+        Set-MpPreference -AttackSurfaceReductionRules_Actions @("Enable", "Enable", "Enable", "Enable")
         
-#         Write-Host "--------------------------------------------------------------------------------"
-#         Write-Host "Windows Defender Exploit Guard configured."
-#         Write-Host "--------------------------------------------------------------------------------"
-#     } catch {
-#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-#         Write-Host "An error occurred while configuring Windows Defender Exploit Guard: $_"
-#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-#     }
-# }
+        Write-Host "--------------------------------------------------------------------------------"
+        Write-Host "Windows Defender Exploit Guard configured."
+        Write-Host "--------------------------------------------------------------------------------"
+    } catch {
+        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+        Write-Host "An error occurred while configuring Windows Defender Exploit Guard: $_"
+        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+    }
+}
 
 # Start-LoggedJob -JobName "Configure Network Level Authentication for Remote Desktop" -ScriptBlock { 
 #     try {
