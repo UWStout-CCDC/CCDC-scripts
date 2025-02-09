@@ -37,13 +37,13 @@ else
     cd ..
 
     # Run configure script with specified options
-    ./configure --with-included-apr --with-included-apr-util --enable-ssl --enable-so --prefix=/etc/httpd --with-mpm=event --enable-rewrite --enable-mods-shared=all
+    ./configure --with-included-apr --with-included-apr-util --enable-ssl --enable-so --prefix=/etc/httpd
     make
     make install
     mv /usr/sbin/httpd /root/httpd.old
     mv httpd /usr/sbin/httpd
     cd ..
-    rm -rf httpd-2.4.60
+    # rm -rf httpd-2.4.60
     rm httpd-2.4.60.tar.gz
     cat <<-EOF > /etc/httpd/conf.modules.d/00-mpm.conf
 # Select the MPM module which should be used by uncommenting exactly
