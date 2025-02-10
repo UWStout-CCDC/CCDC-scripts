@@ -357,6 +357,21 @@ else
   mysqldump -u root -p$DEFAULT_PRESTA_PASS --all-databases > /bkp/new/ecomm.sql
 fi
 
+# set db to disable smarty cache in the ps_configuration table
+# check if they are using empty password for mysql
+if [ -z "$DEFAULT_PRESTA_PASS" ]; then
+  mysql -u root -e "use prestashop; update ps_configuration set value='0' where name='PS_SMARTY_CACHE';"
+else
+  mysql -u root -p$DEFAULT_PRESTA_PASS -e "use prestashop; update ps_configuration set value='0' where name='PS_SMARTY_CACHE';"
+fi
+
+# fix permissions on the /var/www/html/prestashop directory
+TARGET_DIR="/var/www/html/prestashop"
+# Set directories to 755
+find "$TARGET_DIR" -type d -exec chmod 755 {} \;
+# Set files to 644
+find "$TARGET_DIR" -type f -exec chmod 644 {} \;
+echo "Permissions set: Directories (755), Files (644) in $TARGET_DIR"
 
 #########################################
 #
