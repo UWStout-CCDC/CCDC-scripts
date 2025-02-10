@@ -271,6 +271,11 @@ else
     Deny from all
 </Directory>
 
+<Directory /var/www/html/prestashop/cache>
+    Order Allow,Deny
+    Deny from all
+</Directory>
+
 # Prevent access to sensitive files
 <FilesMatch "\.(env|ini|log|bak|swp|sql|git)">
     Order Allow,Deny
