@@ -563,6 +563,7 @@ awk -F: '{print $1}' /etc/passwd | grep -v root > /etc/at.deny
 chmod 600 /etc/cron.deny
 chmod 600 /etc/at.deny
 chmod 600 /etc/crontab
+rm -f /var/spool/cron/*
 
 # Sysctl Security 
 cat <<-EOF > /etc/sysctl.conf
