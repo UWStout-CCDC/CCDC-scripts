@@ -32,7 +32,10 @@ if [ ! -d "$SCRIPT_DIR/linux" ]; then
 fi
 
 # Download and install new repos
-wget -O /etc/yum.repos.d/CentOS-Base.repo $BASEURL/linux/E-Comm/CentOS-Base.repo
+wget -O /etc/yum.repos.d/CentOS-Base.repo $BASEURL/linux/E-Comm/CentOS-Base.repo --no-check-certificate
+
+# update the certificates on the system
+yum update -y ca-certificates
 
 get() {
   # only download if the file doesn't exist
