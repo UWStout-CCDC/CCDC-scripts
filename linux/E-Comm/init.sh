@@ -134,6 +134,11 @@ iptables -t filter -A OUTPUT -o lo -j ACCEPT
 iptables -t filter -A INPUT -p icmp -j ACCEPT
 iptables -t filter -A OUTPUT -p icmp -j ACCEPT
 
+# Deny outbound traffic to RFC 1918 addresses (do not need to communicate with private IP addresses)
+iptables -t filter -A OUTPUT -d 10.0.0.0/8 -j REJECT
+iptables -t filter -A OUTPUT -d 172.16.0.0/12 -j REJECT
+iptables -t filter -A OUTPUT -d 192.168.0.0/16 -j REJECT
+
 # DNS (Needed for curl, and updates)
 iptables -t filter -A OUTPUT -p tcp --dport 53 -j ACCEPT
 iptables -t filter -A OUTPUT -p udp --dport 53 -j ACCEPT
