@@ -37,6 +37,9 @@ wget -O /etc/yum.repos.d/CentOS-Base.repo $BASEURL/linux/E-Comm/CentOS-Base.repo
 # update the certificates on the system
 yum update -y ca-certificates
 
+# Clean the yum cache
+yum -v clean expire-cache
+
 get() {
   # only download if the file doesn't exist
   if [[ ! -f "$SCRIPT_DIR/$1" ]]
