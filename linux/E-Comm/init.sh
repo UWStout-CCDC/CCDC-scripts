@@ -285,7 +285,17 @@ else
     Deny from all
 </Directory>
 
+<Directory /var/www/html/prestashop/cache>
+    Order Allow,Deny
+    Deny from all
+</Directory>
+
 <Directory /var/www/html/prestashop/mails>
+    Order Allow,Deny
+    Deny from all
+</Directory>
+
+<Directory /var/www/html/prestashop/pdf>
     Order Allow,Deny
     Deny from all
 </Directory>
