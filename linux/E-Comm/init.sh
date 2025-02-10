@@ -206,9 +206,14 @@ fi
 rm -rf /var/www/html/prestashop/admin*
 
 # Remove the unneeded directories from prestashop
-rm -rf /var/www/html/prestashop/install
+rm -rf /var/www/html/prestashop/install*
 rm -rf /var/www/html/prestashop/docs
 rm -f /var/www/html/prestashop/README.md
+
+rm -f /var/www/html/prestashop/CONTRIBUTING.md
+rm -f /var/www/html/prestashop/CONTRIBUTORS.md
+rm -f /var/www/html/prestashop/init.php
+
 rm -f /var/www/html/prestashop/INSTALL.txt
 rm -f /var/www/html/prestashop/Install_PrestaShop.html
 rm -f /var/www/html/prestashop/LICENSES
@@ -222,8 +227,6 @@ rm -f /var/www/html/prestashop/download/index.php
 rm -f /var/www/html/prestashop/composer.lock
 rm -f /var/www/html/prestashop/Makefile
 rm -f /var/www/html/prestashop/phpstan.neon.dist
-
-
 
 # edit the /etc/httpd/conf/httpd.conf file and add hardening options for prestashop
 # Add the following to the end of the file
@@ -256,6 +259,11 @@ else
     Deny from all
 </Directory>
 
+<Directory /var/www/html/prestashop/cache>
+    Order deny,allow
+    Deny from all
+</Directory>
+
 <Directory /var/www/html/prestashop/src>
     Order Allow,Deny
     Deny from all
@@ -271,9 +279,52 @@ else
     Deny from all
 </Directory>
 
+<Directory /var/www/html/prestashop/mails>
+    Order Allow,Deny
+    Deny from all
+</Directory>
+
+<Directory /var/www/html/prestashop/log>
+    Order Allow,Deny
+    Deny from all
+</Directory>
+
+<Directory /var/www/html/prestashop/controllers>
+    Order Allow,Deny
+    Deny from all
+</Directory>
+
+<Directory /var/www/html/prestashop/classes>
+    Order Allow,Deny
+    Deny from all
+</Directory>
+
+<Directory /var/www/html/prestashop/override>
+    Order Allow,Deny
+    Deny from all
+</Directory>
+
+<Directory /var/www/html/prestashop/img>
+    <FilesMatch "\.(jpg|jpeg|png|gif|svg|webp|ico)$">
+        Order allow,deny
+        Allow from all
+    </FilesMatch>
+    <FilesMatch "\.php$">
+        Deny from all
+    </FilesMatch>
+</Directory>
+
 # Prevent access to sensitive files
 <FilesMatch "\.(env|ini|log|bak|swp|sql|git)">
     Order Allow,Deny
+    Deny from all
+</FilesMatch>
+<FilesMatch "^(settings.inc.php|config.inc.php|parameters.php|parameters.yml)$">
+    Order deny,allow
+    Deny from all
+</FilesMatch>
+<FilesMatch "\.(sql|tpl|twig|md|yml|yaml|log|ini|sh|bak|inc)$">
+    Order deny,allow
     Deny from all
 </FilesMatch>
 
@@ -307,6 +358,11 @@ else
 <Directory "/var/www/html/prestashop/download">
     php_flag engine off
 </Directory>
+
+<Directory "/var/www/html/prestashop/img">
+    php_flag engine off
+</Directory>
+
 EOF
 fi
 
