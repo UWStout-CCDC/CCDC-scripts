@@ -209,9 +209,24 @@ rm -rf /var/www/html/prestashop/admin*
 rm -rf /var/www/html/prestashop/install*
 rm -rf /var/www/html/prestashop/docs
 rm -f /var/www/html/prestashop/README.md
+
 rm -f /var/www/html/prestashop/CONTRIBUTING.md
 rm -f /var/www/html/prestashop/CONTRIBUTORS.md
 rm -f /var/www/html/prestashop/init.php
+
+rm -f /var/www/html/prestashop/INSTALL.txt
+rm -f /var/www/html/prestashop/Install_PrestaShop.html
+rm -f /var/www/html/prestashop/LICENSES
+rm -f /var/www/html/prestashop/XMLFeed.cache
+
+# remove index.php from /upload and /download directories
+rm -f /var/www/html/prestashop/upload/index.php
+rm -f /var/www/html/prestashop/download/index.php
+
+# remove more unneeded files, such as the composer.lock files
+rm -f /var/www/html/prestashop/composer.lock
+rm -f /var/www/html/prestashop/Makefile
+rm -f /var/www/html/prestashop/phpstan.neon.dist
 
 # edit the /etc/httpd/conf/httpd.conf file and add hardening options for prestashop
 # Add the following to the end of the file
@@ -699,6 +714,9 @@ freshclam
 # Install monitor script
 wget $BASEURL/linux/E-Comm/monitor.sh -O /ccdc/scripts/monitor.sh
 chmod +x /ccdc/scripts/monitor.sh
+
+wget $BASEURL/linux/E-Comm/update_apache.sh -O /ccdc/scripts/update_apache.sh
+chmod +x /ccdc/scripts/update_apache.sh
 
 cp -R /bkp /etc/frr
 

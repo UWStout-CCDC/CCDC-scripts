@@ -1,0 +1,80 @@
+
+configure
+set deviceconfig system permitted-ip 127.0.0.1
+set deviceconfig system permitted-ip 172.20.242.50
+set deviceconfig system dns-setting servers primary 9.9.9.9
+set deviceconfig system dns-setting servers secondary 149.112.112.112
+delete mgt-config users administrator
+set deviceconfig system service disable-telnet yes
+set deviceconfig system service disable-http yes
+set deviceconfig system service disable-https no
+set deviceconfig system service disable-ssh no
+set deviceconfig system login-banner "UNAUTHORIZED ACCESS TO THIS DEVICE IS PROHIBITED. You must have explicit, authorized permission to access or configure this device. Unauthorized attempts and actions to access or use this system may result in civil and/or criminal penalties. All activities performed on this device are logged and monitored."
+set deviceconfig system timezone US/Central
+set network profiles zone-protection-profile Default discard-overlapping-tcp-segment-mismatch yes discard-unknown-option yes tcp-reject-non-syn yes flood tcp-syn enable yes
+set network profiles zone-protection-profile Default flood icmp enable yes
+set network profiles zone-protection-profile Default flood udp enable yes
+set network profiles zone-protection-profile Default flood other-ip enable yes
+set network profiles zone-protection-profile Default flood icmpv6 enable yes
+set network profiles interface-management-profile none
+set network interface ethernet ethernet1/3 layer3 interface-management-profile none
+set network interface ethernet ethernet1/2 layer3 interface-management-profile none
+set network interface ethernet ethernet1/2 layer3 ipv6 enabled yes
+set network interface ethernet ethernet1/4 layer3 ipv6 enabled yes
+set network interface ethernet ethernet1/1 layer3 ipv6 enabled yes
+set network interface ethernet ethernet1/2 layer3 ipv6 address fd00:1::1/64
+set network interface ethernet ethernet1/4 layer3 ipv6 address fd00:2::1/64
+set network interface ethernet ethernet1/1 layer3 ipv6 address fd00:3::1/64
+set network virtual-router default routing-table ipv6 static-route Internal destination fd00:1::/64 interface ethernet1/2
+set network virtual-router default routing-table ipv6 static-route User destination fd00:2::/64 interface ethernet1/4
+set network virtual-router default routing-table ipv6 static-route Public destination fd00:3::/64 interface ethernet1/1
+delete rulebase security
+set rulebase security rules KillReverseShells action drop from Internal to External source any destination 172.31.39.2/29
+set rulebase security rules KillReverseShells action drop from User to External source any destination 172.31.39.2/29
+set rulebase security rules KillReverseShells action drop from Public to External source any destination 172.31.39.2/29
+set rulebase security rules KillReverseShells application any service service-https
+set rulebase security rules KillReverseShells application any service service-http
+set rulebase security rules KillReverseShells disabled yes
+set rulebase security rules AllowICMP action allow from any to any source any destination any
+set rulebase security rules AllowICMP application ping service application-default
+set rulebase security rules AllowICMP application icmp service application-default
+set rulebase security rules AllowNTP allow from any to any source any destination any
+set rulebase security rules AllowNTP application ntp service application-default
+set rulebase security rules AllowInternet action allow from User to External source any destination any profile-setting profiles spyware strict virus default vulnerability default
+set rulebase security rules AllowInternet action allow from Public to External source any destination any profile-setting profiles spyware strict virus default vulnerability default
+set rulebase security rules AllowInternet action allow from Internal to External source any destination any profile-setting profiles spyware strict virus default vulnerability default
+set rulebase security rules AllowInternet application any service service-http
+set rulebase security rules AllowInternet application any service service-https
+set rulebase security rules AllowDNSOutbound action allow from Internal to External source any destination any
+set rulebase security rules AllowDNSOutbound action allow from User to External source any destination any
+set rulebase security rules AllowDNSOutbound action allow from Public to External source any destination any
+set rulebase security rules AllowDNSOutbound application dns service application-default
+set rulebase security rules AllowDNSInbound action allow from External to Internal source any destination 172.25.39.20
+set rulebase security rules AllowDNSInbound action allow from External to User source any destination 172.25.39.27
+set rulebase security rules AllowDNSInbound application dns service application-default
+set rulebase security rules AllowHTTPSInbound action allow from External to Public source any destination 172.25.39.11
+set rulebase security rules AllowHTTPSInbound application any service service-https
+set rulebase security rules AllowHTTPSInbound application any service service-http
+set rulebase security rules AllowMailInbound action allow from External to Public source any destination 172.25.39.39
+set rulebase security rules AllowMailInbound application pop3 service application-default
+set rulebase security rules AllowMailInbound application smtp service application-default
+set rulebase security rules AllowMailInbound application imap service application-default
+set rulebase security rules AllowMailInbound application smtps service application-default
+set rulebase security rules AllowMailInbound application pop3s service application-default
+set rulebase security rules AllowInboundWindows action allow from External to User source any destination 172.25.39.27
+set rulebase security rules AllowInboundWindows application ldap service application-default
+set rulebase security rules AllowInboundWindows application ssh service application-default
+set rulebase security rules AllowScoringSplunk action allow from External to Public source any destination 172.25.39.9
+set rulebase security rules AllowScoringSplunk application splunk service application-default
+set rulebase security rules DENYOUTBOUND action deny from Internal to External source any destination any
+set rulebase security rules DENYOUTBOUND action deny from User to External source any destination any
+set rulebase security rules DENYOUTBOUND action deny from Public to External source any destination any
+set rulebase security rules DENYINBOUND action deny from External to Internal source any destination any
+set rulebase security rules DENYINBOUND action deny from External to User source any destination any
+set rulebase security rules DENYINBOUND action deny from External to Public source any destination any
+commit
+set mgt-config users admin password
+set mgt-config users arhode_adm password
+set mgt-config users arhode_adm permissions role-based superuser yes
+set mgt-config users arhode_adm password-expiry no
+commit
