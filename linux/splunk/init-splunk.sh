@@ -18,9 +18,9 @@ BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master"
 #BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/splunk-automation" # Used for testing in branch
 
 # Install script dependencies
-wget $BASE_URL/linux/splunk/CentOS-Base.repo -O CentOS-Base.repo
-wget $BASE_URL/linux/init.sh -O init.sh
-wget $BASE_UEL/linux/splunk/audit.rules
+wget $BASE_URL/linux/splunk/CentOS-Base.repo -O CentOS-Base.repo --no-check-certificate
+wget $BASE_URL/linux/init.sh -O init.sh --no-check-certificate
+wget $BASE_UEL/linux/splunk/audit.rules -O audit.rules --no-check-certificate
 
 # Changing default Splunk Web UI admin password
 cd /opt/splunk/bin
@@ -38,6 +38,10 @@ mv ~/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo
 yum clean all
 rm -rf /var/cache/yum
 yum makecache
+
+# Update CA certs
+echo -e "\e[33mUpdating CA certificates\e[0m"
+yum update -y ca-certificates
 
 # Install tools (if not already)
 echo -e "\e[33mInstalling tools\e[0m"
