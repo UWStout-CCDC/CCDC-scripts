@@ -18,7 +18,7 @@ BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master"
 #BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/splunk-automation" # Used for testing in branch
 
 # Install script dependencies
-wget $BASE_URL/linux/splunk/CentOS-Base.repo -O CentOS-Base.repo --no-check-certificate
+#wget $BASE_URL/linux/splunk/CentOS-Base.repo -O CentOS-Base.repo --no-check-certificate
 wget $BASE_URL/linux/init.sh -O init.sh --no-check-certificate
 wget $BASE_UEL/linux/splunk/audit.rules -O audit.rules --no-check-certificate
 
@@ -30,22 +30,23 @@ echo "Enter new Splunk Web UI admin password:"
 read -s password
 ./splunk edit user admin -auth admin:$admin_password -password $password
 
-# Fix repos preemtively
-echo -e "\e[33mFixing repos\e[0m"
-cd ~
-mv /etc/yum.repos.d/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo.bak
-mv ~/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo
-yum clean all
-rm -rf /var/cache/yum
-yum makecache
+# Fix repos preemtively (if CentOS)
+# echo -e "\e[33mFixing repos\e[0m"
+# cd ~
+# mv /etc/yum.repos.d/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo.bak
+# mv ~/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo
+# yum clean all
+# rm -rf /var/cache/yum
+# yum makecache
 
 # Update CA certs
-echo -e "\e[33mUpdating CA certificates\e[0m"
-yum update -y ca-certificates
+# echo -e "\e[33mUpdating CA certificates\e[0m"
+# yum update -y ca-certificates
 
 # Install tools (if not already)
 echo -e "\e[33mInstalling tools\e[0m"
-yum install iptables wget git aide net-tools audit audit-libs lynis epel-release -y
+yum install iptables wget git aide net-tools audit audit-libs epel-release -y
+git clone https://github.com/CISOfy/lynis
 
 # Run init script
 echo -e "\e[33mRunning init script\e[0m"
@@ -86,57 +87,6 @@ echo -e "\e[33mSetting up Auditd\e[0m"
 cat audit.rules >> /etc/audit/audit.rules
 systemctl enable auditd.service
 systemctl start auditd.service
-
-# Bulk remove services
-yum remove xinetd telnet-server rsh-server telnet rsh ypbind ypserv tftp-server cronie-anacron bind vsftpd dovecot squid net-snmpd postfix -y
-
-# Bulk disable services
-systemctl disable xinetd
-systemctl disable rexec
-systemctl disable rsh
-systemctl disable rlogin
-systemctl disable ypbind
-systemctl disable tftp
-systemctl disable certmonger
-systemctl disable cgconfig
-systemctl disable cgred
-systemctl disable cpuspeed
-systemctl enable irqbalance
-systemctl disable kdump
-systemctl disable mdmonitor
-systemctl disable messagebus
-systemctl disable netconsole
-systemctl disable ntpdate
-systemctl disable oddjobd
-systemctl disable portreserve
-systemctl enable psacct
-systemctl disable qpidd
-systemctl disable quota_nld
-systemctl disable rdisc
-systemctl disable rhnsd
-systemctl disable rhsmcertd
-systemctl disable saslauthd
-systemctl disable smartd
-systemctl disable sysstat
-systemctl enable crond
-systemctl disable atd
-systemctl disable nfslock
-systemctl disable named
-systemctl disable dovecot
-systemctl disable squid
-systemctl disable snmpd
-systemctl disable postfix
-
-# Disable rpc
-systemctl disable rpcgssd
-systemctl disable rpcsvcgssd
-systemctl disable rpcidmapd
-
-# Disable Network File Systems (netfs)
-systemctl disable netfs
-
-# Disable Network File System (nfs)
-systemctl disable nfs
 
 # Disable uncommon protocols
 echo -e "\e[33mDisabling uncommon protocols\e[0m"
@@ -226,5 +176,58 @@ then
     yum install firefox -y
     systemctl set-default graphical.target
     systemctl isolate graphical.target
+fi
+
+## These are done after the gui is installed as the gui sometimes reinstalls some of these services
+# Bulk remove services
+yum remove xinetd telnet-server rsh-server telnet rsh ypbind ypserv tftp-server cronie-anacron bind vsftpd dovecot squid net-snmpd postfix -y
+
+# Bulk disable services
+systemctl disable xinetd
+systemctl disable rexec
+systemctl disable rsh
+systemctl disable rlogin
+systemctl disable ypbind
+systemctl disable tftp
+systemctl disable certmonger
+systemctl disable cgconfig
+systemctl disable cgred
+systemctl disable cpuspeed
+systemctl enable irqbalance
+systemctl disable kdump
+systemctl disable mdmonitor
+systemctl disable messagebus
+systemctl disable netconsole
+systemctl disable ntpdate
+systemctl disable oddjobd
+systemctl disable portreserve
+systemctl enable psacct
+systemctl disable qpidd
+systemctl disable quota_nld
+systemctl disable rdisc
+systemctl disable rhnsd
+systemctl disable rhsmcertd
+systemctl disable saslauthd
+systemctl disable smartd
+systemctl disable sysstat
+systemctl enable crond
+systemctl disable atd
+systemctl disable nfslock
+systemctl disable named
+systemctl disable dovecot
+systemctl disable squid
+systemctl disable snmpd
+systemctl disable postfix
+
+# Disable rpc
+systemctl disable rpcgssd
+systemctl disable rpcsvcgssd
+systemctl disable rpcidmapd
+
+# Disable Network File Systems (netfs)
+systemctl disable netfs
+
+# Disable Network File System (nfs)
+systemctl disable nfs
 
 echo "\e[33mSplunk setup complete. Reboot to apply changes and clear in-memory beacons.\e[0m"
