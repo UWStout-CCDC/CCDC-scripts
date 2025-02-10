@@ -34,11 +34,11 @@ fi
 # Download and install new repos
 wget -O /etc/yum.repos.d/CentOS-Base.repo $BASEURL/linux/E-Comm/CentOS-Base.repo --no-check-certificate
 
-# update the certificates on the system
-yum update -y ca-certificates
-
 # Clean the yum cache
 yum -v clean expire-cache
+
+# update the certificates on the system
+yum update -y ca-certificates
 
 get() {
   # only download if the file doesn't exist
