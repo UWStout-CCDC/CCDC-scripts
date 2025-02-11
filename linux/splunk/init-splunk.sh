@@ -76,13 +76,14 @@ installTools() {
 backupSplunk() {
   # Backup the /opt/splunk/etc configuration directory
   echo -e "\e[33mCreating backup\e[0m"
-  tar -czvf /opt/splunk/etc-$1.tgz /opt/splunk/etc
+  mkdir /ccdc/backups
+  tar -czvf $1.tgz /opt/splunk/etc -C /ccdc/backups
 }
 
 restoreSplunk() {
   # Restore the /opt/splunk/etc configuration directory
   echo -e "\e[33mRestoring backup\e[0m"
-  tar -xzvf /opt/splunk/etc-$1.tgz -C /opt/splunk
+  tar -xzvf /ccdc/backups/$1.tgz -C /opt/splunk
 }
 
 init() {
@@ -303,6 +304,38 @@ bulkDisableServices() {
   systemctl disable nfs
 }
 
+##########################
+## Backup/Restore Calls ##
+##########################
+
+# Check for manual backup argument and backup
+if [[ "$1" == "backup" ]]; then
+  echo -e "\e[33mWhat would you like to name the backup?\e[0m"]
+  read backup
+
+  # Strip .tgz from input if it exists
+  backup=${backup%.tgz}
+  backupSplunk $backup
+  echo -e "\e[32mBackup complete!\e[0m" 
+  exit 0
+fi
+
+# Check for restore argument and restore
+if [[ "$1" == "restore" ]]; then
+  # List all backups in /ccdc/backups
+  echo -e "\e[33mAvailable backups:\e[0m"
+  ls /ccdc/backups
+
+  echo -e "\e[33mEnter backup filename: \e[0m"
+  read backup
+
+  # Strip .tgz from input if it exists
+  backup=${backup%.tgz}
+  restoreSplunk $backup
+  echo -e "\e[32mRestore complete!\e[0m"
+  exit 0
+fi
+
 #######################
 ##   Main Runnables  ##
 #######################
@@ -314,7 +347,7 @@ installDependencies
 webUIPassword
 disableSketchyTokens
 installTools
-backupSplunk "baseline_backup"
+backupSplunk "splunk-baseline_backup"
 init
 cronAndAtSecurity
 stopSSH
@@ -326,7 +359,7 @@ disableCoreDumps
 secureSysctl
 setSplunkReciever
 addMonitorFiles
-backupSplunk "golden_backup"
+backupSplunk "splunk-golden_backup"
 installGUI
 bulkRemoveServices
 bulkDisableServices
