@@ -19,14 +19,6 @@ then
 fi
 
 BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master"
-#BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/splunk-automation" # Used for testing in branch
-
-installDependencies() {
-  # Install script dependencies
-  #wget $BASE_URL/linux/splunk/CentOS-Base.repo -O CentOS-Base.repo --no-check-certificate
-  wget $BASE_URL/linux/init.sh -O init.sh --no-check-certificate
-  wget $BASE_UEL/linux/splunk/audit.rules -O audit.rules --no-check-certificate
-}
 
 webUIPassword() {
   # Changing default Splunk Web UI admin password
@@ -42,6 +34,7 @@ webUIPassword() {
 # CentOS is EOL so this likely won't ever be used anymore, uncomment if needed
 #function fixCentOSRepos() {
   # Fix repos preemtively (if CentOS)
+  # wget $BASE_URL/linux/splunk/CentOS-Base.repo -O CentOS-Base.repo --no-check-certificate
   # echo -e "\e[33mFixing repos\e[0m"
   # cd ~
   # mv /etc/yum.repos.d/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo.bak
@@ -87,6 +80,9 @@ restoreSplunk() {
 }
 
 init() {
+  # Init script
+  # Download init script
+  wget $BASE_URL/linux/init.sh -O init.sh --no-check-certificate
   # Run init script
   echo -e "\e[33mRunning init script\e[0m"
   chmod +x init.sh
@@ -132,6 +128,9 @@ setDNS() {
 
 setupAuditd() {
   # Auditd setup
+  # Download audit rules
+  wget $BASE_UEL/linux/splunk/audit.rules -O audit.rules --no-check-certificate
+  # Run auditd setup
   echo -e "\e[33mSetting up Auditd\e[0m"
   cat audit.rules >> /etc/audit/audit.rules
   systemctl enable auditd.service
@@ -155,6 +154,7 @@ disableCoreDumps() {
 
 secureSysctl() {
 # Secure sysctl.conf
+# Rules are based off expected vaules from Lynis
 echo -e "\e[33mSecuring sysctl.conf\e[0m"
 cat <<-EOF >> /etc/sysctl.conf
 fs.suid_dumpable = 0
@@ -343,7 +343,6 @@ fi
 # Add function calls in order of how you want them executed here
 # Add the functions themselves above
 
-installDependencies
 webUIPassword
 disableSketchyTokens
 installTools
