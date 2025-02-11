@@ -45,7 +45,7 @@ read -s password
 
 # Install tools (if not already)
 echo -e "\e[33mInstalling tools\e[0m"
-yum install iptables wget git aide net-tools audit audit-libs epel-release -y
+yum install iptables wget git aide net-tools audit audit-libs rkhunter epel-release -y
 git clone https://github.com/CISOfy/lynis
 
 # Run init script
@@ -132,6 +132,9 @@ kernel.perf_event_paranoid = 3
 kernel.kptr_restrict = 2
 kernel.dmesg_restrict = 1
 kernel.yama.ptrace_scope = 3
+fs.protected_fifos=2
+dev.tty.ldisc_autoload=0
+fs.protected_regular=2
 EOF
 
 ################################
