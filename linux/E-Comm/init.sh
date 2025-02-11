@@ -183,7 +183,8 @@ RemainAfterExit=yes
 WantedBy=multi-user.target
 EOF
 
-
+# Automatically apply IPTABLES_SCRIPT on boot
+systemctl enable --now ccdc_firewall.service
 
 #######################################
 #
@@ -690,10 +691,6 @@ systemctl disable nfs
 #           END CENTOS HARDENING
 #
 ##################################################
-
-
-# Automatically apply IPTABLES_SCRIPT on boot
-systemctl enable --now ccdc_firewall.service
 
 yum update -y && yum upgrade -y
 yum install -y screen netcat aide clamav tmux lynis
