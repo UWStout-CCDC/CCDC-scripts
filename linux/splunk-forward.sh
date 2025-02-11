@@ -56,10 +56,11 @@ $SPLUNK_HOME/bin/splunk add forward-server $SPLUNK_SERVER_IP:9997 -auth admin:$p
 monitor() {
   if [ -f $1 ]
   then
-    $SPLUNK_HOME/bin/splunk add monitor $1
+    ./splunk add monitor $1
   fi
 }
 
+cd $SPLUNK_HOME/bin
 # Add files to log
 echo "Adding log files to monitor"
 # Log files
