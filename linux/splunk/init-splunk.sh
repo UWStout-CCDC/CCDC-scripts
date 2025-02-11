@@ -68,7 +68,9 @@ installTools() {
   # Install tools (if not already)
   echo -e "\e[33mInstalling tools\e[0m"
   yum install iptables wget git aide net-tools audit audit-libs rkhunter epel-release -y
+  cd /ccdc # Put lynis in a common location so it is not in the root home
   git clone https://github.com/CISOfy/lynis
+  cd ~
 }
 
 backupSplunk() {
