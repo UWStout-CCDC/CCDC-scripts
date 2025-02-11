@@ -74,7 +74,7 @@ set address CentOSWebPub ip-netmask 172.25."""+team_num+""".11
 set address FedoraMailPriv ip-netmask 172.20.241.40
 set address FedoraMailPub ip-netmask 172.25."""+team_num+""".39
 set address LAN ip-range 172.20.240.0-172.20.242.255
-delete ruebase nat
+delete rulebase nat
 set rulebase nat rules DebianDNS-Public nat-type ipv4 from Internal to External source DebianDNSPriv destination any service any source-translation static-ip bi-directional yes to DebianDNSPub
 set rulebase nat rules Docker-Public nat-type ipv4 from Internal to External source DockerPriv destination any service any source-translation static-ip bi-directional yes to DockerPub
 set rulebase nat rules Splunk-Public nat-type ipv4 from Public to External source SplunkPriv destination any service any source-translation static-ip bi-directional yes to SplunkPub
