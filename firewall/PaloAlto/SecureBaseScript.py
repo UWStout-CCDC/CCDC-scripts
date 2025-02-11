@@ -11,7 +11,7 @@
 # 2025 updated script to work with Pan OS 11, also verified sec rules.
 
 team_num = input("Please enter the Team Number :")
-team_num = int(team_num) + 20
+team_num = int(team_num) + 20 # Team numbers start at 20
 team_num = str(team_num)
 # Team number for varaibles
 
@@ -52,20 +52,49 @@ set network interface ethernet ethernet1/1 layer3 ipv6 enabled yes
 set network interface ethernet ethernet1/2 layer3 ipv6 address fd00:1::1/64
 set network interface ethernet ethernet1/4 layer3 ipv6 address fd00:2::1/64
 set network interface ethernet ethernet1/1 layer3 ipv6 address fd00:3::1/64
-set network virtual-router default routing-table ipv6 static-route Internal destination fd00:1::/64 interface ethernet1/2
-set network virtual-router default routing-table ipv6 static-route User destination fd00:2::/64 interface ethernet1/4
-set network virtual-router default routing-table ipv6 static-route Public destination fd00:3::/64 interface ethernet1/1
+set network virtual-router RT1 routing-table ipv6 static-route Internal destination fd00:1::/64 interface ethernet1/2
+set network virtual-router RT1 routing-table ipv6 static-route User destination fd00:2::/64 interface ethernet1/4
+set network virtual-router RT1 routing-table ipv6 static-route Public destination fd00:3::/64 interface ethernet1/1
+set address PrivIP10 ip-range 10.0.0.0-10.255.255.255
+set address PrivIP172 ip-range 172.16.0.0-172.16.255.255
+set address PrivIP192 ip-range 192.168.0.0-192.168.255.255
+set address SplunkPriv ip-netmask 172.20.241.20
+set address SplunkPub ip-netmask 172.25."""+team_num+""".9
+set address DockerPriv ip-netmask 172.20.240.10
+set address DockerPub ip-netmask 172.25."""+team_num+""".97
+set address DebianDNSPriv ip-netmask 172.20.240.20
+set address DebianDNSPub ip-netmask 172.25."""+team_num+""".20
+set address UbuntuWebPriv ip-netmask 172.20.242.10
+set address UbuntuWebPub ip-netmask 172.25."""+team_num+""".23
+set address ADWindowsPriv ip-netmask 172.20.242.200
+set address ADWindowsPub ip-netmask 172.25."""+team_num+""".27
+set address UbuntuPriv ip-netmask """+permitted_ip+"""
+set address CentOSWebPriv ip-netmask 172.20.241.30
+set address CentOSWebPub ip-netmask 172.25."""+team_num+""".11
+set address FedoraMailPriv ip-netmask 172.20.241.40
+set address FedoraMailPub ip-netmask 172.25."""+team_num+""".39
+set address LAN ip-range 172.20.240.0-172.20.242.255
+delete ruebase nat
+set rulebase nat rules DebianDNS-Public nat-type ipv4 from Internal to External source DebianDNSPriv destination any service any source-translation static-ip bi-directional yes to DebianDNSPub
+set rulebase nat rules Docker-Public nat-type ipv4 from Internal to External source DockerPriv destination any service any source-translation static-ip bi-directional yes to DockerPub
+set rulebase nat rules Splunk-Public nat-type ipv4 from Public to External source SplunkPriv destination any service any source-translation static-ip bi-directional yes to SplunkPub
+set rulebase nat rules Ecomm-Public nat-type ipv4 from Public to External source CentOSWebPriv destination any service any source-translation static-ip bi-directional yes to CentOSWebPub
+set rulebase nat rules FedoraMail-Public nat-type ipv4 from Public to External source FedoraMailPriv destination any service any source-translation static-ip bi-directional yes to FedoraMailPub
+set rulebase nat rules UbuntuWeb-Public nat-type ipv4 from User to External source UbuntuWebPriv destination any service any source-translation static-ip bi-directional yes to UbuntuWebPub
+set rulebase nat rules WindowsAD-Public nat-type ipv4 from User to External source ADWindowsPriv destination any service any source-translation static-ip bi-directional yes to ADWindowsPub
+set rulebase nat rules Inside-OutsidePat nat-type ipv4 from LAN to External source any destination any service any source-translation dynamic-ip-and-port bi-directional yes to ethernet1/3
 delete rulebase security
-set rulebase security rules KillReverseShells action drop from Internal to External source any destination 172.31."""+(team_num)+""".2/29
-set rulebase security rules KillReverseShells action drop from User to External source any destination 172.31."""+(team_num)+""".2/29
-set rulebase security rules KillReverseShells action drop from Public to External source any destination 172.31."""+(team_num)+""".2/29
+set rulebase security rules KillReverseShells action drop from LAN to External source any destination 172.31."""+(team_num)+""".2/29
+set rulebase security rules KillReverseShells action drop from LAN to External source any destination PrivIP10
+set rulebase security rules KillReverseShells action drop from LAN to External source any destination PrivIP172
+set rulebase security rules KillReverseShells action drop from LAN to External source any destination PrivIP192
 set rulebase security rules KillReverseShells application any service service-https
 set rulebase security rules KillReverseShells application any service service-http
 set rulebase security rules KillReverseShells disabled yes
 set rulebase security rules AllowICMP action allow from any to any source any destination any
 set rulebase security rules AllowICMP application ping service application-default
 set rulebase security rules AllowICMP application icmp service application-default
-set rulebase security rules AllowNTP allow from any to any source any destination any
+set rulebase security rules AllowNTP allow from LAN to External source any destination any
 set rulebase security rules AllowNTP application ntp service application-default
 set rulebase security rules AllowInternet action allow from User to External source any destination any profile-setting profiles spyware strict virus default vulnerability default
 set rulebase security rules AllowInternet action allow from Public to External source any destination any profile-setting profiles spyware strict virus default vulnerability default
@@ -76,22 +105,20 @@ set rulebase security rules AllowDNSOutbound action allow from Internal to Exter
 set rulebase security rules AllowDNSOutbound action allow from User to External source any destination any
 set rulebase security rules AllowDNSOutbound action allow from Public to External source any destination any
 set rulebase security rules AllowDNSOutbound application dns service application-default
-set rulebase security rules AllowDNSInbound action allow from External to Internal source any destination 172.25."""+(team_num)+""".20
-set rulebase security rules AllowDNSInbound action allow from External to User source any destination 172.25."""+(team_num)+""".27
+set rulebase security rules AllowDNSInbound action allow from External to Internal source any destination DebianDNSPub
+set rulebase security rules AllowDNSInbound action allow from External to User source any destination ADWindowsPub
 set rulebase security rules AllowDNSInbound application dns service application-default
-set rulebase security rules AllowHTTPSInbound action allow from External to Public source any destination 172.25."""+(team_num)+""".11
+set rulebase security rules AllowHTTPSInbound action allow from External to Public source any destination CentOSWebPub
 set rulebase security rules AllowHTTPSInbound application any service service-https
 set rulebase security rules AllowHTTPSInbound application any service service-http
-set rulebase security rules AllowMailInbound action allow from External to Public source any destination 172.25."""+(team_num)+""".39
+set rulebase security rules AllowMailInbound action allow from External to Public source any destination FedoraMailPub
 set rulebase security rules AllowMailInbound application pop3 service application-default
 set rulebase security rules AllowMailInbound application smtp service application-default
 set rulebase security rules AllowMailInbound application imap service application-default
-set rulebase security rules AllowMailInbound application smtps service application-default
-set rulebase security rules AllowMailInbound application pop3s service application-default
-set rulebase security rules AllowInboundWindows action allow from External to User source any destination 172.25."""+(team_num)+""".27
+set rulebase security rules AllowInboundWindows action allow from External to User source any destination ADWindowsPub
 set rulebase security rules AllowInboundWindows application ldap service application-default
-set rulebase security rules AllowInboundWindows application ssh service application-default
-set rulebase security rules AllowScoringSplunk action allow from External to Public source any destination 172.25."""+(team_num)+""".9
+set rulebase security rules AllowInboundWindows application dns service application-default
+set rulebase security rules AllowScoringSplunk action allow from External to Public source any destination SplunkPub
 set rulebase security rules AllowScoringSplunk application splunk service application-default
 set rulebase security rules DENYOUTBOUND action deny from Internal to External source any destination any
 set rulebase security rules DENYOUTBOUND action deny from User to External source any destination any
@@ -101,10 +128,7 @@ set rulebase security rules DENYINBOUND action deny from External to User source
 set rulebase security rules DENYINBOUND action deny from External to Public source any destination any
 commit
 set mgt-config users admin password
-set mgt-config users """+new_user+""" password
-set mgt-config users """+new_user+""" permissions role-based superuser yes
-set mgt-config users """+new_user+""" password-expiry no
-commit
+delete admin-sessions
 """
   command_file.write(commands)
   print("File is written to PAConfig.txt")
@@ -117,3 +141,7 @@ print("Copy and paste the output of the script.")
 # TODO: Implement DOS Protection to script
 # Implement SSL Decryption to script
 # Implement Honey Pot to admin user
+
+# set mgt-config users """+new_user+""" password
+# set mgt-config users """+new_user+""" permissions role-based superuser yes
+# set mgt-config users """+new_user+""" password-expiry no
