@@ -6,7 +6,8 @@
 
 ### Make executable and run
 ```chmod +x init-splunk.sh
-./init-splunk.sh```
+./init-splunk.sh
+```
 
 ### Script Options
 *  Manually create backup
