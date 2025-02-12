@@ -47,27 +47,31 @@ set address CentOSWebPub ip-netmask 172.25.39.11
 set address FedoraMailPriv ip-netmask 172.20.241.40
 set address FedoraMailPub ip-netmask 172.25.39.39
 set address LAN ip-range 172.20.240.0-172.20.242.255
-delete ruebase nat
-set rulebase nat rules DebianDNS-Public nat-type ipv4 from Internal to External source DebianDNSPriv destination any service any source-translation static-ip bi-directional yes to DebianDNSPub
-set rulebase nat rules Docker-Public nat-type ipv4 from Internal to External source DockerPriv destination any service any source-translation static-ip bi-directional yes to DockerPub
-set rulebase nat rules Splunk-Public nat-type ipv4 from Public to External source SplunkPriv destination any service any source-translation static-ip bi-directional yes to SplunkPub
-set rulebase nat rules Ecomm-Public nat-type ipv4 from Public to External source CentOSWebPriv destination any service any source-translation static-ip bi-directional yes to CentOSWebPub
-set rulebase nat rules FedoraMail-Public nat-type ipv4 from Public to External source FedoraMailPriv destination any service any source-translation static-ip bi-directional yes to FedoraMailPub
-set rulebase nat rules UbuntuWeb-Public nat-type ipv4 from User to External source UbuntuWebPriv destination any service any source-translation static-ip bi-directional yes to UbuntuWebPub
-set rulebase nat rules WindowsAD-Public nat-type ipv4 from User to External source ADWindowsPriv destination any service any source-translation static-ip bi-directional yes to ADWindowsPub
-set rulebase nat rules Inside-OutsidePat nat-type ipv4 from LAN to External source any destination any service any source-translation dynamic-ip-and-port bi-directional yes to ethernet1/3
+delete rulebase nat
+set rulebase nat rules DebianDNS-Public nat-type ipv4 from Internal to External source DebianDNSPriv destination any service any source-translation static-ip bi-directional yes translated-address DebianDNSPub
+set rulebase nat rules Docker-Public nat-type ipv4 from Internal to External source DockerPriv destination any service any source-translation static-ip bi-directional yes translated-address DockerPub
+set rulebase nat rules Splunk-Public nat-type ipv4 from Public to External source SplunkPriv destination any service any source-translation static-ip bi-directional yes translated-address SplunkPub
+set rulebase nat rules Ecomm-Public nat-type ipv4 from Public to External source CentOSWebPriv destination any service any source-translation static-ip bi-directional yes translated-address CentOSWebPub
+set rulebase nat rules FedoraMail-Public nat-type ipv4 from Public to External source FedoraMailPriv destination any service any source-translation static-ip bi-directional yes translated-address FedoraMailPub
+set rulebase nat rules UbuntuWeb-Public nat-type ipv4 from User to External source UbuntuWebPriv destination any service any source-translation static-ip bi-directional yes translated-address UbuntuWebPub
+set rulebase nat rules WindowsAD-Public nat-type ipv4 from User to External source ADWindowsPriv destination any service any source-translation static-ip bi-directional yes translated-address ADWindowsPub
+set rulebase nat rules Inside-OutsidePat nat-type ipv4 from User to External source any destination any service any source-translation dynamic-ip-and-port interface-address interface ethernet1/3
+set rulebase nat rules Inside-OutsidePat nat-type ipv4 from Public to External source any destination any service any source-translation dynamic-ip-and-port interface-address interface ethernet1/3
+set rulebase nat rules Inside-OutsidePat nat-type ipv4 from Internal to External source any destination any service any source-translation dynamic-ip-and-port interface-address interface ethernet1/3
 delete rulebase security
-set rulebase security rules KillReverseShells action drop from LAN to External source any destination 172.31.39.2/29
-set rulebase security rules KillReverseShells action drop from LAN to External source any destination PrivIP10
-set rulebase security rules KillReverseShells action drop from LAN to External source any destination PrivIP172
-set rulebase security rules KillReverseShells action drop from LAN to External source any destination PrivIP192
+set rulebase security rules KillReverseShells action drop from Public to External source any destination 172.31.39.2/29
+set rulebase security rules KillReverseShells action drop from User to External source any destination PrivIP10
+set rulebase security rules KillReverseShells action drop from Internal to External source any destination PrivIP172
+set rulebase security rules KillReverseShells action drop from Internal to External source any destination PrivIP192
 set rulebase security rules KillReverseShells application any service service-https
 set rulebase security rules KillReverseShells application any service service-http
 set rulebase security rules KillReverseShells disabled yes
 set rulebase security rules AllowICMP action allow from any to any source any destination any
 set rulebase security rules AllowICMP application ping service application-default
 set rulebase security rules AllowICMP application icmp service application-default
-set rulebase security rules AllowNTP allow from LAN to External source any destination any
+set rulebase security rules AllowNTP allow from Public to External source any destination any
+set rulebase security rules AllowNTP allow from User to External source any destination any
+set rulebase security rules AllowNTP allow from Internal to External source any destination any
 set rulebase security rules AllowNTP application ntp service application-default
 set rulebase security rules AllowInternet action allow from User to External source any destination any profile-setting profiles spyware strict virus default vulnerability default
 set rulebase security rules AllowInternet action allow from Public to External source any destination any profile-setting profiles spyware strict virus default vulnerability default
@@ -96,9 +100,11 @@ set rulebase security rules AllowScoringSplunk application splunk service applic
 set rulebase security rules DENYOUTBOUND action deny from Internal to External source any destination any
 set rulebase security rules DENYOUTBOUND action deny from User to External source any destination any
 set rulebase security rules DENYOUTBOUND action deny from Public to External source any destination any
+set rulebase security rules DENYOUTBOUND application any service any
 set rulebase security rules DENYINBOUND action deny from External to Internal source any destination any
 set rulebase security rules DENYINBOUND action deny from External to User source any destination any
 set rulebase security rules DENYINBOUND action deny from External to Public source any destination any
+set rulebase security rules DENYINBOUND application any service any
 commit
 set mgt-config users admin password
 delete admin-sessions
