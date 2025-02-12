@@ -298,7 +298,7 @@ bulkDisableServices() {
   systemctl disable cgconfig
   systemctl disable cgred
   systemctl disable cpuspeed
-  systemctl enable irqbalance
+  systemctl enable irqbalance #?
   systemctl disable kdump
   systemctl disable mdmonitor
   systemctl disable messagebus
@@ -306,7 +306,7 @@ bulkDisableServices() {
   systemctl disable ntpdate
   systemctl disable oddjobd
   systemctl disable portreserve
-  systemctl enable psacct
+  systemctl enable psacct #?
   systemctl disable qpidd
   systemctl disable quota_nld
   systemctl disable rdisc
@@ -315,7 +315,7 @@ bulkDisableServices() {
   systemctl disable saslauthd
   systemctl disable smartd
   systemctl disable sysstat
-  systemctl enable crond
+  systemctl enable crond #?
   systemctl disable atd
   systemctl disable nfslock
   systemctl disable named
@@ -337,6 +337,12 @@ bulkDisableServices() {
   # Disable Network File System (nfs)
   echo -e "\e[33mDisabling nfs\e[0m"
   systemctl disable nfs
+
+  #Disable CUPS (Internet Printing Protocol service), has a lot of exploits, disable it
+  systemctl disable cups
+
+  # Re-Disable SSH (if not already)
+  systemctl disable sshd
 }
 
 # Need to change IPs
