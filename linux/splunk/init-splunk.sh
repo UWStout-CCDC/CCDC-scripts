@@ -68,12 +68,14 @@ installTools() {
 
 backup() {
   echo -e "\e[33mCreating backup\e[0m"
-  mkdir /ccdc/backups
+  if [ ! -d /ccdc/backups ]; then
+    mkdir -p /ccdc/backups
+  fi
   increment=$(date +%Y%m%d%H%M%S)
   # Backup the /opt/splunk/etc configuration directory
-  tar -czvf splunk-etc-$increment.tgz /opt/splunk/etc -C /ccdc/backups
+  tar -czvf /ccdc/backups/splunk-etc-$increment.tgz /opt/splunk/etc
   # Backup the /etc directory
-  tar -czvf system-etc-$increment.tgz /etc -C /ccdc/backups
+  tar -czvf /ccdc/backups/system-etc-$increment.tgz /etc
 }
 
 restore() {
