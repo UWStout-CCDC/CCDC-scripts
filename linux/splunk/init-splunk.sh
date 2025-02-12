@@ -298,6 +298,7 @@ bulkDisableServices() {
   systemctl disable cgconfig
   systemctl disable cgred
   systemctl disable cpuspeed
+  systemctl enable irqbalance
   systemctl disable kdump
   systemctl disable mdmonitor
   systemctl disable messagebus
@@ -305,6 +306,7 @@ bulkDisableServices() {
   systemctl disable ntpdate
   systemctl disable oddjobd
   systemctl disable portreserve
+  systemctl enable psacct
   systemctl disable qpidd
   systemctl disable quota_nld
   systemctl disable rdisc
@@ -313,6 +315,7 @@ bulkDisableServices() {
   systemctl disable saslauthd
   systemctl disable smartd
   systemctl disable sysstat
+  systemctl enable crond
   systemctl disable atd
   systemctl disable nfslock
   systemctl disable named
