@@ -5,8 +5,8 @@
 ```wget https://tinyurl.com/yx3pmm9m -O init-splunk.sh --no-check-certificate```
 
 ### Make executable and run
-```chmod +x init-splunk.sh```
-```./init-splunk.sh```
+```chmod +x init-splunk.sh
+./init-splunk.sh```
 
 ### Script Options
 *  Manually create backup
