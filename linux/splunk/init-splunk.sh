@@ -350,7 +350,7 @@ setupIPv6() {
       # get the interface name
       INTERFACE=$(ip route | grep default | awk '{print $5}')
       echo "IPV6INIT=yes" >> /etc/sysconfig/network-scripts/ifcfg-$INTERFACE
-      echo "IPV6ADDR=fd00:3::70/64" >> /etc/sysconfig/network-scripts/ifcfg-$INTERFACE
+      echo "IPV6ADDR=fd00:3::60/64" >> /etc/sysconfig/network-scripts/ifcfg-$INTERFACE
       echo "IPV6_DEFAULTGW=fd00:3::1" >> /etc/sysconfig/network-scripts/ifcfg-$INTERFACE
       systemctl restart network
   fi
