@@ -55,9 +55,9 @@ set network interface ethernet ethernet1/1 layer3 ipv6 address fd00:3::1/64
 set network virtual-router RT1 routing-table ipv6 static-route Internal destination fd00:1::/64 interface ethernet1/2
 set network virtual-router RT1 routing-table ipv6 static-route User destination fd00:2::/64 interface ethernet1/4
 set network virtual-router RT1 routing-table ipv6 static-route Public destination fd00:3::/64 interface ethernet1/1
-set address PrivIP10 ip-range 10.0.0.0-10.255.255.255
-set address PrivIP172 ip-range 172.16.0.0-172.16.255.255
-set address PrivIP192 ip-range 192.168.0.0-192.168.255.255
+set address PrivIP10 ip-netmask 10.0.0.0/8
+set address PrivIP172 ip-range 172.16.0.0/24
+set address PrivIP192 ip-range 192.168.0.0/24
 set address SplunkPriv ip-netmask 172.20.241.20
 set address SplunkPub ip-netmask 172.25."""+team_num+""".9
 set address DockerPriv ip-netmask 172.20.240.10
