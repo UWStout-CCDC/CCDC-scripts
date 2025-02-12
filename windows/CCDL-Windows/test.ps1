@@ -1855,28 +1855,7 @@ Start-LoggedJob -JobName "Disable RDP" -ScriptBlock {
 
 
 
-# Monitor jobs
-while ($jobs.Count -gt 0) {
-    foreach ($job in $jobs) {
-        if ($job.State -eq 'Completed') {
-            $job | Receive-Job
-            $jobs = $jobs | Where-Object { $_.Id -ne $job.Id }
-        }
-    }
-    Start-Sleep -Seconds 5
-}
-# Ask the user if they want to run the installs
-$runInstalls = Read-Host "Do you want to run the installs? (yes/no)"
-if ($runInstalls -ne "yes") {
-    Write-Host "Skipping installs..."
-    exit
-}
-else {
-    # Set the installer script run on start
-    $scriptPath = "$toolsPath\Installs.ps1"
-    $entryName = "MyStartupScript"
-    Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name $entryName -Value "powershell.exe -File `"$scriptPath`""
-}
+
 # Perform a quick scan with Windows Defender
 Start-LoggedJob -JobName "Quick Scan with Windows Defender" -ScriptBlock { 
     try {
@@ -2024,35 +2003,6 @@ Start-LoggedJob -JobName "Upgrade SMB" -ScriptBlock {
     } catch {
         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
         Write-Host "An error occurred while upgrading SMB: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-    }
-}
-
-Start-LoggedJob -JobName "Install EternalBlue Patch" -ScriptBlock {
-    try {
-        $patchURLsFromJSON = Get-Content -Raw -Path "$toolsPath\patchURLs.json" | ConvertFrom-Json
-        $osVersion = (Get-WmiObject -Class Win32_OperatingSystem).Caption
-        $patchURL = switch -Regex ($osVersion) {
-            '(?i)Vista'  { $patchURLsFromJSON.Vista; break }
-            'Windows 7'  { $patchURLsFromJSON.'Windows 7'; break }
-            'Windows 8'  { $patchURLsFromJSON.'Windows 8'; break }
-            '2008 R2'    { $patchURLsFromJSON.'2008 R2'; break }
-            '2008'       { $patchURLsFromJSON.'2008'; break }
-            '2012 R2'    { $patchURLsFromJSON.'2012 R2'; break }
-            '2012'       { $patchURLsFromJSON.'2012'; break }
-            default { throw "Unsupported OS version: $osVersion" }
-        }
-        Write-Host "Downloading patch from $patchURL"
-        $patchPath = "$env:TEMP\eternalblue_patch.msu"
-        Invoke-WebRequest -Uri $patchURL -OutFile $patchPath
-        Start-Process -Wait -FilePath "wusa.exe" -ArgumentList "$patchPath /quiet /norestart"
-        Remove-Item -Path $patchPath -Force
-        Write-Host "--------------------------------------------------------------------------------"
-        Write-Host "EternalBlue patch installed."
-        Write-Host "--------------------------------------------------------------------------------"
-    } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        Write-Host "An error occurred while installing EternalBlue patch: $_"
         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
     }
 }
@@ -2693,7 +2643,7 @@ Start-LoggedJob -JobName "Configure Secure GPO" -ScriptBlock {
                     }
         
                 }
-                
+
                 $successfulConfigurations = 0
                 $failedConfigurations = @()
 
@@ -2766,7 +2716,28 @@ Start-LoggedJob -JobName "Create Good GPO" -ScriptBlock {
     }
 }
 
-
+# Monitor jobs
+while ($jobs.Count -gt 0) {
+    foreach ($job in $jobs) {
+        if ($job.State -eq 'Completed') {
+            $job | Receive-Job
+            $jobs = $jobs | Where-Object { $_.Id -ne $job.Id }
+        }
+    }
+    Start-Sleep -Seconds 5
+}
+# Ask the user if they want to run the installs
+$runInstalls = Read-Host "Do you want to run the installs? (yes/no)"
+if ($runInstalls -ne "yes") {
+    Write-Host "Skipping installs..."
+    exit
+}
+else {
+    # Set the installer script run on start
+    $scriptPath = "$toolsPath\Installs.ps1"
+    $entryName = "MyStartupScript"
+    Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name $entryName -Value "powershell.exe -File `"$scriptPath`""
+}
 
 # # Monitor jobs
 # while ($global:jobs.Count -gt 0) {
