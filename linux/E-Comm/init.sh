@@ -549,8 +549,8 @@ echo "tty1" > /etc/securetty
 chmod 700 /root
 
 # Enable UMASK 077
-perl -npe 's/umask\s+0\d2/umask 077/g' -i /etc/bashrc
-perl -npe 's/umask\s+0\d2/umask 077/g' -i /etc/csh.cshrc
+echo "umask 077" >> /etc/bashrc
+umask 077
 
 # Secure cron
 echo "Locking down Cron"
