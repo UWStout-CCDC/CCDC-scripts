@@ -66,17 +66,24 @@ installTools() {
   cd ~
 }
 
-backupSplunk() {
-  # Backup the /opt/splunk/etc configuration directory
+backup() {
   echo -e "\e[33mCreating backup\e[0m"
   mkdir /ccdc/backups
-  tar -czvf $1.tgz /opt/splunk/etc -C /ccdc/backups
+  increment=$(date +%Y%m%d%H%M%S)
+  # Backup the /opt/splunk/etc configuration directory
+  tar -czvf splunk-etc-$increment.tgz /opt/splunk/etc -C /ccdc/backups
+  # Backup the /etc directory
+  tar -czvf system-etc-$increment.tgz /etc -C /ccdc/backups
 }
 
-restoreSplunk() {
-  # Restore the /opt/splunk/etc configuration directory
+restore() {
   echo -e "\e[33mRestoring backup\e[0m"
-  tar -xzvf /ccdc/backups/$1.tgz -C /opt/splunk
+  # Get the newest backups
+  newestSplunk=$(ls -t /ccdc/backups/splunk-etc-*.tgz | head -1 | sed 's/.*splunk-etc-\(.*\).tgz/\1/')
+  newestSystem=$(ls -t /ccdc/backups/system-etc-*.tgz | head -1 | sed 's/.*system-etc-\(.*\).tgz/\1/')
+  # Restore the /opt/splunk/etc configuration directory
+  tar -xzvf /ccdc/backups/splunk-etc-$newestSplunk.tgz -C /opt/splunk
+  tar -xzvf /ccdc/backups/system-etc-$newestSystem.tgz -C /
 }
 
 init() {
@@ -92,6 +99,12 @@ init() {
 #################################
 ##   Start Security Configs    ##
 #################################
+
+secureRootLogin() {
+  # Only allow root login from console
+  echo "tty1" > /etc/securetty
+  chmod 700 /root
+}
 
 cronAndAtSecurity() {
   # Cron and AT security
@@ -123,7 +136,10 @@ setupAIDE() {
 setDNS() {
   # Set DNS
   echo -e "\e[33mSetting DNS\e[0m"
-  sed -i '/^nameserver/ i\nameserver 1.1.1.1' /etc/resolv.conf
+  INTERFACE=$(ip route | grep default | awk '{print $5}')
+  sed -i 's/DNS1='.*'/DNS1=1.1.1.1/g' /etc/sysconfig/network-scripts/ifcfg-$INTERFACE
+  sed -i 's/DNS2='.*'/DNS2=9.9.9.9/g' /etc/sysconfig/network-scripts/ifcfg-$INTERFACE
+  systemctl restart network
 }
 
 setupAuditd() {
@@ -193,6 +209,23 @@ fs.protected_regular=2
 EOF
 }
 
+secureGrub() {
+  # Secure grub by ensuring the permissions are set to 600
+  chmod 600 /boot/grub2/grub.cfg
+}
+
+setSELinuxPolicy() {
+  # Ensure SELinux is enabled and enforcing
+  # Check if SELINUX is already set to enforcing
+  if grep -q SELINUX=enforcing /etc/selinux/config
+  then
+      echo "SELINUX already set to enforcing"
+  else
+      echo "Setting SELINUX to enforcing..."
+      sed -i 's/SELINUX=disabled/SELINUX=enforcing/g' /etc/selinux/config
+  fi
+}
+
 ################################
 ##    End Security Configs    ##
 ################################
@@ -247,7 +280,7 @@ bulkRemoveServices() {
   ## These are done after the gui is installed as the gui sometimes reinstalls some of these services
   # Bulk remove services
   echo -e "\e[33mRemoving unneeded services\e[0m"
-  yum remove xinetd telnet-server rsh-server telnet rsh ypbind ypserv tftp-server cronie-anacron bind vsftpd dovecot squid net-snmpd postfix -y
+  yum remove xinetd telnet-server rsh-server telnet rsh ypbind ypserv tftp-server cronie-anacron bind vsftpd dovecot squid net-snmpd postfix libgcc -y
 }
 
 bulkDisableServices() {
@@ -304,34 +337,39 @@ bulkDisableServices() {
   systemctl disable nfs
 }
 
+# Need to change IPs
+setupIPv6() {
+  # Check if changes were already made to the network config file
+  if grep -q "IPV6INIT=yes" /etc/sysconfig/network-scripts/ifcfg-eth0
+  then
+      echo "Network config file already has IPv6 settings"
+  else
+      echo "Setting up IPv6..."
+      # get the interface name
+      INTERFACE=$(ip route | grep default | awk '{print $5}')
+      echo "IPV6INIT=yes" >> /etc/sysconfig/network-scripts/ifcfg-$INTERFACE
+      echo "IPV6ADDR=fd00:3::70/64" >> /etc/sysconfig/network-scripts/ifcfg-$INTERFACE
+      echo "IPV6_DEFAULTGW=fd00:3::1" >> /etc/sysconfig/network-scripts/ifcfg-$INTERFACE
+      systemctl restart network
+  fi
+}
+
 ##########################
 ## Backup/Restore Calls ##
 ##########################
 
 # Check for manual backup argument and backup
 if [[ "$1" == "backup" ]]; then
-  echo -e "\e[33mWhat would you like to name the backup?\e[0m"]
-  read backup
-
-  # Strip .tgz from input if it exists
-  backup=${backup%.tgz}
-  backupSplunk $backup
+  echo -e "\e[33mStarting Backup!\e[0m"
+  backup
   echo -e "\e[32mBackup complete!\e[0m" 
   exit 0
 fi
 
 # Check for restore argument and restore
 if [[ "$1" == "restore" ]]; then
-  # List all backups in /ccdc/backups
-  echo -e "\e[33mAvailable backups:\e[0m"
-  ls /ccdc/backups
-
-  echo -e "\e[33mEnter backup filename: \e[0m"
-  read backup
-
-  # Strip .tgz from input if it exists
-  backup=${backup%.tgz}
-  restoreSplunk $backup
+  echo -e "\e[33mStarting Restore of Latest Backup!\e[0m"
+  restore
   echo -e "\e[32mRestore complete!\e[0m"
   exit 0
 fi
@@ -346,8 +384,9 @@ fi
 webUIPassword
 disableSketchyTokens
 installTools
-backupSplunk "splunk-baseline_backup"
+backup
 init
+secureRootLogin
 cronAndAtSecurity
 stopSSH
 setupAIDE
@@ -356,11 +395,13 @@ setupAuditd
 disableUncommonProtocols
 disableCoreDumps
 secureSysctl
+secureGrub
+setSELinuxPolicy
 setSplunkReciever
 addMonitorFiles
-backupSplunk "splunk-golden_backup"
 installGUI
 bulkRemoveServices
 bulkDisableServices
+backup
 
 echo "\e[32mSplunk setup complete. Reboot to apply changes and clear in-memory beacons.\e[0m"
