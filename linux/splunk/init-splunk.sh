@@ -64,7 +64,7 @@ installTools() {
   cd /ccdc # Put lynis in a common location so it is not in the root home
   git clone https://github.com/CISOfy/lynis
   cd ~
-  wget $BASEURL/linux/E-Comm/monitor.sh -O /ccdc/scripts/monitor.sh --no-check-certificate
+  wget $BASEURL/linux/monitor/monitor.sh -O /ccdc/scripts/monitor.sh --no-check-certificate
   chmod +x /ccdc/scripts/monitor.sh
 }
 
