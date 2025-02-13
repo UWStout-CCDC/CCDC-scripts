@@ -80,11 +80,42 @@ $scriptPath = "C:\CCDC\tools-Windows\Win-Update.ps1"
 $entryName = "Windows Update Script"
 Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name $entryName -Value "powershell.exe -File `"$scriptPath`""
 
-# $restart = Read-Host "type 'yes' to restart the server once programs have finished installing."
-# if ($restart -eq "yes"){
-#     # Restart the computer
-#     Write-Host "Restarting Computer"
-#     Restart-Computer
-# }
+# Lockdown the CCDC folder after installs
+
+try {
+    $ccdcPath = "C:\CCDC"
+    $acl = Get-Acl $ccdcPath
+    $acl.SetAccessRuleProtection($true, $false)
+    
+    # Remove existing access rules
+    $acl.Access | ForEach-Object { $acl.RemoveAccessRule($_) }
+    
+    # Add full control for necessary system accounts
+    $adminUser = [System.Security.Principal.NTAccount]"Administrator"
+    $systemUser = [System.Security.Principal.NTAccount]"SYSTEM"
+    $trustedInstaller = [System.Security.Principal.NTAccount]"NT SERVICE\TrustedInstaller"
+    $currentUser = [System.Security.Principal.NTAccount]::new([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)
+    
+    $adminRule = New-Object System.Security.AccessControl.FileSystemAccessRule($adminUser, "FullControl", "Allow")
+    $systemRule = New-Object System.Security.AccessControl.FileSystemAccessRule($systemUser, "FullControl", "Allow")
+    $trustedInstallerRule = New-Object System.Security.AccessControl.FileSystemAccessRule($trustedInstaller, "FullControl", "Allow")
+    $currentUserRule = New-Object System.Security.AccessControl.FileSystemAccessRule($currentUser, "FullControl", "Allow")
+    
+    $acl.AddAccessRule($adminRule)
+    $acl.AddAccessRule($systemRule)
+    $acl.AddAccessRule($trustedInstallerRule)
+    $acl.AddAccessRule($currentUserRule)
+    
+    # Apply the modified ACL to the CCDC folder
+    Set-Acl -Path $ccdcPath -AclObject $acl
+    Write-Host "--------------------------------------------------------------------------------"
+    Write-Host "CCDC folder lockdown complete."
+    Write-Host "--------------------------------------------------------------------------------"
+} catch {
+    Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+    Write-Host "An error occurred while locking down the CCDC folder: $_"
+    Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+}
+
 Write-Host "Restarting Computer"
 Restart-Computer
