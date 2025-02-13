@@ -78,7 +78,7 @@ logging {
 };
 
 EOF
-cat ${CHROOT_DIR}/etc/bind/named.conf.logging
+#cat ${CHROOT_DIR}/etc/bind/named.conf.logging
 
 
 cat <<- EOF > ${CHROOT_DIR}/etc/bind/named.conf.options
@@ -122,8 +122,7 @@ options {
 
     forward only;
 
-    ;version "9.3.6-P1+deb9u8-Debian";
-    verison 
+    version none;
 
     rrset-order {order cyclic;};
 
