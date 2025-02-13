@@ -141,7 +141,7 @@ setDNS() {
   
   INTERFACE=$(ip route | grep default | awk '{print $5}')
   sed -i '/dns=/ s/$/,1.1.1.1;9.9.9.9/' /etc/NetworkManager/system-connections/$INTERFACE.nmconnection
-  systemctl restart network
+  systemctl restart NetworkManager
 }
 
 setupAuditd() {
