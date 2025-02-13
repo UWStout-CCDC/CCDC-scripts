@@ -230,6 +230,24 @@ setSELinuxPolicy() {
   fi
 }
 
+disableVulnerableSplunkApps() {
+  echo "Enter Splunk Web UI admin password:"
+  read -s admin_password
+  cd /opt/splunk/bin
+  ./splunk disable app splunk_secure_gateway -auth admin:$admin_password
+  ./splunk disable app splunk_archiver -auth admin:$admin_password
+  cd ~
+}
+
+fixSplunkXMLParsingRCE() {
+  # Fix Splunk XML parsing RCE vulnerability
+  echo -e "\e[33mFixing Splunk XML parsing RCE vulnerability\e[0m"
+  cd /opt/splunk/etc/system/local
+  touch web.conf
+  echo -e "[settings]\nenableSearchJobXslt = false" >> web.conf
+  cd ~
+}
+
 ################################
 ##    End Security Configs    ##
 ################################
@@ -422,13 +440,15 @@ disableCoreDumps
 secureSysctl
 secureGrub
 setSELinuxPolicy
+disableVulnerableSplunkApps
+fixSplunkXMLParsingRCE
 setSplunkReciever
 addMonitorFiles
 installGUI
+disableRootSSH
 bulkRemoveServices
 bulkDisableServices
 setupIPv6
-disableRootSSH
 initilizeClamAV
 backup
 
