@@ -18,7 +18,7 @@ Write-Host "If forwarder installed does not install, download forwarder from web
 Write-Host "If installer does download, ignore the above."
 
 # $username = Read-Host -Prompt 'Enter username for new user to run Splunk Forwarder as'
-$password = Read-Host -Prompt 'Enter password for Splunk forwarder user'
+$password = Read-Host -Prompt 'Enter a new password for Splunk forwarder: '
 $server = 172.20.241.20 # Change as needed
 $forwardPort = 9997
 $deploymentPort = 8089
