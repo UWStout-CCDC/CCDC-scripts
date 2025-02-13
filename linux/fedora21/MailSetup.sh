@@ -6,8 +6,6 @@
 #                                       |_|  
 # Written By Kayne
 
-echo -e "starting script"
-
 
 echo -e "\e[38;5;46m//////////////////////////////////////////////////////\e[0m"
 echo -e "\e[38;5;46m             General Security Measures                      \e[0m"
@@ -70,7 +68,7 @@ echo -e "\e[38;5;46m//////////////////////////////////////////////////////\e[0m"
 echo -e "\e[38;5;46m                     Firewall                         \e[0m"
 echo -e "\e[38;5;46m//////////////////////////////////////////////////////\e[0m"
 sleep 1
-sudo yum install iptables-services -y
+sudo yum install iptables-services -y -q
 sudo systemctl stop firewalld
 sudo systemctl disable firewalld
 sudo systemctl enable iptables
@@ -127,14 +125,24 @@ sudo iptables -t filter -A INPUT -p tcp --dport 143 -j ACCEPT
 sudo iptables -t filter -A OUTPUT -p udp --dport 143 -j ACCEPT
 sudo iptables -t filter -A INPUT -p udp --dport 143 -j ACCEPT
 
+# THESE ARE PER THE COMPETITION
+sudo ip6tables -A INPUT -p tcp --dport 25 -j ACCEPT
+sudo ip6tables -A OUTPUT -p tcp --dport 25 -j ACCEPT
+sudo ip6tables -A INPUT -p tcp --dport 80 -j ACCEPT
+sudo ip6tables -A OUTPUT -p tcp --dport 80 -j ACCEPT
+
 sudo iptables-save | sudo tee /etc/sysconfig/iptables
+
+#SPECIFIC TO IPV6
+sudo ip6tables-save | sudo tee /etc/sysconfig/ip6tables
+
 
 echo -e "\e[38;5;46m//////////////////////////////////////////////////////\e[0m"
 echo -e "\e[38;5;46m                Stuff Removal                         \e[0m"
 echo -e "\e[38;5;46m//////////////////////////////////////////////////////\e[0m"
 sleep 1
 #Remove Stuff I Dont like
-yum remove sshd xinetd telnet-server rsh-server telnet rsh ypbind ypserv tftp-server cronie-anacron bind vsftpd squid net-snmpd -y
+yum remove sshd xinetd telnet-server rsh-server telnet rsh ypbind ypserv tftp-server cronie-anacron bind vsftpd squid net-snmpd -y -q
 sudo systemctl stop xinetd && sudo systemctl disable xinetd
 sudo systemctl stop rexec && sudo systemctl disable rexec
 sudo systemctl stop rsh && sudo systemctl disable rsh
@@ -145,7 +153,7 @@ sudo systemctl stop certmonger && sudo systemctl disable certmonger
 sudo systemctl stop cgconfig && sudo systemctl disable cgconfig
 sudo systemctl stop cgred && sudo systemctl disable cgred
 sudo systemctl stop cpuspeed && sudo systemctl disable cpuspeed
-sudo systemctl start irqbalance && sudo systemctl enable irqbalance
+sudo systemctl stop irqbalance && sudo systemctl disable irqbalance
 sudo systemctl stop kdump && sudo systemctl disable kdump
 sudo systemctl stop mdmonitor && sudo systemctl disable mdmonitor
 sudo systemctl stop messagebus && sudo systemctl disable messagebus
@@ -153,7 +161,6 @@ sudo systemctl stop netconsole && sudo systemctl disable netconsole
 sudo systemctl stop ntpdate && sudo systemctl disable ntpdate
 sudo systemctl stop oddjobd && sudo systemctl disable oddjobd
 sudo systemctl stop portreserve && sudo systemctl disable portreserve
-sudo systemctl start psacct && sudo systemctl enable psacct
 sudo systemctl stop qpidd && sudo systemctl disable qpidd
 sudo systemctl stop quota_nld && sudo systemctl disable quota_nld
 sudo systemctl stop rdisc && sudo systemctl disable rdisc
@@ -162,23 +169,22 @@ sudo systemctl stop rhsmcertd && sudo systemctl disable rhsmcertd
 sudo systemctl stop saslauthd && sudo systemctl disable saslauthd
 sudo systemctl stop smartd && sudo systemctl disable smartd
 sudo systemctl stop sysstat && sudo systemctl disable sysstat
-sudo systemctl start crond && sudo systemctl enable crond
 sudo systemctl stop atd && sudo systemctl disable atd
 sudo systemctl stop nfslock && sudo systemctl disable nfslock
 sudo systemctl stop named && sudo systemctl disable named
 sudo systemctl stop squid && sudo systemctl disable squid
 sudo systemctl stop snmpd && sudo systemctl disable snmpd
-sudo systemctl stop mariadb && sudo systemctl disable mariadb
-sudo systemctl stop mysql && sudo systemctl disable mysql
+#sudo systemctl stop mariadb && sudo systemctl disable mariadb
+#sudo systemctl stop mysql && sudo systemctl disable mysql
 sudo systemctl stop postgresql && sudo systemctl disable postgresql
-sudo systemctl stop httpd && sudo systemctl disable httpd
+#sudo systemctl stop httpd && sudo systemctl disable httpd
 sudo systemctl stop nginx && sudo systemctl disable nginx
 sudo systemctl stop php-fpm && sudo systemctl disable php-fpm
-
-# Disable rpc
-systemctl disable rpcgssd
-systemctl disable rpcsvcgssd
-systemctl disable rpcidmapd
+#THESE ARE SPECIFIC TO THE COMP ENVIRONMENT 2/12/2025
+sudo systemctl stop cockpit.s && sudo systemctl disable cockpit.s
+sudo systemctl stop rpcgssd && sudo systemctl disable rpcgssd
+sudo systemctl stop rpcsvcgssd && sudo systemctl disable rpcsvcgssd
+sudo systemctl stop rpcidmapd && sudo systemctl disable rpcidmapd
 
 # Disable Network File Systems (netfs)
 systemctl disable netfs
@@ -187,7 +193,9 @@ systemctl disable netfs
 systemctl disable nfs
 
 #Remove hacker coding languages
-sudo yum remove -y ruby* java* perl* mysql* mariadb* python* nodejs* php*
+#sudo yum remove -q -y ruby* java* perl* mysql* mariadb* python* nodejs* php*
+#THIS IS FOR COMP
+sudo yum remove -q -y ruby* java* perl* python* nodejs*
 
 
 echo -e "\e[38;5;46m//////////////////////////////////////////////////////\e[0m"
@@ -199,7 +207,7 @@ echo -e "Disabling core dumps for users"
 echo "* hard core 0" >> /etc/security/limits.conf
 
 # Secure sysctl.conf
-echo -e "\e[33mSecuring sysctl.conf\e[0m"
+echo -e "Securing sysctl.conf"
 cat <<-EOF >> /etc/sysctl.conf
 fs.suid_dumpable = 0
 kernel.exec_shield = 1
@@ -228,7 +236,7 @@ net.ipv4.conf.default.log_martians = 1
 net.core.bpf_jit_harden = 2
 kernel.sysrq = 0
 kernel.perf_event_paranoid = 3
-kernel.kptr_restrict = 2
+kernel.kptr_restrict = 1
 kernel.dmesg_restrict = 1
 kernel.yama.ptrace_scope = 3
 EOF
@@ -241,7 +249,7 @@ echo -e "\e[38;5;46m//////////////////////////////////////////////////////\e[0m"
 sleep 1
 # Update system
 echo "Updating and upgrading system packages..."
-sudo yum update -y && yum upgrade -y
+sudo yum update -y -q && yum upgrade -y -q
 
 
 
@@ -257,19 +265,40 @@ systemctl enable postfix
 systemctl start dovecot
 systemctl start postfix
 #Installing and configuring TLS
-sudo yum install openssl -y
-sudo mkdir -p /etc/dovecot/ssl
-echo -e "ENTER INFORMATION FOR TLS CERTIFICATE"
-sudo openssl req -x509 -newkey rsa:4096 -keyout /etc/dovecot/ssl/dovecot.pem -out /etc/dovecot/ssl/dovecot.crt -days 365 -nodes
-sudo chmod 600 /etc/dovecot/ssl/dovecot.pem
-sudo chmod 600 /etc/dovecot/ssl/dovecot.crt
-sed -i 's|ssl_cert = </etc/pki/dovecot/certs/dovecot.pem|ssl_cert = </etc/dovecot/ssl/dovecot.crt|' /etc/dovecot/conf.d/10-ssl.conf
-sed -i 's|ssl_key = </etc/pki/dovecot/private/dovecot.pem|ssl_key = </etc/dovecot/ssl/dovecot.pem|' /etc/dovecot/conf.d/10-ssl.conf
-sed -i 's|#ssl_protocols = !SSLv2|ssl_protocols = !SSLv3 !TLSv1 !TLSv1.1|' /etc/dovecot/conf.d/10-ssl.conf
+#sudo yum install openssl -y -q
+#sudo mkdir -p /etc/dovecot/ssl
+#echo -e "ENTER INFORMATION FOR TLS CERTIFICATE"
+#sudo openssl req -x509 -newkey rsa:4096 -keyout /etc/dovecot/ssl/dovecot.pem -out /etc/dovecot/ssl/dovecot.crt -days 365 -nodes
+#sudo chmod 600 /etc/dovecot/ssl/dovecot.pem
+#sudo chmod 600 /etc/dovecot/ssl/dovecot.crt
+#sed -i 's|ssl_cert = </etc/pki/dovecot/certs/dovecot.pem|ssl_cert = </etc/dovecot/ssl/dovecot.crt|' /etc/dovecot/conf.d/10-ssl.conf
+#sed -i 's|ssl_key = </etc/pki/dovecot/private/dovecot.pem|ssl_key = </etc/dovecot/ssl/dovecot.pem|' /etc/dovecot/conf.d/10-ssl.conf
+#sed -i 's|#ssl_protocols = !SSLv2|ssl_protocols = !SSLv3 !TLSv1 !TLSv1.1|' /etc/dovecot/conf.d/10-ssl.conf
 sed -i 's|#disable_plaintext_auth = yes|disable_plaintext_auth = yes|' /etc/dovecot/conf.d/10-auth.conf
 sed -i 's|#auth_verbose = no|auth_verbose = yes|' /etc/dovecot/conf.d/10-logging.conf
+echo 'mail_max_userip_connections = 10' > /etc/dovecot/dovecot.conf
+
+
 sudo systemctl restart dovecot
 
+echo -e "\e[38;5;46m//////////////////////////////////////////////////////\e[0m"
+echo -e "\e[38;5;46m                  Securing Postfix                    \e[0m"
+echo -e "\e[38;5;46m//////////////////////////////////////////////////////\e[0m"
+
+#echo "Installing OpenSSL and configuring it..."
+#sudo mkdir -p /etc/postfix/ssl
+#Name doesnt matter on this one for the keys
+#sudo openssl genpkey -algorithm RSA -out ccdc.key -pkeyopt rsa_keygen_bits:4096
+#sudo mv *.key /etc/postfix/ssl/
+# THE KEY SHOULD BE THE KEY GENERATED EARLIER
+#sudo openssl req -new -key /etc/postfix/ssl/ccdc.key -out ccdc.csr
+#sudo mv *.csr /etc/postfix/ssl/
+#postconf -e 'smtpd_use_tls = yes'
+#postconf -e 'smtpd_tls_auth_only = yes'
+#postconf -e 'smtpd_tls_key_file = /etc/postfix/ssl/ccdc.key'
+#postconf -e 'smtpd_tls_cert_file = /etc/postfix/ssl/mail.ccdclab.net.crt'
+#postconf -e 'smtpd_tls_loglevel = 1'
+#sudo systemctl restart postfix
 
 echo -e "\e[38;5;46m//////////////////////////////////////////////////////\e[0m"
 echo -e "\e[38;5;46m                Implementing Fail2Ban                 \e[0m"
@@ -277,7 +306,7 @@ echo -e "\e[38;5;46m//////////////////////////////////////////////////////\e[0m"
 sleep 1
 # Install fail2ban
 echo "Installing fail2ban..."
-yum install -y fail2ban
+yum install -y -q fail2ban
 # Create fail2ban log file
 echo "Creating fail2ban log file..."
 touch /var/log/fail2banlog
@@ -287,6 +316,13 @@ cp /etc/fail2ban/jail.conf /etc/fail2ban/jail.local
 # Putting in the contents to the jail file
 sed -i '/\[dovecot\]/a enabled = true\nmaxretry = 5\nbantime = 3600' /etc/fail2ban/jail.local
 sed -i 's|logpath = %(dovecot_log)s|logpath = /var/log/fail2banlog|g' /etc/fail2ban/jail.local
+#FOR THE COMPETITION
+# Apache Stuff
+echo "Making an Apache jail..."
+sed -i '/\[apache-auth\]/a enabled = true\nmaxretry = 5\nbantime = 3600' /etc/fail2ban/jail.local
+# Roundcube Stuff
+echo "Making an Roundcube jail..."
+sed -i '/\[roundcube-auth\]/a enabled = true\nmaxretry = 5\nbantime = 3600' /etc/fail2ban/jail.local
 # Restart fail2ban service
 echo "Restarting fail2ban service..."
 systemctl enable fail2ban
@@ -299,12 +335,12 @@ echo -e "\e[38;5;46m//////////////////////////////////////////////////////\e[0m"
 sleep 1
 # Update and install necessary packages
 echo "Installing required packages..."
-sudo yum install -y aide rkhunter clamav clamd clamav-update
+sudo yum install -y -q aide rkhunter clamav clamd clamav-update
 # Download and set up monitoring script
 echo "Downloading monitoring script..."
 sudo wget https://raw.githubusercontent.com/UWStout-CCDC/kronos/master/Linux/General/monitor.sh
 echo "Insalling Lynis..."
-sudo yum install lynis -y
+sudo yum install lynis -y -q
 
 
 echo -e "\e[38;5;46m//////////////////////////////////////////////////////\e[0m"
@@ -334,6 +370,16 @@ sudo freshclam
 
 
 echo -e "\e[38;5;46m//////////////////////////////////////////////////////\e[0m"
+echo -e "\e[38;5;46m                     SE LINUX                           \e[0m"
+echo -e "\e[38;5;46m//////////////////////////////////////////////////////\e[0m"
+# This makes it so that se linux is enforcing policies, not just logging violations
+echo "Setting SE to enforce mode and turning off permissive.."
+sudo sed -i 's/^SELINUX=permissive/SELINUX=enforcing/' /etc/selinux/config
+
+
+
+
+echo -e "\e[38;5;46m//////////////////////////////////////////////////////\e[0m"
 echo -e "\e[38;5;46m                     Backups                         \e[0m"
 echo -e "\e[38;5;46m//////////////////////////////////////////////////////\e[0m"
 sleep 1
@@ -357,7 +403,7 @@ echo -e "\e[38;5;46m            I HATE THE ANTICHRIST (compilers)         \e[0m"
 echo -e "\e[38;5;46m//////////////////////////////////////////////////////\e[0m"
 sleep 1
 #Remove Compilers
-sudo yum remove libgcc clang make cmake automake autoconf -y
+sudo yum remove libgcc clang make cmake automake autoconf -y -q
 
 
 echo -e "\e[38;5;46m//////////////////////////////////////////////////////\e[0m"
@@ -380,6 +426,7 @@ echo -e "\e[38;5;46m//////////////////////////////////////////////////////\e[0m"
 sleep 1
 # Secure cron
 echo "Locking down Cron"
+sudo systemctl start crond && sudo systemctl enable crond
 touch /etc/cron.allow
 chmod 600 /etc/cron.allow
 awk -F: '{print $1}' /etc/passwd | grep -v root > /etc/cron.deny
@@ -400,7 +447,7 @@ echo -e "\e[38;5;46m//////////////////////////////////////////////////////\e[0m"
 echo -e "\e[38;5;46m                     NTP                         \e[0m"
 echo -e "\e[38;5;46m//////////////////////////////////////////////////////\e[0m"
 sleep 1
-sudo yum install ntpdate -y
+sudo yum install ntpdate -y -q
 ntpdate pool.ntp.org
 
 
@@ -420,13 +467,73 @@ sudo find / -type f -executable 2>/dev/null > DIFFING/executables_diffingBASELIN
 for user in $(cut -f1 -d: /etc/passwd); do crontab -u $user -l 2>/dev/null; done > DIFFING/cron_diffingBASELINE.txt
 sudo cat /etc/shadow > DIFFING/users_diffingBASELINE.txt
 
+
 #Running auditctl rules again because it doesnt like it the first time
 sudo auditctl -R /etc/audit/rules.d/audit.rules
+
+
+#echo -e "\e[38;5;46m//////////////////////////////////////////////////////\e[0m"
+#echo -e "\e[38;5;46m                 Installing RITA                      \e[0m"
+#echo -e "\e[38;5;46m//////////////////////////////////////////////////////\e[0m"
+
+#echo "Installing RITA for C2 detection (this may take a while).."
+#sudo wget https://github.com/activecm/rita/releases/download/v5.0.8/install-rita-zeek-here.sh
+#sudo bash install-rita-zeek-here.sh
+#sudo touch rita-roll
+#sudo echo -e "#!/bin/bash\nscreen -S ritaimport -d -m /usr/local/bin/rita import --rolling -l /opt/zeek/logs/ -d rolling\n" > rita-roll
+#sudo chmod +x rita-roll
+#sudo touch rita /etc/cron.d
+# THIS CRON JOB IMPORTS ZEEK STUFF EVERY 2 MINUTES
+#sudo echo "*/2 * * * * root /opt/rita/rita-roll" > /etc/cron.d/rita
+# RESOURCE: https://www.youtube.com/watch?v=oP5xYq0_44E&pp=ygURcml0YSBpbnN0YWxsYXRpb24%3D
+# RESOURCE: https://www.youtube.com/watch?v=tRlzVNG2sGQ
+# COMMAND to run: zeek start && rita view rolling
+
+
+
+echo -e "\e[38;5;46m//////////////////////////////////////////////////////\e[0m"
+echo -e "\e[38;5;46m              Installing Suricata IDS                 \e[0m"
+echo -e "\e[38;5;46m//////////////////////////////////////////////////////\e[0m"
+
+echo "installing suricata.."
+sudo yum install suricata -y -q
+sudo yum install jq -y -q
+echo "Installing the latest emerging threats rules.."
+# I HAVE THIS COMMENTED OUT because it breaks my poor little old fedora box to have so many rules that arent compatible
+# So i have to use the default ruleset
+# Uncomment it if you are on a better distro than me
+# sudo wget https://rules.emergingthreats.net/open/suricata/emerging.rules.tar.gz -O /tmp/emerging.rules.tar.gz
+# sudo tar -xvzf /tmp/emerging.rules.tar.gz -C /etc/suricata/
+sudo systemctl enable suricata
+sudo systemctl start suricata
+# Go into the /etc/suricata/suricata.yaml file and set af-packet (around page 13) to your ens32
+# resource: https://www.youtube.com/watch?v=UXKbh0jPPpg
+# Commands: jq '.' /var/log/suricata/eve.json | less
+# tail -f /var/log/fast.log
+# cat /var/log/suricata/stats.log
+
+
+
+#echo -e "\e[38;5;46m//////////////////////////////////////////////////////\e[0m"
+#echo -e "\e[38;5;46m                    TripWire                          \e[0m"
+#echo -e "\e[38;5;46m//////////////////////////////////////////////////////\e[0m"
+
+#echo "installing tripwire"
+#sudo yum install tripwire -y -q
+#echo "fill out the information to sign policies and configurations.."
+#sudo tripwire-setup-keyfiles
+#echo "initialize the database..."
+#sudo tripwire --init
+
 
 echo -e "\e[38;5;46m//////////////////////////////////////////////////////\e[0m"
 echo -e "\e[38;5;46m            Initializing AIDE Database                \e[0m"
 echo -e "\e[38;5;46m//////////////////////////////////////////////////////\e[0m"
 
+echo "Initializing AIDE database (this may take a while).."
 sudo aide --init
 sudo mv /var/lib/aide/aide.db.new.gz /var/lib/aide/aide.db.gz
-echo "FINISHED MAKE SURE YOU REBOOT"
+echo " "
+echo -e "\e[45mSCRIPT HAS FINISHED RUNNING... REBOOTING..\e[0m"
+sleep 3
+sudo reboot
