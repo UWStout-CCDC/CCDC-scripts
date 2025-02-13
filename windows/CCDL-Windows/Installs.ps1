@@ -79,6 +79,9 @@ $scriptPath = "C:\CCDC\tools-Windows\Win-Upodate.ps1"
 $entryName = "Windows Update Script"
 Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name $entryName -Value "powershell.exe -File `"$scriptPath`""
 
-# Restart the computer
-Write-Host "Restarting Computer"
-Restart-Computer
+$restart = Read-Host "type 'yes' to restart the server once programs have finished installing."
+if ($restart -eq "yes"){
+    # Restart the computer
+    Write-Host "Restarting Computer"
+    Restart-Computer
+}
