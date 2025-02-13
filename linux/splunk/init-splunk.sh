@@ -138,10 +138,9 @@ setupAIDE() {
 setDNS() {
   # Set DNS
   echo -e "\e[33mSetting DNS\e[0m"
-  INTERFACE=$(ip route | grep default | awk '{print $5}')
-  sed -i 's/DNS1='.*'/DNS1=1.1.1.1/g' /etc/sysconfig/network-scripts/ifcfg-$INTERFACE
-  sed -i 's/DNS2='.*'/DNS2=9.9.9.9/g' /etc/sysconfig/network-scripts/ifcfg-$INTERFACE
-  systemctl restart network
+  sed -i '1i\nameserver 1.1.1.1' /etc/resolv.conf
+  sed -i '2i\nameserver 9.9.9.9' /etc/resolv.conf
+
 }
 
 setupAuditd() {
