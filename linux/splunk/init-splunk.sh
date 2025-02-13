@@ -60,10 +60,12 @@ disableSketchyTokens() {
 installTools() {
   # Install tools (if not already)
   echo -e "\e[33mInstalling tools\e[0m"
-  yum install iptables wget git aide net-tools audit audit-libs rkhunter epel-release -y
+  yum install iptables wget git aide net-tools audit audit-libs rkhunter clamav epel-release -y
   cd /ccdc # Put lynis in a common location so it is not in the root home
   git clone https://github.com/CISOfy/lynis
   cd ~
+  wget $BASEURL/linux/E-Comm/monitor.sh -O /ccdc/scripts/monitor.sh --no-check-certificate
+  chmod +x /ccdc/scripts/monitor.sh
 }
 
 backup() {
@@ -364,6 +366,19 @@ setupIPv6() {
   fi
 }
 
+disableRootSSH() {
+  # Disable root SSH
+  echo -e "\e[33mDisabling root SSH\e[0m"
+  sed -i 's/PermitRootLogin yes/PermitRootLogin no/g' /etc/ssh/sshd_config
+  systemctl restart sshd
+}
+
+initilizeClamAV() {
+  # Initialize ClamAV
+  echo -e "\e[33mInitializing ClamAV\e[0m"
+  freshclam
+}
+
 ##########################
 ## Backup/Restore Calls ##
 ##########################
@@ -412,6 +427,9 @@ addMonitorFiles
 installGUI
 bulkRemoveServices
 bulkDisableServices
+setupIPv6
+disableRootSSH
+initilizeClamAV
 backup
 
 echo "\e[32mSplunk setup complete. Reboot to apply changes and clear in-memory beacons.\e[0m"
