@@ -1,6 +1,7 @@
 # Palo Alto config files
 
-The Palo Alto has the option to configure via a CLI.
+The Palo Alto has the option to configure via a CLI. This can be done
+via ssh connection from workstation to Palo Alto.
 
 ## Comments
 
