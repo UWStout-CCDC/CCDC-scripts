@@ -288,7 +288,7 @@ After=syslog.target network.target
 
 [Service]
 Type=oneshot
-ExecStart=$IPTABLES_SCRIPT
+ExecStart=/bin/bash $IPTABLES_SCRIPT
 ExecStop=/sbin/iptables -F
 RemainAfterExit=yes
 
