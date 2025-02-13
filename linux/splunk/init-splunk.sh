@@ -140,7 +140,7 @@ setDNS() {
   echo -e "\e[33mSetting DNS\e[0m"
   
   INTERFACE=$(ip route | grep default | awk '{print $5}')
-  sed -i '/^dns=/c\dns=1.1.1.1;9.9.9.9;172.20.240.20;172.20.242.20' /etc/NetworkManager/system-connections/$INTERFACE.nmconnection
+  sed -i '/^dns=/c\dns=1.1.1.1;172.20.240.20;172.20.242.20' /etc/NetworkManager/system-connections/$INTERFACE.nmconnection
   systemctl restart NetworkManager
 }
 
