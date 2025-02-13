@@ -153,12 +153,10 @@ sudo systemctl stop certmonger && sudo systemctl disable certmonger
 sudo systemctl stop cgconfig && sudo systemctl disable cgconfig
 sudo systemctl stop cgred && sudo systemctl disable cgred
 sudo systemctl stop cpuspeed && sudo systemctl disable cpuspeed
-sudo systemctl stop irqbalance && sudo systemctl disable irqbalance
 sudo systemctl stop kdump && sudo systemctl disable kdump
 sudo systemctl stop mdmonitor && sudo systemctl disable mdmonitor
 sudo systemctl stop messagebus && sudo systemctl disable messagebus
 sudo systemctl stop netconsole && sudo systemctl disable netconsole
-sudo systemctl stop ntpdate && sudo systemctl disable ntpdate
 sudo systemctl stop oddjobd && sudo systemctl disable oddjobd
 sudo systemctl stop portreserve && sudo systemctl disable portreserve
 sudo systemctl stop qpidd && sudo systemctl disable qpidd
@@ -176,7 +174,7 @@ sudo systemctl stop squid && sudo systemctl disable squid
 sudo systemctl stop snmpd && sudo systemctl disable snmpd
 #sudo systemctl stop mariadb && sudo systemctl disable mariadb
 #sudo systemctl stop mysql && sudo systemctl disable mysql
-sudo systemctl stop postgresql && sudo systemctl disable postgresql
+#sudo systemctl stop postgresql && sudo systemctl disable postgresql
 #sudo systemctl stop httpd && sudo systemctl disable httpd
 sudo systemctl stop nginx && sudo systemctl disable nginx
 sudo systemctl stop php-fpm && sudo systemctl disable php-fpm
