@@ -75,13 +75,16 @@ Get-Job | Wait-Job
 Write-Host "Setting execution policy back to Restricted..."
 Set-ExecutionPolicy -Scope LocalMachine -ExecutionPolicy Restricted -Force
 
+# Set script to run on startup to update windows
 $scriptPath = "C:\CCDC\tools-Windows\Win-Update.ps1"
 $entryName = "Windows Update Script"
 Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name $entryName -Value "powershell.exe -File `"$scriptPath`""
 
-$restart = Read-Host "type 'yes' to restart the server once programs have finished installing."
-if ($restart -eq "yes"){
-    # Restart the computer
-    Write-Host "Restarting Computer"
-    Restart-Computer
-}
+# $restart = Read-Host "type 'yes' to restart the server once programs have finished installing."
+# if ($restart -eq "yes"){
+#     # Restart the computer
+#     Write-Host "Restarting Computer"
+#     Restart-Computer
+# }
+Write-Host "Restarting Computer"
+Restart-Computer
