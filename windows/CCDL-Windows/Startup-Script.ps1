@@ -73,6 +73,11 @@ $installScriptPath = "$toolsPath\Installs.ps1"
 Write-Host "Downloading install script..."
 Invoke-WebRequest "https://github.com/UWStout-CCDC/CCDC-scripts/raw/refs/heads/master/windows/CCDL-Windows/Installs.ps1" -OutFile $installScriptPath
 
+# Download the update script
+$installScriptPath = "$toolsPath\Win-Update.ps1"
+Write-Host "Downloading install script..."
+Invoke-WebRequest "https://github.com/UWStout-CCDC/CCDC-scripts/raw/refs/heads/master/windows/CCDL-Windows/Win-Update.ps1" -OutFile $installScriptPath
+
 # Download necessary tools
 $tools = @(
     @{ Name = "Npcap Installer"; Url = "https://github.com/UWStout-CCDC/CCDC-scripts/raw/refs/heads/master/windows/CCDL-Resources/npcap-1.80.exe"; Path = "$toolsPath\npcap-1.80.exe" },
@@ -616,6 +621,8 @@ Start-LoggedJob -JobName "Create Alert for New Startup Items" -ScriptBlock {
 }
 
 # Lockdown the CCDC folder
+
+# Lockdown the CCDC folder
 Start-LoggedJob -JobName "Lockdown CCDC Folder" -ScriptBlock {
     try {
         $ccdcPath = "C:\CCDC"
@@ -629,12 +636,17 @@ Start-LoggedJob -JobName "Lockdown CCDC Folder" -ScriptBlock {
         $adminUser = [System.Security.Principal.NTAccount]"Administrator"
         $systemUser = [System.Security.Principal.NTAccount]"SYSTEM"
         $trustedInstaller = [System.Security.Principal.NTAccount]"NT SERVICE\TrustedInstaller"
+        $currentUser = [System.Security.Principal.NTAccount]::new([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)
+        
         $adminRule = New-Object System.Security.AccessControl.FileSystemAccessRule($adminUser, "FullControl", "Allow")
         $systemRule = New-Object System.Security.AccessControl.FileSystemAccessRule($systemUser, "FullControl", "Allow")
         $trustedInstallerRule = New-Object System.Security.AccessControl.FileSystemAccessRule($trustedInstaller, "FullControl", "Allow")
+        $currentUserRule = New-Object System.Security.AccessControl.FileSystemAccessRule($currentUser, "FullControl", "Allow")
+        
         $acl.AddAccessRule($adminRule)
         $acl.AddAccessRule($systemRule)
         $acl.AddAccessRule($trustedInstallerRule)
+        $acl.AddAccessRule($currentUserRule)
         
         # Apply the modified ACL to the CCDC folder
         Set-Acl -Path $ccdcPath -AclObject $acl
