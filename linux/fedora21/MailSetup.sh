@@ -274,9 +274,6 @@ systemctl start postfix
 #sed -i 's|ssl_cert = </etc/pki/dovecot/certs/dovecot.pem|ssl_cert = </etc/dovecot/ssl/dovecot.crt|' /etc/dovecot/conf.d/10-ssl.conf
 #sed -i 's|ssl_key = </etc/pki/dovecot/private/dovecot.pem|ssl_key = </etc/dovecot/ssl/dovecot.pem|' /etc/dovecot/conf.d/10-ssl.conf
 #sed -i 's|#ssl_protocols = !SSLv2|ssl_protocols = !SSLv3 !TLSv1 !TLSv1.1|' /etc/dovecot/conf.d/10-ssl.conf
-sed -i 's|#disable_plaintext_auth = yes|disable_plaintext_auth = yes|' /etc/dovecot/conf.d/10-auth.conf
-sed -i 's|#auth_verbose = no|auth_verbose = yes|' /etc/dovecot/conf.d/10-logging.conf
-echo 'mail_max_userip_connections = 10' > /etc/dovecot/dovecot.conf
 
 
 sudo systemctl restart dovecot
@@ -318,11 +315,11 @@ sed -i '/\[dovecot\]/a enabled = true\nmaxretry = 5\nbantime = 3600' /etc/fail2b
 sed -i 's|logpath = %(dovecot_log)s|logpath = /var/log/fail2banlog|g' /etc/fail2ban/jail.local
 #FOR THE COMPETITION
 # Apache Stuff
-echo "Making an Apache jail..."
-sed -i '/\[apache-auth\]/a enabled = true\nmaxretry = 5\nbantime = 3600' /etc/fail2ban/jail.local
+#echo "Making an Apache jail..."
+#sed -i '/\[apache-auth\]/a enabled = true\nmaxretry = 5\nbantime = 3600' /etc/fail2ban/jail.local
 # Roundcube Stuff
-echo "Making an Roundcube jail..."
-sed -i '/\[roundcube-auth\]/a enabled = true\nmaxretry = 5\nbantime = 3600' /etc/fail2ban/jail.local
+#echo "Making an Roundcube jail..."
+#sed -i '/\[roundcube-auth\]/a enabled = true\nmaxretry = 5\nbantime = 3600' /etc/fail2ban/jail.local
 # Restart fail2ban service
 echo "Restarting fail2ban service..."
 systemctl enable fail2ban
@@ -524,6 +521,12 @@ sudo systemctl start suricata
 #sudo tripwire-setup-keyfiles
 #echo "initialize the database..."
 #sudo tripwire --init
+
+
+
+
+sudo auditctl -R /etc/audit/rules.d/audit.rules
+
 
 
 echo -e "\e[38;5;46m//////////////////////////////////////////////////////\e[0m"
