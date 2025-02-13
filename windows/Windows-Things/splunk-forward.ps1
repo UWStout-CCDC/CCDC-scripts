@@ -10,7 +10,7 @@
 # - Finish automations once IP is known
 # - Add files to monitor as soon as known
 
-$url = https://download.splunk.com/products/universalforwarder/releases/9.4.0/windows/splunkforwarder-9.4.0-6b4ebe426ca6-windows-x64.msi
+$url = "https://download.splunk.com/products/universalforwarder/releases/9.4.0/windows/splunkforwarder-9.4.0-6b4ebe426ca6-windows-x64.msi"
 
 Invoke-WebRequest -Uri $url -OutFile splunkforwarder-9.4.0-6b4ebe426ca6-windows-x64.msi
 
