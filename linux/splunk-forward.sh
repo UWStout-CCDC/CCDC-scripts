@@ -30,8 +30,12 @@ export SPLUNK_HOME="/opt/splunkforwarder"
 mkdir $SPLUNK_HOME
 
 # Install Splunk Forwarder
-wget -O splunkforwarder-9.1.1-64e843ea36b1-Linux-x86_64.tgz "https://download.splunk.com/products/universalforwarder/releases/9.1.1/linux/splunkforwarder-9.1.1-64e843ea36b1-Linux-x86_64.tgz"
-tar -xzvf splunkforwarder-9.1.1-64e843ea36b1-Linux-x86_64.tgz -C /opt
+# Splunk Forwarder 9.4.0 - Current version as of this commit
+wget -O splunkforwarder-9.4.0-6b4ebe426ca6-linux-amd64.tgz "https://download.splunk.com/products/universalforwarder/releases/9.4.0/linux/splunkforwarder-9.4.0-6b4ebe426ca6-linux-amd64.tgz"
+tar -xzvf splunkforwarder-9.4.0-6b4ebe426ca6-linux-amd64.tgz -C /opt
+# Splunk Forwarder 9.1.1 - Switch out the version if you need an older one
+# wget -O splunkforwarder-9.1.1-64e843ea36b1-Linux-x86_64.tgz "https://download.splunk.com/products/universalforwarder/releases/9.1.1/linux/splunkforwarder-9.1.1-64e843ea36b1-Linux-x86_64.tgz"
+# tar -xzvf splunkforwarder-9.1.1-64e843ea36b1-Linux-x86_64.tgz -C /opt
 
 # Set permissions
 chown -R splunkfwd:splunkfwd $SPLUNK_HOME
