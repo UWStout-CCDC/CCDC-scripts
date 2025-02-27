@@ -1,12 +1,11 @@
 #!/bin/bash
 
-# This script is intended as a automated setup for Splunk for the CCDC competition.
-# This makes a number of changes to the system, to do a baseline setup for the system both security and Splunk wise.
-# Some of the code was taken from our other scritps, other team's scripts, and from this blog: https://highon.coffee/blog/security-harden-centos-7/#auditd---audit-daemon
+# This script is intended as a automated hardening script for RHEL and Debian based systems.
+# This makes a number of changes to the system, to do a baseline setup for system security
 
 ## NOTE ##
 # To run any of these functions individually, run the script with the function name as an argument. For example:
-# ./init-splunk.sh <function name> <args if any>
+# ./harden.sh <function name> <args if any>
 # Might error a bit but should still execute
 #
 # Code is in functions for easy readability and maintainability
@@ -14,14 +13,7 @@
 
 ## TODO
 # - TEST THE SCRIPT IN ENVIRONMENT
-# - Make the script more monolithic
-# - Double check I am not missing anything from SEMO, init.sh, or other scripts
 # - Update auditd.rules to use new rule set
-# - Put splunk functions in a category for easier reading
-
-################################
-##    Splunk Specific Init    ##
-################################
 
 if [[ $EUID -ne 0 ]]
 then
@@ -35,10 +27,24 @@ CCDC_ETC="$CCDC_DIR/etc"
 SCRIPT_DIR="$CCDC_DIR/scripts"
 BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master"
 
+adminUser=""
+
 # make directories and set current directory
 mkdir -p $CCDC_DIR
 mkdir -p $CCDC_ETC
 mkdir -p $SCRIPT_DIR
+
+# Detect OS and set var for package manager
+if [ -f /etc/redhat-release ]; then
+  OS="RHEL"
+  PKG="yum"
+elif [ -f /etc/centos-release ]; then
+  OS="CentOS"
+  PKG="yum"
+elif [ -f /etc/debian_version ]; then
+  OS="Debian"
+  PKG="apt"
+fi
 
 #######################
 ## Helper Functions  ##
@@ -65,27 +71,12 @@ replace() {
   cp $(get $3) $1/$2
 }
 
-# Quick function to check if a file exists, and monitor it
-monitor() {
-  if [ -f $1 ]
-  then
-    $SPLUNK_HOME/bin/splunk add monitor $1
-  fi
-}
-
-restartSplunk() {
-  echo -e "\e[33mRestarting Splunk\e[0m"
-  $SPLUNK_HOME/bin/splunk restart
-}
-
 backup() {
   echo -e "\e[33mCreating backup\e[0m"
   if [ ! -d /ccdc/backups ]; then
     mkdir -p /ccdc/backups
   fi
   increment=$(date +%Y%m%d%H%M%S)
-  # Backup the /opt/splunk/etc configuration directory
-  tar -czvf /ccdc/backups/splunk-etc-$increment.tgz /opt/splunk/etc
   # Backup the /etc directory
   tar -czvf /ccdc/backups/system-etc-$increment.tgz /etc
 }
@@ -93,16 +84,15 @@ backup() {
 restore() {
   echo -e "\e[33mRestoring backup\e[0m"
   # Get the newest backups
-  newestSplunk=$(ls -t /ccdc/backups/splunk-etc-*.tgz | head -1 | sed 's/.*splunk-etc-\(.*\).tgz/\1/')
   newestSystem=$(ls -t /ccdc/backups/system-etc-*.tgz | head -1 | sed 's/.*system-etc-\(.*\).tgz/\1/')
   # Restore the /opt/splunk/etc configuration directory
-  tar -xzvf /ccdc/backups/splunk-etc-$newestSplunk.tgz -C /opt/splunk
   tar -xzvf /ccdc/backups/system-etc-$newestSystem.tgz -C /
 }
 
-#######################
-## End Helper Funcs  ##
-#######################
+
+###########################
+##   Security Configs    ##
+###########################
 
 changePasswords() {
   echo -e "\e[33mChanging passwords\e[0m"
@@ -150,7 +140,7 @@ changePasswords() {
 createNewAdmin() {
   echo -e "\e[33mCreating new admin user\e[0m"
   echo "Enter new admin username: "
-  read adminUser
+  read $adminUser
   useradd $adminUser
 
   while true; do
@@ -174,68 +164,33 @@ createNewAdmin() {
   usermod -aG wheel $adminUser
 }
 
-webUIPassword() {
-  # Changing default Splunk Web UI admin password
-  echo "Enter Splunk Web UI admin password:"
-  read -s admin_password
-  echo "Enter new Splunk Web UI admin password:"
-  read -s password
-  $SPLUNK_HOME/bin/splunk edit user admin -auth admin:$admin_password -password $password
-}
-
-# CentOS is EOL so this likely won't ever be used anymore, uncomment if needed
-#function fixCentOSRepos() {
-  # Fix repos preemtively (if CentOS)
-  # wget $BASE_URL/linux/splunk/CentOS-Base.repo -O CentOS-Base.repo --no-check-certificate
-  # echo -e "\e[33mFixing repos\e[0m"
-  # cd ~
-  # mv /etc/yum.repos.d/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo.bak
-  # mv ~/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo
-  # yum clean all
-  # rm -rf /var/cache/yum
-  # yum makecache
-
-  # Update CA certs
-  # echo -e "\e[33mUpdating CA certificates\e[0m"
-  # yum update -y ca-certificates
-#}
-
-disableSketchyTokens() {
-  # Disabling sketchy auth tokens
-  # Move auth tokens to temp directory to disable them
-  echo -e "\e[33mDisabling sketchy auth tokens\e[0m"
-  mkdir /tmp/sketchy_tokens
-  mv /root/.xauth* /tmp/sketchy_tokens
-  mv /root/.splunk/authToken_splunk_8089 /tmp/sketchy_tokens
-}
-
 installTools() {
-  # Install tools (if not already)
-  echo -e "\e[33mInstalling tools\e[0m"
-  yum update -y
-  yum install epel-release iptables iptables-services wget git aide net-tools audit audit-libs rkhunter clamav -y
-  yum autoremove -y
-  cd /ccdc # Put lynis in a common location so it is not in the root home
-  git clone https://github.com/CISOfy/lynis
-  cd ~
-  wget $BASEURL/linux/monitor/monitor.sh -O /ccdc/scripts/monitor.sh --no-check-certificate
-  chmod +x /ccdc/scripts/monitor.sh
+    # Install tools (if not already)
+    echo -e "\e[33mInstalling tools\e[0m"
+
+    if [ "$OS" == "RHEL" ] || [ "$OS" == "CentOS" ]; then
+        yum update -y
+        yum install epel-release iptables iptables-services wget git aide net-tools audit audit-libs rkhunter clamav -y
+        yum autoremove -y
+    elif [ "$OS" == "Debian" ]; then
+        apt-get update
+        apt-get install -y iptables iptables-services wget git aide net-tools audit auditd rkhunter clamav
+        apt-get autoremove -y
+    fi
+
+    # Install Lynis
+    if [ ! -d /ccdc/lynis ]; then
+        cd /ccdc # Put lynis in a common location so it is not in the root home
+        git clone https://github.com/CISOfy/lynis
+        cd ~
+    fi
+
+    # Install Monitor Script
+    if [ ! -f /ccdc/scripts/monitor.sh ]; then
+        get linux/monitor/monitor.sh
+        chmod +x /ccdc/scripts/monitor.sh
+    fi
 }
-
-# Dont want to use init.sh anymore, will use individual functions instead, avoids needing to download a dependency
-#init() {
-  # Init script
-  # Download init script
-  #wget $BASE_URL/linux/init.sh -O init.sh --no-check-certificate
-  # Run init script
-  #echo -e "\e[33mRunning init script\e[0m"
-  #chmod +x init.sh
-  #./init.sh
-#}
-
-#################################
-##   Start Security Configs    ##
-#################################
 
 lockUnusedAccounts() {
   echo -e "\e[33mLocking unused accounts\e[0m"
@@ -251,7 +206,7 @@ EOF
       # Get the username
       username=$(echo $line | cut -d: -f1)
       # Check if the user is root
-      if [ "$username" == "root" ] || [ "$username" == "sysadmin" ] || [ "$username" == "splunkadmin" ]; then
+      if [ "$username" == "root" ] || [ "$username" == "sysadmin" ] || [ "$username" == "$adminUser" ]; then
           # Skip the root user and the sysadmin user
           continue
       fi
@@ -285,88 +240,140 @@ restrictUserCreation() {
 }
 
 firewallSetup() {
-  # Configure firewall rules using iptables
-  echo -e "\e[33mSetting up firewall\e[0m"
-
-  IPTABLES_SCRIPT="$SCRIPT_DIR/linux/iptables.sh"
-  cat <<EOF > $IPTABLES_SCRIPT
+    # Configure firewall rules using iptables
+    echo -e "\e[33mSetting up firewall\e[0m"
+    
+    IPTABLES_SCRIPT="$SCRIPT_DIR/linux/iptables.sh"
+    cat <<EOF > $IPTABLES_SCRIPT
 if [[ \$EUID -ne 0 ]]
 then
-  printf 'Must be run as root, exiting!\n'
-  exit 1
+printf 'Must be run as root, exiting!\n'
+exit 1
 fi
 
-# Flush existing rules
-iptables -F
-iptables -X
-iptables -Z
+# Empty all rules
+iptables -t filter -F
+iptables -t filter -X
 
-# Set default policies
-iptables -P INPUT DROP
-iptables -P OUTPUT DROP
-iptables -P FORWARD DROP
+# Block everything by default
+iptables -t filter -P INPUT DROP
+iptables -t filter -P FORWARD DROP
+iptables -t filter -P OUTPUT DROP
 
-# Allow loopback traffic
-iptables -A INPUT -i lo -j ACCEPT
-iptables -A OUTPUT -o lo -j ACCEPT
+# Authorize already established connections
+iptables -A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+iptables -A OUTPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+iptables -t filter -A INPUT -i lo -j ACCEPT
+iptables -t filter -A OUTPUT -o lo -j ACCEPT
 
-# Allow established connections
-iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+# ICMP (Ping)
+iptables -t filter -A INPUT -p icmp -j ACCEPT
+iptables -t filter -A OUTPUT -p icmp -j ACCEPT
 
-# Allow limited incoming ICMP traffic and log packets that don't fit the rules
-#sudo iptables -A INPUT -p icmp --icmp-type echo-request -m length --length 0:192 -m limit --limit 1/s --limit-burst 5 -j ACCEPT
-#sudo iptables -A INPUT -p icmp --icmp-type echo-request -m length --length 0:192 -j LOG --log-prefix "Rate-limit exceeded: " --log-level 4
-#sudo iptables -A INPUT -p icmp --icmp-type echo-request -m length ! --length 0:192 -j LOG --log-prefix "Invalid size: " --log-level 4
-#sudo iptables -A INPUT -p icmp --icmp-type echo-reply -m limit --limit 1/s --limit-burst 5 -j ACCEPT
-#sudo iptables -A INPUT -p icmp -j DROP
+# DNS (Needed for curl, and updates)
+iptables -t filter -A OUTPUT -p tcp --dport 53 -j ACCEPT
+iptables -t filter -A OUTPUT -p udp --dport 53 -j ACCEPT
 
-# Allow DNS traffic
-iptables -A OUTPUT -p udp --dport 53 -m limit --limit 20/min --limit-burst 50 -j ACCEPT
-iptables -A OUTPUT -p tcp --dport 53 -m limit --limit 20/min --limit-burst 50 -j ACCEPT
-iptables -A INPUT -p udp --sport 53 -m state --state ESTABLISHED -j ACCEPT
-iptables -A INPUT -p tcp --sport 53 -m state --state ESTABLISHED -j ACCEPT
+# HTTP/HTTPS
+iptables -t filter -A OUTPUT -p tcp --dport 80 -j ACCEPT
+iptables -t filter -A OUTPUT -p tcp --dport 443 -j ACCEPT
 
-# Allow HTTP/HTTPS traffic
-iptables -A INPUT -p tcp --dport 80 -m conntrack --ctstate NEW -m limit --limit 100/min --limit-burst 200 -j ACCEPT
-iptables -A OUTPUT -p tcp --dport 80 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
-iptables -A INPUT -p tcp --dport 443 -m conntrack --ctstate NEW -m limit --limit 100/min --limit-burst 200 -j ACCEPT
-iptables -A OUTPUT -p tcp --dport 443 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+# NTP (server time)
+iptables -t filter -A OUTPUT -p udp --dport 123 -j ACCEPT
 
-# Allow Splunk-specific traffic
-iptables -A INPUT -p tcp --dport 9997 -m conntrack --ctstate NEW -j ACCEPT  #Splunk Forwarders
-iptables -A OUTPUT -p tcp --sport 9997 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+# Splunk
+iptables -t filter -A OUTPUT -p tcp --dport 8000 -j ACCEPT
+iptables -t filter -A OUTPUT -p tcp --dport 8089 -j ACCEPT
+iptables -t filter -A OUTPUT -p tcp --dport 9997 -j ACCEPT
 
-iptables -A INPUT -p tcp --dport 514 -m conntrack --ctstate NEW -j ACCEPT   #Logs from Palo
-iptables -A OUTPUT -p tcp --sport 514 -m conntrack --ctstate ESTABLISHED -j ACCEPT
+# SSH outbound
+iptables -A OUTPUT -p tcp --sport 22 -m conntrack --ctstate ESTABLISHED -j ACCEPT
 
-#sudo iptables -A INPUT -p tcp --dport 8089 -j ACCEPT   #NOT NEEDED
-#sudo iptables -A OUTPUT -p tcp --sport 8089 -j ACCEPT  #NOT NEEDED
+######## OUTBOUND SERVICES ###############
 
-iptables -A INPUT -p tcp --dport 8000 -m conntrack --ctstate NEW -j ACCEPT  #Splunk webGUI
-iptables -A OUTPUT -p tcp --sport 8000 -m conntrack --ctstate ESTABLISHED -j ACCEPT
-
-# Log dropped packets
-iptables -A INPUT -j LOG --log-prefix "DROP-IN:" --log-level 4 --log-ip-options --log-tcp-options --log-tcp-sequence
-iptables -A OUTPUT -j LOG --log-prefix "DROP-OUT:" --log-level 4 --log-ip-options --log-tcp-options --log-tcp-sequence
 EOF
 
-  # Set firewall rules
-  chmod +x $IPTABLES_SCRIPT
-  bash $IPTABLES_SCRIPT
+    chmod +x $IPTABLES_SCRIPT
 
-  mkdir /etc/iptables
+    if prompt "HTTP(S) Server?" n
+    then
+    IS_HTTP_SERVER="y"
+    cat <<-EOF >> $IPTABLES_SCRIPT
+# HTTP/HTTPS (apache)
+iptables -t filter -A INPUT -p tcp --dport 80 -j ACCEPT
+iptables -t filter -A INPUT -p tcp --dport 443 -j ACCEPT
 
-  # Save the rules
-  iptables-save > /etc/iptables/rules.v4
+EOF
+    # TODO: add mod_sec and secure apache
+    fi
 
-  #Disable firewalld
-  systemctl stop firewalld
-  systemctl disable firewalld
+    if prompt "DNS/NTP Server?" n
+    then
+    IS_DNS_SERVER="y"
+    IS_NTP_SERVER="y"
+    cat <<-EOF >> $IPTABLES_SCRIPT
+# DNS (bind)
+iptables -t filter -A INPUT -p tcp --dport 53 -j ACCEPT
+iptables -t filter -A INPUT -p udp --dport 53 -j ACCEPT
 
-  # Create a systemd service to load the rules on boot (as a fallback for iptables-save)
-  mkdir -p /etc/systemd/system/
-  cat <<-EOF > /etc/systemd/system/ccdc_firewall.service
+# NTP
+iptables -t filter -A INPUT -p tcp --dport 123 -j ACCEPT
+iptables -t filter -A INPUT -p udp --dport 123 -j ACCEPT
+
+EOF
+    # TODO: secure bind / named
+    fi
+
+    if prompt "MAIL Server?" n
+    then
+    IS_MAIL_SERVER="y"
+    cat <<-EOF >> $IPTABLES_SCRIPT
+# SMTP
+iptables -t filter -A OUTPUT -p tcp --dport 25 -j ACCEPT
+iptables -t filter -A INPUT -p tcp --dport 25 -j ACCEPT
+
+# POP3
+iptables -t filter -A OUTPUT -p tcp --dport 110 -j ACCEPT
+iptables -t filter -A INPUT -p tcp --dport 110 -j ACCEPT
+
+# IMAP
+iptables -t filter -A OUTPUT -p tcp --dport 143 -j ACCEPT
+iptables -t filter -A INPUT -p tcp --dport 143 -j ACCEPT
+
+EOF
+    # TODO: secure ?
+    fi
+
+    if prompt "Splunk Server?" n
+    then
+    IS_SPLUNK_SERVER="y"
+    cat <<-EOF >> $IPTABLES_SCRIPT
+# Splunk Web UI
+iptables -t filter -A INPUT -p tcp --dport 8000 -j ACCEPT
+# Splunk Forwarder
+iptables -t filter -A INPUT -p tcp --dport 8089 -j ACCEPT
+iptables -t filter -A INPUT -p tcp --dport 9997 -j ACCEPT
+# Syslog (PA)
+iptables -t filter -A INPUT -p tcp --dport 514 -j ACCEPT
+EOF
+    fi
+
+    # Set firewall rules
+    chmod +x $IPTABLES_SCRIPT
+    bash $IPTABLES_SCRIPT
+
+    mkdir /etc/iptables
+
+    # Save the rules
+    iptables-save > /etc/iptables/rules.v4
+
+    #Disable firewalld
+    systemctl stop firewalld
+    systemctl disable firewalld
+
+    # Create a systemd service to load the rules on boot (as a fallback for iptables-save)
+    mkdir -p /etc/systemd/system/
+    cat <<-EOF > /etc/systemd/system/ccdc_firewall.service
 [Unit]
 Description=ZDSFirewall
 After=syslog.target network.target
@@ -383,12 +390,6 @@ EOF
 }
 
 securePermissions() {
-  # Secure Splunk configurations
-  echo -e "\e[33mSecuring Splunk configurations\e[0m"
-  chmod -R 700 "$SPLUNK_HOME/etc/system/local"
-  chmod -R 700 "$SPLUNK_HOME/etc/system/default"
-  chown -R splunk:splunk "$SPLUNK_HOME/etc"
-
   # Secure system permissions
   # Fix permissions (just in case)
   chown root:root /etc/group
@@ -449,7 +450,7 @@ setDNS() {
   echo -e "\e[33mSetting DNS\e[0m"
   
   INTERFACE=$(ip route | grep default | awk '{print $5}')
-  sed -i '/^dns=/c\dns=1.1.1.1;9.9.9.9;172.20.240.20' /etc/NetworkManager/system-connections/$INTERFACE.nmconnection # Replace the IPs as needed
+  sed -i '/^dns=/c\dns=1.1.1.1;9.9.9.9' /etc/NetworkManager/system-connections/$INTERFACE.nmconnection # Replace the IPs as needed
   systemctl restart NetworkManager
 }
 
@@ -457,19 +458,12 @@ setLegalBanners() {
   replace /etc motd general/legal_banner.txt
   replace /etc issue general/legal_banner.txt
   replace /etc issue.net general/legal_banner.txt
-
-#   cat > "$SPLUNK_HOME/etc/system/local/global-banner.conf" << EOF
-# [BANNER_MESSAGE_SINGLETON]
-# global_banner.visible = true
-# global_banner.message = WARNING: NO UNAUTHORIZED ACCESS. Unauthorized users will be prosecuted and tried to the furthest extent of the law!
-# global_banner.background_color = red
-# EOF
 }
 
 setupAuditd() {
   # Auditd setup
   # Download audit rules
-  wget $BASE_UEL/linux/splunk/audit.rules -O audit.rules --no-check-certificate
+  wget $BASE_UEL/linux/splunk/audit.rules -O audit.rules --no-check-certificate # Change to use Kayne's rules
   # Run auditd setup
   echo -e "\e[33mSetting up Auditd\e[0m"
   cat audit.rules >> /etc/audit/audit.rules
@@ -552,101 +546,6 @@ setSELinuxPolicy() {
   fi
 }
 
-disableVulnerableSplunkApps() {
-  # Disable vulnerable Splunk apps
-  echo -e "\e[33mDisabling vulnerable Splunk apps\e[0m"
-  echo "Enter Splunk Web UI admin password:"
-  read -s admin_password
-  $SPLUNK_HOME/bin/splunk disable app splunk_secure_gateway -auth admin:$admin_password
-  $SPLUNK_HOME/bin/splunk disable app splunk_archiver -auth admin:$admin_password
-}
-
-fixSplunkXMLParsingRCE() {
-  # Fix Splunk XML parsing RCE vulnerability
-  echo -e "\e[33mFixing Splunk XML parsing RCE vulnerability\e[0m"
-  cd /opt/splunk/etc/system/local
-  touch web.conf
-  echo -e "[settings]\nenableSearchJobXslt = false" >> web.conf
-  cd ~
-}
-
-################################
-##    End Security Configs    ##
-################################
-
-setSplunkRecievers() {
-  # Enable Splunk reciever
-  echo -e "\e[33mEnabling Splunk receivers\e[0m"
-  $SPLUNK_HOME/bin/splunk enable listen 9997 -auth admin:$password
-
-  cat > "$SPLUNK_HOME/etc/system/local/inputs.conf" << EOF
-#TCP input for Splunk forwarders (port 9997)
-#Commented out to see listener in WebUI
-[tcp://9997]
-index = main
-sourcetype = tcp:9997
-connection_host = dns
-disabled = false
-
-[tcp://514]
-sourcetype = pan:firewall
-no_appending_timestamp = true
-index = pan_logs
-EOF
-}
-
-setupPaloApps() {
-  #Add the index for Palo logs
-  $SPLUNK_HOME/bin/splunk add index pan_logs
-
-  # Install Palo Alto Networks apps
-  echo -e "\e[33mInstalling Palo Alto Networks apps\e[0m"
-
-  # Clone the Palo Alto splunk app
-  git clone https://github.com/PaloAltoNetworks/SplunkforPaloAltoNetworks.git SplunkforPaloAltoNetworks
-  mv SplunkforPaloAltoNetworks "$SPLUNK_HOME/etc/apps/"
-
-  # Clone the Palo Alto splunk add-on
-  git clone https://github.com/PaloAltoNetworks/Splunk_TA_paloalto.git Splunk_TA_paloalto
-  mv Splunk_TA_paloalto "$SPLUNK_HOME/etc/apps/"
-}
-
-disableDistrubutedSearch() {
-  echo -e "\e[33mDisabling distributed search\e[0m"
-  echo "[distributedSearch]" > $SPLUNK_HOME/etc/system/local/distsearch.conf
-  echo "disabled = true" >> $SPLUNK_HOME/etc/system/local/distsearch.conf
-}
-
-addMonitorFiles() {
-  echo -e "\e[33mAdding log files to monitor\e[0m"
-  # Add files to log
-  # Log files
-  monitor /var/log/syslog
-  monitor /var/log/messages
-  # SSH
-  monitor /var/log/auth.log
-  monitor /var/log/secure
-  # HTTP
-  monitor /var/log/httpd/
-  # MySQL
-  monitor /var/log/mysql.log
-  monitor /var/log/mysqld.log
-  # TODO: add more files
-}
-
-installGUI() {
-  # Install GUI
-  echo -e "\e[33mInstalling GUI\e[0m"
-  gui_installed=true
-  yum groupinstall "Server with GUI" -y || echo "\e[31mFailed to install GUI\e[0m" && gui_installed=false
-  if $gui_installed
-  then
-      yum install firefox -y
-      systemctl set-default graphical.target
-      systemctl isolate graphical.target
-  fi
-}
-
 bulkRemoveServices() {
   ## These are done after the gui is installed as the gui sometimes reinstalls some of these services
   # Bulk remove services
@@ -720,15 +619,19 @@ setupIPv6() {
   # Check if changes were already made to the network config file
   if grep -q "IPV6INIT=yes" /etc/sysconfig/network-scripts/ifcfg-eth0
   then
-      echo "Network config file already has IPv6 settings"
+    echo "Network config file already has IPv6 settings"
   else
-      echo "Setting up IPv6..."
-      # get the interface name
-      INTERFACE=$(ip route | grep default | awk '{print $5}')
-      echo "IPV6INIT=yes" >> /etc/sysconfig/network-scripts/ifcfg-$INTERFACE
-      echo "IPV6ADDR=fd00:3::60/64" >> /etc/sysconfig/network-scripts/ifcfg-$INTERFACE
-      echo "IPV6_DEFAULTGW=fd00:3::1" >> /etc/sysconfig/network-scripts/ifcfg-$INTERFACE
-      systemctl restart network
+    echo "Setting up IPv6..."
+    echo "Enter the IPv6 address: "
+    read addr
+    echo "Enter the default gateway: "
+    read dgw
+    # get the interface name
+    INTERFACE=$(ip route | grep default | awk '{print $5}')
+    echo "IPV6INIT=yes" >> /etc/sysconfig/network-scripts/ifcfg-$INTERFACE
+    echo "IPV6ADDR=$addr" >> /etc/sysconfig/network-scripts/ifcfg-$INTERFACE
+    echo "IPV6_DEFAULTGW=$dgw" >> /etc/sysconfig/network-scripts/ifcfg-$INTERFACE
+    systemctl restart network
   fi
 }
 
@@ -774,8 +677,6 @@ fi
 
 changePasswords
 createNewAdmin
-webUIPassword
-disableSketchyTokens
 installTools
 backup
 lockUnusedAccounts
@@ -795,14 +696,6 @@ disableCoreDumps
 secureSysctl
 secureGrub
 setSELinuxPolicy
-disableVulnerableSplunkApps
-fixSplunkXMLParsingRCE
-setSplunkRecievers
-setupPaloApps
-disableDistrubutedSearch
-restartSplunk
-addMonitorFiles
-installGUI
 disableRootSSH
 bulkRemoveServices
 bulkDisableServices
@@ -810,55 +703,4 @@ setupIPv6
 initilizeClamAV
 backup
 
-echo "\e[32mSplunk setup complete. Reboot to apply changes and clear in-memory beacons.\e[0m"
-
-# Only in a function so I can collapse this in my editor
-functionList() {
-  # List of all current functions (as of last commit)
-  # changePasswords
-  # createNewAdmin
-  # webUIPassword
-  # disableSketchyTokens
-  # installTools
-  # lockUnusedAccounts
-  # secureRootLogin
-  # setUmask
-  # restrictUserCreation
-  # firewallSetup
-  # securePermissions
-  # cronAndAtSecurity
-  # stopSSH
-  # setupAIDE
-  # setDNS
-  # setLegalBanners
-  # setupAuditd
-  # disableUncommonProtocols
-  # disableCoreDumps
-  # secureSysctl
-  # secureGrub
-  # setSELinuxPolicy
-  # disableVulnerableSplunkApps
-  # fixSplunkXMLParsingRCE
-  # setSplunkRecievers
-  # setupPaloApps
-  # disableDistrubutedSearch
-  # addMonitorFiles
-  # installGUI
-  # bulkRemoveServices
-  # bulkDisableServices
-  # setupIPv6
-  # disableRootSSH
-  # initilizeClamAV
-
-  # List of helper functions
-  # backup
-  # restore
-  # get
-  # replace
-  # monitor
-  # restartSplunk
-
-  # List of functions that are not currently being used
-  # fixCentOSRepos
-  # init
-}
+echo "\e[Hardening complete. Reboot to apply changes and clear in-memory beacons.\e[0m"
