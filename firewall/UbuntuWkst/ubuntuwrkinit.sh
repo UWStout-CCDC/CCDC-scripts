@@ -7,6 +7,19 @@
 # 
 # Script to use during init of Ubuntu Workstation
 # Current OS: Ubuntu 20.04.6 LTS x86_64
+#      _                _                           _
+#     | |              | |                         (_)                                _____
+#   __| |  ___    _____| |       ___  ___       __  _  _____    ___    _____ ____    /  ___\
+#  / _` | / _ \  /   _/| |___   / _ \ \  \  _  /  /| | | __ \  / _ \  /  __/|  _ \  _| |_    
+# | (_| || |_| | \  \  |  __ \ | |_| | |  \/ \/  | | | | |_| || |_| | \  \  | |_| |[_   _]
+#  \__,_| \___/ |____/ |_,| |_| \___/   \___/\__/  |_| | ___/  \___/ |____/ | ___/   | |
+#                                                      | |                  | |      |_|
+#                                                      |_|                  |_|
+
+# Create Color code for error messages
+RED_COLOR_CODE=31
+GREEN_COLOR_CODE=32
+BLUE_COLOR_CODE=34
 
 if [[ $EUID -ne 0 ]]
 then
@@ -34,7 +47,7 @@ prompt() {
   case "$2" in 
     y) def="[Y/n]" ;;
     n) def="[y/N]" ;;
-    *) echo "INVALID PARAMETER!!!!"; exit ;;
+    *) echo "$(tput setaf RED_COLOR_CODE)INVALID PARAMETER!!!!$(tput sgr0)"; exit ;;
   esac
   read -p "$1 $def" ans
   case $ans in
@@ -45,19 +58,24 @@ prompt() {
 }
 
 # Copy scripts
-if [ ! -f "$CCDC_ETC/PAConfig.txt" ]; then
-  wget https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/refs/heads/firewall/firewall/PaloAlto/PAConfig.txt -O $CCDC_ETC/PAConfig.txt
+if [ ! -f "$CCDC_ETC/PAConfig.txt" ]; then # Check if the file exists
+  wget https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/refs/heads/master/firewall/PaloAlto/PAConfig.txt -O $CCDC_ETC/PAConfig.txt
 fi
 if [ ! -f "$SCRIPT_DIR/iptables.sh" ]; then
-  wget https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/refs/heads/firewall/firewall/UbuntuWkst/iptables.sh -O $SCRIPT_DIR/iptables.sh
+  wget https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/refs/heads/master/firewall/UbuntuWkst/iptables.sh -O $SCRIPT_DIR/iptables.sh
 fi
 if [ ! -f "$SCRIPT_DIR/ubuntuwrkinit.sh" ]; then
-  wget https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/refs/heads/firewall/firewall/UbuntuWkst/ubuntuwrkinit.sh -O $SCRIPT_DIR/ubuntuwrkinit.sh
+  wget https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/refs/heads/master/firewall/UbuntuWkst/ubuntuwrkinit.sh -O $SCRIPT_DIR/ubuntuwrkinit.sh
 fi
 if [ ! -f "$SCRIPT_DIR/monitor.sh" ]; then
-  wget https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/refs/heads/firewall/firewall/UbuntuWkst/monitor.sh -O $SCRIPT_DIR/monitor.sh
+  wget https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/refs/heads/master/firewall/UbuntuWkst/monitor.sh -O $SCRIPT_DIR/monitor.sh
 fi
-
+if [ ! -f "$SCRIPT_ETC/legal_banner.txt" ]; then
+  wget https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/refs/heads/master/general/legal_banner.txt -O $SCRIPT_DIR/legal_banner.txt
+fi
+if [ ! -f "$SCRIPT_DIR/clamavscan.sh" ]; then
+  wget https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/refs/heads/master/firewall/UbuntuWkst/clamavscan.sh -O $SCRIPT_DIR/clamavscan.sh
+fi
 # Make scripts executable
 chmod +x $SCRIPT_DIR/iptables.sh
 chmod +x $SCRIPT_DIR/ubuntuwrkinit.sh
@@ -65,7 +83,7 @@ chmod +x $SCRIPT_DIR/monitor.sh
 chmod +x $SCRIPT_DIR/clamavscan.sh
 
 # change password on workstation
-echo "Please change the password for the default admin account"
+echo "$(tput setaf BLUE_COLOR_CODE)Please change the password for the default admin account$(tput sgr0)"
 # user="USER INPUT"
 read -p "Enter user: " user
 passwd $user
@@ -74,11 +92,15 @@ passwd $user
 echo "Please change the password for the root account"
 passwd root
 
+# Set up legal banner
+echo "Setting up legal banner"
+cat $SCRIPT_DIR/legal_banner.txt > /etc/issue.net
+
 # update the system
 echo "Updating the system"
-sudo apt-get update
-sudo apt-get upgrade
-sudo apt-get dist-upgrade
+sudo apt-get update -y
+sudo apt-get upgrade -y
+sudo apt-get dist-upgrade -y
 
 if prompt "Would you like to change the current IP addressing?" y
 then
@@ -95,9 +117,9 @@ then
   ubuntuDNS="9.9.9.9"
 
   # IPv6 Addressing
-  ubuntuIPv6Addr="fd00:3::50"
+  ubuntuIPv6Addr="fd00:2::50"
   ubuntuIPv6Netmask="64"
-  ubuntuIPv6Gateway="fd00:3::1"
+  ubuntuIPv6Gateway="fd00:2::1"
 
   # Set the IP address
   echo "Setting IP address to $ubuntuIpAddr"
@@ -153,9 +175,30 @@ then
   fi
 fi
 
-# Kernel hardening
-echo "Kernel hardening"
-# TODO: Add kernel hardening steps here
+# Remove unnecessary packages
+echo "$(tput setaf BLUE_COLOR_CODE)Removing unnecessary packages$(tput sgr0)"
+# Remove LibreOffice, Thunderbird, Rhythmbox, Shotwell, and other unnecessary packages
+apt remove --purge libreoffice* thunderbird* rhythmbox* -y
+apt remove --purge shotwell* -y
+apt remove --purge gnome-2048 aisleriot atomix gnome-chess five-or-more hitori iagno gnome-klotski lightsoff gnome-mahjongg gnome-mines gnome-nibbles quadrapassel four-in-a-row gnome-robots gnome-sudoku swell-foop tali gnome-taquin gnome-tetravex -y && sudo apt autoremove -y
+apt remove --purge gnome-todo* -y
+apt remove --purge gnome-calendar* -y
+apt remove --purge gnome-weather* -y
+apt remove --purge gnome-maps* -y
+apt remove --purge gnome-photos* -y
+# Remove CUPS (Common Unix Printing System)
+apt-get remove --purge cups* -y
+# Remove Avahi (Zeroconf networking)
+apt-get remove --purge avahi* -y
+# Remove Bluetooth
+apt-get remove --purge bluez* -y
+# Remove unused programing languages
+apt-get remove --purge perl* ruby* -y # Leaving python for now
+
+# Hardening
+echo "Hardening the System"
+apt-get install debian-goodies debsums fail2ban -y
+
 
 echo "Script complete"
 echo "Please reboot the system"

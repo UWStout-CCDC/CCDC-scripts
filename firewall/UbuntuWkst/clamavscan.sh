@@ -6,6 +6,14 @@
 # Distributed under terms of the MIT license.
 # 
 # Script to scan for infected files using ClamAV in the specified directory
+#      _                _                           _
+#     | |              | |                         (_)                                _____
+#   __| |  ___    _____| |       ___  ___       __  _  _____    ___    _____ ____    /  ___\
+#  / _` | / _ \  /   _/| |___   / _ \ \  \  _  /  /| | | __ \  / _ \  /  __/|  _ \  _| |_    
+# | (_| || |_| | \  \  |  __ \ | |_| | |  \/ \/  | | | | |_| || |_| | \  \  | |_| |[_   _]
+#  \__,_| \___/ |____/ |_,| |_| \___/   \___/\__/  |_| | ___/  \___/ |____/ | ___/   | |
+#                                                      | |                  | |      |_|
+#                                                      |_|                  |_|
 
 # Specify the User
 USER="sysadmin"
