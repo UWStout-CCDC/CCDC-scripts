@@ -29,3 +29,57 @@ chmod +x init-splunk.sh
 
 ## audit.rules
 * Is used to apply a baseline of auditd rules once auditd is setup and installed
+
+
+# List of all current functions in "init-splunk.sh" (as of last commit)
+## Security Config Functions
+* changePasswords
+* createNewAdmin
+* updateSystem
+* installTools
+* lockUnusedAccounts
+* secureRootLogin
+* setUmask
+* restrictUserCreation
+* firewallSetup
+* securePermissions
+* cronAndAtSecurity
+* clearPromptCommand
+* stopSSH
+* setupAIDE
+* setDNS
+* setLegalBanners
+* setupAuditd
+* disableUncommonProtocols
+* disableCoreDumps
+* secureSysctl
+* secureGrub
+* setSELinuxPolicy
+* installGUI
+* bulkRemoveServices
+* bulkDisableServices
+* setupIPv6
+* disableRootSSH
+* initilizeClamAV
+
+## Splunk Specific Functions
+* webUIPassword
+* disableSketchyTokens
+* disableVulnerableSplunkApps
+* fixSplunkXMLParsingRCE
+* setSplunkRecievers
+* setupPaloApps
+* disableDistrubutedSearch
+* addMonitorFiles
+
+## List of helper functions
+* backup
+* restore
+* get
+* replace
+* monitor
+* restartSplunk
+
+## List of functions that are not currently being used
+* fixCentOSRepos
+* init
