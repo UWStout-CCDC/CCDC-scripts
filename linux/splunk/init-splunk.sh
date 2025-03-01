@@ -105,71 +105,83 @@ restore() {
 changePasswords() {
   echo -e "\e[33mChanging passwords\e[0m"
   # Set root password
-  while true; do
-      echo "Enter new root password: "
-      stty -echo
-      read rootPass
-      stty echo
-      echo "Confirm root password: "
-      stty -echo
-      read confirmRootPass
-      stty echo
+  echo "Change passwords? (y/n)"
+  read changePass
+  if [ "$changePass" == "y" ]; then
+    while true; do
+        echo "Enter new root password: "
+        stty -echo
+        read rootPass
+        stty echo
+        echo "Confirm root password: "
+        stty -echo
+        read confirmRootPass
+        stty echo
 
-      if [ "$rootPass" = "$confirmRootPass" ]; then
-          break
-      else
-          echo "Passwords do not match. Please try again."
-      fi
-  done
+        if [ "$rootPass" = "$confirmRootPass" ]; then
+            break
+        else
+            echo "Passwords do not match. Please try again."
+        fi
+    done
 
-  echo "root:$rootPass" | chpasswd
+    echo "root:$rootPass" | chpasswd
 
-  # Set sysadmin password
-  while true; do
-      echo "Enter new sysadmin password: "
-      stty -echo
-      read sysadminPass
-      stty echo
-      echo "Confirm sysadmin password: "
-      stty -echo
-      read confirmSysadminPass
-      stty echo
+    # Set sysadmin password
+    while true; do
+        echo "Enter new sysadmin password: "
+        stty -echo
+        read sysadminPass
+        stty echo
+        echo "Confirm sysadmin password: "
+        stty -echo
+        read confirmSysadminPass
+        stty echo
 
-      if [ "$sysadminPass" = "$confirmSysadminPass" ]; then
-          break
-      else
-          echo "Passwords do not match. Please try again."
-      fi
-  done
+        if [ "$sysadminPass" = "$confirmSysadminPass" ]; then
+            break
+        else
+            echo "Passwords do not match. Please try again."
+        fi
+    done
 
-  echo "sysadmin:$sysadminPass" | chpasswd
+    echo "sysadmin:$sysadminPass" | chpasswd
+  else 
+    echo "Skipping password change"
+  fi
 }
 
 createNewAdmin() {
   echo -e "\e[33mCreating new admin user\e[0m"
-  echo "Enter new admin username: "
-  read adminUser
-  useradd $adminUser
+  echo "Create new admin user? (y/n)"
+  read createAdmin
+  if [ "$createAdmin" == "y" ]; then
+    echo "Enter new admin username: "
+    read adminUser
+    useradd $adminUser
 
-  while true; do
-    echo "Enter password for user $adminUser:"
-    stty -echo
-    read pass
-    stty echo
-    echo "Confirm $adminUser password:"
-    stty -echo
-    read confirmPass
+    while true; do
+      echo "Enter password for user $adminUser:"
+      stty -echo
+      read pass
+      stty echo
+      echo "Confirm $adminUser password:"
+      stty -echo
+      read confirmPass
 
-    if [ "$pass" = "$confirmPass" ]; then
-        break
-    else
-        echo "Passwords do not match. Please try again."
-    fi
-  done
-  echo "$adminUser:$pass" | chpasswd
+      if [ "$pass" = "$confirmPass" ]; then
+          break
+      else
+          echo "Passwords do not match. Please try again."
+      fi
+    done
+    echo "$adminUser:$pass" | chpasswd
 
-  echo "Adding $adminUser sudo"
-  usermod -aG wheel $adminUser
+    echo "Adding $adminUser sudo"
+    usermod -aG wheel $adminUser
+  else
+    echo "Skipping admin user creation"
+  fi
 }
 
 webUIPassword() {
