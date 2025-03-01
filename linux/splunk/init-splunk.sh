@@ -213,15 +213,21 @@ disableSketchyTokens() {
   fi
 }
 
+updateSystem() {
+  # Update the system
+  echo -e "\e[33mUpdating system\e[0m"
+  yum update -y
+  yum autoremove -y
+}
+
 installTools() {
   # Install tools (if not already)
   echo -e "\e[33mInstalling tools\e[0m"
-  yum update -y
-  yum install epel-release iptables iptables-services wget git aide net-tools audit audit-libs rkhunter clamav -y
-  yum autoremove -y
+  yum install epel-release -y
+  yum install iptables iptables-services wget git aide net-tools audit audit-libs rkhunter clamav -y
 
   # Install Lynis
-  if [ ! -d /ccdc/lynis ]; then
+  if [ ! -f /ccdc/lynis ]; then
       cd /ccdc # Put lynis in a common location so it is not in the root home
       git clone https://github.com/CISOfy/lynis
       cd ~
@@ -484,10 +490,8 @@ setDNS() {
   # Set DNS
   echo -e "\e[33mSetting DNS\e[0m"
   INTERFACE=$(ip route | grep default | awk '{print $5}')
-  if ! grep -q "1.1.1.1" /etc/NetworkManager/system-connections/$INTERFACE.nmconnection; then
-    sed -i '/^dns=/c\dns=1.1.1.1;9.9.9.9;172.20.240.20' /etc/NetworkManager/system-connections/$INTERFACE.nmconnection # Replace the IPs as needed
-    systemctl restart NetworkManager
-  fi
+  sed -i '/^dns=/c\dns=1.1.1.1;9.9.9.9;172.20.240.20' /etc/NetworkManager/system-connections/$INTERFACE.nmconnection # Replace the IPs as needed
+  systemctl restart NetworkManager
 }
 
 setLegalBanners() {
@@ -510,8 +514,8 @@ setupAuditd() {
   # Run auditd setup
   echo -e "\e[33mSetting up Auditd\e[0m"
   cat audit.rules > /etc/audit/audit.rules
-  systemctl enable auditd.service
   systemctl start auditd.service
+  systemctl enable auditd.service
 }
 
 disableUncommonProtocols() {
@@ -590,7 +594,7 @@ setSELinuxPolicy() {
   # Ensure SELinux is enabled and enforcing
   # Check if SELINUX is already set to enforcing
   echo -e "\e[33mSetting SELinux to enforcing\e[0m"
-  if ! grep -q SELINUX=enforcing /etc/selinux/config
+  if [ ! grep -q SELINUX=enforcing /etc/selinux/config ]; then
     sed -i 's/SELINUX=disabled/SELINUX=enforcing/g' /etc/selinux/config
   fi
 }
@@ -612,7 +616,7 @@ fixSplunkXMLParsingRCE() {
     touch web.conf
   fi
 
-  if ! grep -q "enableSearchJobXslt = false" web.conf; then
+  if [ ! grep -q "enableSearchJobXslt = false" web.conf ]; then
     echo -e "[settings]\nenableSearchJobXslt = false" >> web.conf
   fi
   cd ~
@@ -858,6 +862,7 @@ setupPaloApps
 disableDistrubutedSearch
 restartSplunk
 addMonitorFiles
+updateSystem
 installGUI
 disableRootSSH
 bulkRemoveServices
@@ -865,6 +870,9 @@ bulkDisableServices
 setupIPv6
 initilizeClamAV
 backup
+
+# End the script logging
+exec 2>&1
 
 echo "\e[32mSplunk setup complete. Reboot to apply changes and clear in-memory beacons.\e[0m"
 
@@ -875,6 +883,7 @@ functionList() {
   # Security Config Functions
   # changePasswords
   # createNewAdmin
+  # updateSystem
   # installTools
   # lockUnusedAccounts
   # secureRootLogin
