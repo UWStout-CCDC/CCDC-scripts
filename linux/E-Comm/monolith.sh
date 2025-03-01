@@ -61,7 +61,7 @@
 # - mysql_restore.sh - Restores the mysql database backup created by the backup.sh script (If Prestashop is found to be on the system)
 
 
-# https://raw.githubusercontent.com/NotEnoughAuth/e-comm/master/monolith.sh
+# https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/feature/monolith/linux/E-Comm/monolith.sh
 
 # Check if the script is being run as root
 if [[ $EUID -ne 0 ]]
@@ -1599,7 +1599,7 @@ harden() {
     fi
 
     # Disable support for RPC IPv6
-    if [ -f /etc/netconfig ]:
+    if [ -f /etc/netconfig ]; then
         if grep -q "udp6" /etc/netconfig
         then
             echo "Support for RPC IPv6 already disabled"
