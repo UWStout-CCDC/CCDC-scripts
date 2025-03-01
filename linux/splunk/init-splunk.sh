@@ -856,13 +856,17 @@ setupIPv6() {
 disableRootSSH() {
   # Disable root SSH
   echo -e "\e[33mDisabling root SSH\e[0m"
-  sed -i 's/PermitRootLogin yes/PermitRootLogin no/g' /etc/ssh/sshd_config
+  if ! grep -q "PermitRootLogin yes" /etc/ssh/sshd_config; then
+    sed -i 's/PermitRootLogin yes/PermitRootLogin no/g' /etc/ssh/sshd_config
+  fi
 }
 
 initilizeClamAV() {
   # Initialize ClamAV
   echo -e "\e[33mInitializing ClamAV\e[0m"
-  freshclam
+  if [ which freshclam ]; then
+    freshclam
+  fi
 }
 
 ##########################
