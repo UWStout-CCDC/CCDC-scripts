@@ -1828,7 +1828,7 @@ install_packages() {
 
     if [ $(which yum ) ]; then
         yum install epel-release -y
-        yum install screen nc aide clamav tmux lynis auditd dialog -y
+        yum install screen nc aide clamav tmux lynis audit audit-libs dialog -y
         sendLog "Extra packages installed"
     elif [ $(which apt-get) ]; then
         apt-get install screen netcat aide clamav tmux lynis auditd dialog -y
@@ -1837,7 +1837,7 @@ install_packages() {
             apt-get install docker.io docker docker-compose -y
         fi
     elif [ $(which dnf) ]; then
-        dnf install screen netcat aide clamav tmux lynis auditd dialog -y
+        dnf install screen netcat aide clamav tmux lynis audit dialog -y
         sendLog "Extra packages installed"
     fi
 }
@@ -1902,8 +1902,8 @@ initialize_auditd(){
         attempts=$((attempts + 1))
     done
 
-    rm /etc/audit/rules.d/audit.rules
-    mv audit.rules audit.rules /etc/audit/rules.d/
+    # rm /etc/audit/rules.d/audit.rules
+    cp audit.rules /etc/audit/rules.d/audit.rules
     # CHANGE VALUE TO RefuseManualStop=no
     if grep -q "RefuseManualStop=no" /usr/lib/systemd/system/auditd.service
     then
