@@ -560,6 +560,11 @@ secureSysctl() {
   # Secure sysctl.conf
   # Rules are based off expected vaules from Lynis
   echo -e "\e[33mSecuring sysctl.conf\e[0m"
+
+  if [ ! -f /etc/sysctl.conf ]; then
+    touch /etc/sysctl.conf
+  fi
+
   cat <<-EOF > /etc/sysctl.conf
 fs.suid_dumpable = 0
 kernel.exec_shield = 1
