@@ -174,8 +174,9 @@ createNewAdmin() {
 
 webUIPassword() {
   # Changing default Splunk Web UI admin password
-  echo "Enter Splunk Web UI admin password:"
-  read -s admin_password
+  # echo "Enter Splunk Web UI admin password:"
+  # read -s admin_password
+  admin_password="changeme"
   echo "Enter new Splunk Web UI admin password:"
   read -s password
   $SPLUNK_HOME/bin/splunk edit user admin -auth admin:$admin_password -password $password
