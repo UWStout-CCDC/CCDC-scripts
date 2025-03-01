@@ -16,7 +16,6 @@
 # - TEST THE SCRIPT IN ENVIRONMENT
 # - Make the script more monolithic
 # - Double check I am not missing anything from SEMO, init.sh, or other scripts
-# - Update auditd.rules to use new rule set
 # - Put splunk functions in a category for easier reading
 
 ################################
@@ -204,9 +203,15 @@ disableSketchyTokens() {
   # Disabling sketchy auth tokens
   # Move auth tokens to temp directory to disable them
   echo -e "\e[33mDisabling sketchy auth tokens\e[0m"
-  mkdir /tmp/sketchy_tokens
-  mv /root/.xauth* /tmp/sketchy_tokens
-  mv /root/.splunk/authToken_splunk_8089 /tmp/sketchy_tokens
+  if [ ! -d /tmp/sketchy_tokens ]; then
+    mkdir -p /tmp/sketchy_tokens
+  fi
+  if [ -f /root/.xauth* ]; then
+    mv /root/.xauth* /tmp/sketchy_tokens
+  fi
+  if [ -f /root/.splunk/authToken_splunk_8089 ]; then
+    mv /root/.splunk/authToken_splunk_8089 /tmp/sketchy_tokens
+  fi
 }
 
 installTools() {
@@ -215,11 +220,19 @@ installTools() {
   yum update -y
   yum install epel-release iptables iptables-services wget git aide net-tools audit audit-libs rkhunter clamav -y
   yum autoremove -y
-  cd /ccdc # Put lynis in a common location so it is not in the root home
-  git clone https://github.com/CISOfy/lynis
-  cd ~
-  wget $BASEURL/linux/monitor/monitor.sh -O /ccdc/scripts/monitor.sh --no-check-certificate
-  chmod +x /ccdc/scripts/monitor.sh
+
+  # Install Lynis
+  if [ ! -d /ccdc/lynis ]; then
+      cd /ccdc # Put lynis in a common location so it is not in the root home
+      git clone https://github.com/CISOfy/lynis
+      cd ~
+  fi
+
+  # Install Monitor Script
+  if [ ! -f /ccdc/scripts/monitor.sh ]; then
+      get linux/monitor/monitor.sh
+      chmod +x /ccdc/scripts/monitor.sh
+  fi
 }
 
 # Dont want to use init.sh anymore, will use individual functions instead, avoids needing to download a dependency
@@ -248,32 +261,36 @@ EOF
   chmod a=rx $NOLOGIN
   # Get a list of users from /etc/passwd, and allow the user to select what users to keep with a simple yes/no prompt
   while read -r line; do
-      # Get the username
-      username=$(echo $line | cut -d: -f1)
-      # Check if the user is root
-      if [ "$username" == "root" ] || [ "$username" == "sysadmin" ] || [ "$username" == "splunkadmin" ]; then
-          # Skip the root user and the sysadmin user
-          continue
-      fi
-      # Ask the user if they want to keep the user only if the user can login
-      if [ $(echo $line | cut -d: -f7) != "/sbin/nologin" ] || [ $(echo $line | cut -d: -f7) != "$NOLOGIN" ]; then
-          usermod -s $NOLOGIN $username
-          passwd -l $username
-      fi
-    done < /etc/passwd
+    # Get the username
+    username=$(echo $line | cut -d: -f1)
+    # Check if the user is root
+    if [ "$username" == "root" ] || [ "$username" == "sysadmin" ] || [ "$username" == "splunkadmin" ]; then
+      # Skip the root user and the sysadmin user
+      continue
+    fi
+    # Ask the user if they want to keep the user only if the user can login
+    if [ $(echo $line | cut -d: -f7) != "/sbin/nologin" ] || [ $(echo $line | cut -d: -f7) != "$NOLOGIN" ]; then
+      usermod -s $NOLOGIN $username
+      passwd -l $username
+    fi
+  done < /etc/passwd
 }
 
 secureRootLogin() {
   # Only allow root login from console
   echo -e "\e[33mSecuring root login\e[0m"
-  echo "tty1" > /etc/securetty
+  if ! grep -q "^tty1$" /etc/securetty; then
+    echo "tty1" >> /etc/securetty
+  fi
   chmod 700 /root
 }
 
 setUmask() {
   # Enable UMASK 077
   echo -e "\e[33mSetting UMASK\e[0m"
-  echo "umask 077" >> /etc/bashrc
+  if ! grep -q "^umask 077" /etc/bashrc; then
+    echo "umask 077" >> /etc/bashrc
+  fi
   umask 077
 }
 
@@ -355,7 +372,9 @@ EOF
   chmod +x $IPTABLES_SCRIPT
   bash $IPTABLES_SCRIPT
 
-  mkdir /etc/iptables
+  if [ ! -d /etc/iptables ]; then
+    mkdir /etc/iptables
+  fi
 
   # Save the rules
   iptables-save > /etc/iptables/rules.v4
@@ -365,7 +384,9 @@ EOF
   systemctl disable firewalld
 
   # Create a systemd service to load the rules on boot (as a fallback for iptables-save)
-  mkdir -p /etc/systemd/system/
+  if [ ! -d /etc/systemd/system/ ]; then
+    mkdir -p /etc/systemd/system/
+  fi
   cat <<-EOF > /etc/systemd/system/ccdc_firewall.service
 [Unit]
 Description=ZDSFirewall
@@ -380,6 +401,10 @@ RemainAfterExit=yes
 [Install]
 WantedBy=multi-user.target
 EOF
+
+  # Enable the service
+  systemctl enable ccdc_firewall.service
+  systemctl start ccdc_firewall.service
 }
 
 securePermissions() {
@@ -409,15 +434,27 @@ cronAndAtSecurity() {
   # Cron and AT security
   echo -e "\e[33mSetting cron and at security\e[0m"
   echo "Locking down Cron"
-  touch /etc/cron.allow
+  if [ ! -f /etc/cron.allow ]; then
+    touch /etc/cron.allow
+  fi
   chmod 600 /etc/cron.allow
   awk -F: '{print $1}' /etc/passwd | grep -v root > /etc/cron.deny
+
   echo "Locking down AT"
-  touch /etc/at.allow
+  if [ ! -f /etc/at.allow ]; then
+    touch /etc/at.allow
+  fi
   chmod 600 /etc/at.allow
   awk -F: '{print $1}' /etc/passwd | grep -v root > /etc/at.deny
 
+  # Clear out cron jobs
   echo "" > /etc/crontab
+}
+
+clearPromptCommand() {
+  # Clear the prompt command
+  echo -e "\e[33mClearing prompt command\e[0m"
+  unset PROMPT_COMMAND
 }
 
 stopSSH() {
@@ -447,10 +484,11 @@ setupAIDE() {
 setDNS() {
   # Set DNS
   echo -e "\e[33mSetting DNS\e[0m"
-  
   INTERFACE=$(ip route | grep default | awk '{print $5}')
-  sed -i '/^dns=/c\dns=1.1.1.1;9.9.9.9;172.20.240.20' /etc/NetworkManager/system-connections/$INTERFACE.nmconnection # Replace the IPs as needed
-  systemctl restart NetworkManager
+  if ! grep -q "1.1.1.1" /etc/NetworkManager/system-connections/$INTERFACE.nmconnection; then
+    sed -i '/^dns=/c\dns=1.1.1.1;9.9.9.9;172.20.240.20' /etc/NetworkManager/system-connections/$INTERFACE.nmconnection # Replace the IPs as needed
+    systemctl restart NetworkManager
+  fi
 }
 
 setLegalBanners() {
@@ -469,10 +507,10 @@ setLegalBanners() {
 setupAuditd() {
   # Auditd setup
   # Download audit rules
-  wget $BASE_UEL/linux/splunk/audit.rules -O audit.rules --no-check-certificate
+  wget $BASE_URL/linux/CustomAudit.rules -O audit.rules --no-check-certificate
   # Run auditd setup
   echo -e "\e[33mSetting up Auditd\e[0m"
-  cat audit.rules >> /etc/audit/audit.rules
+  cat audit.rules > /etc/audit/audit.rules
   systemctl enable auditd.service
   systemctl start auditd.service
 }
@@ -480,23 +518,33 @@ setupAuditd() {
 disableUncommonProtocols() {
   # Disable uncommon protocols
   echo -e "\e[33mDisabling uncommon protocols\e[0m"
-  echo "install dccp /bin/false" >> /etc/modprobe.d/dccp.conf
-  echo "install sctp /bin/false" >> /etc/modprobe.d/sctp.conf
-  echo "install rds /bin/false" >> /etc/modprobe.d/rds.conf
-  echo "install tipc /bin/false" >> /etc/modprobe.d/tipc.conf
+  if ! grep -q "install dccp /bin/false" /etc/modprobe.d/dccp.conf; then
+    echo "install dccp /bin/false" >> /etc/modprobe.d/dccp.conf
+  fi
+  if ! grep -q "install sctp /bin/false" /etc/modprobe.d/sctp.conf; then
+    echo "install sctp /bin/false" >> /etc/modprobe.d/sctp.conf
+  fi
+  if ! grep -q "install rds /bin/false" /etc/modprobe.d/rds.conf; then
+    echo "install rds /bin/false" >> /etc/modprobe.d/rds.conf
+  fi
+  if ! grep -q "install tipc /bin/false" /etc/modprobe.d/tipc.conf; then
+    echo "install tipc /bin/false" >> /etc/modprobe.d/tipc.conf
+  fi
 }
 
 disableCoreDumps() {
   # Disable core dumps for users
   echo -e "\e[33mDisabling core dumps for users\e[0m"
-  echo "* hard core 0" >> /etc/security/limits.conf
+  if ! grep -q "^* hard core 0" /etc/security/limits.conf; then
+    echo "* hard core 0" >> /etc/security/limits.conf
+  fi
 }
 
 secureSysctl() {
   # Secure sysctl.conf
   # Rules are based off expected vaules from Lynis
   echo -e "\e[33mSecuring sysctl.conf\e[0m"
-  cat <<-EOF >> /etc/sysctl.conf
+  cat <<-EOF > /etc/sysctl.conf
 fs.suid_dumpable = 0
 kernel.exec_shield = 1
 kernel.randomize_va_space = 2
@@ -543,12 +591,8 @@ setSELinuxPolicy() {
   # Ensure SELinux is enabled and enforcing
   # Check if SELINUX is already set to enforcing
   echo -e "\e[33mSetting SELinux to enforcing\e[0m"
-  if grep -q SELINUX=enforcing /etc/selinux/config
-  then
-      echo "SELINUX already set to enforcing"
-  else
-      echo "Setting SELINUX to enforcing..."
-      sed -i 's/SELINUX=disabled/SELINUX=enforcing/g' /etc/selinux/config
+  if ! grep -q SELINUX=enforcing /etc/selinux/config
+    sed -i 's/SELINUX=disabled/SELINUX=enforcing/g' /etc/selinux/config
   fi
 }
 
@@ -565,8 +609,13 @@ fixSplunkXMLParsingRCE() {
   # Fix Splunk XML parsing RCE vulnerability
   echo -e "\e[33mFixing Splunk XML parsing RCE vulnerability\e[0m"
   cd /opt/splunk/etc/system/local
-  touch web.conf
-  echo -e "[settings]\nenableSearchJobXslt = false" >> web.conf
+  if [ ! -f web.conf ]; then
+    touch web.conf
+  fi
+
+  if ! grep -q "enableSearchJobXslt = false" web.conf; then
+    echo -e "[settings]\nenableSearchJobXslt = false" >> web.conf
+  fi
   cd ~
 }
 
@@ -579,7 +628,7 @@ setSplunkRecievers() {
   echo -e "\e[33mEnabling Splunk receivers\e[0m"
   $SPLUNK_HOME/bin/splunk enable listen 9997 -auth admin:$password
 
-  cat > "$SPLUNK_HOME/etc/system/local/inputs.conf" << EOF
+  cat <<-EOF > "$SPLUNK_HOME/etc/system/local/inputs.conf"
 #TCP input for Splunk forwarders (port 9997)
 #Commented out to see listener in WebUI
 [tcp://9997]
@@ -602,19 +651,25 @@ setupPaloApps() {
   # Install Palo Alto Networks apps
   echo -e "\e[33mInstalling Palo Alto Networks apps\e[0m"
 
-  # Clone the Palo Alto splunk app
-  git clone https://github.com/PaloAltoNetworks/SplunkforPaloAltoNetworks.git SplunkforPaloAltoNetworks
-  mv SplunkforPaloAltoNetworks "$SPLUNK_HOME/etc/apps/"
+  # Check if the Palo Alto Splunk app exists, if not, clone it
+  if [ ! -d "$SPLUNK_HOME/etc/apps/SplunkforPaloAltoNetworks" ]; then
+    git clone https://github.com/PaloAltoNetworks/SplunkforPaloAltoNetworks.git SplunkforPaloAltoNetworks
+    mv SplunkforPaloAltoNetworks "$SPLUNK_HOME/etc/apps/"
+  fi
 
-  # Clone the Palo Alto splunk add-on
-  git clone https://github.com/PaloAltoNetworks/Splunk_TA_paloalto.git Splunk_TA_paloalto
-  mv Splunk_TA_paloalto "$SPLUNK_HOME/etc/apps/"
+  # Check if the Palo Alto Splunk add-on exists, if not, clone it
+  if [ ! -d "$SPLUNK_HOME/etc/apps/Splunk_TA_paloalto" ]; then
+    git clone https://github.com/PaloAltoNetworks/Splunk_TA_paloalto.git Splunk_TA_paloalto
+    mv Splunk_TA_paloalto "$SPLUNK_HOME/etc/apps/"
+  fi
 }
 
 disableDistrubutedSearch() {
   echo -e "\e[33mDisabling distributed search\e[0m"
-  echo "[distributedSearch]" > $SPLUNK_HOME/etc/system/local/distsearch.conf
-  echo "disabled = true" >> $SPLUNK_HOME/etc/system/local/distsearch.conf
+  if ! grep -q "disabled = true" $SPLUNK_HOME/etc/system/local/distsearch.conf; then
+    echo "[distributedSearch]" > $SPLUNK_HOME/etc/system/local/distsearch.conf
+    echo "disabled = true" >> $SPLUNK_HOME/etc/system/local/distsearch.conf
+  fi
 }
 
 addMonitorFiles() {
@@ -641,9 +696,9 @@ installGUI() {
   yum groupinstall "Server with GUI" -y || echo "\e[31mFailed to install GUI\e[0m" && gui_installed=false
   if $gui_installed
   then
-      yum install firefox -y
-      systemctl set-default graphical.target
-      systemctl isolate graphical.target
+    yum install firefox -y
+    systemctl set-default graphical.target
+    systemctl isolate graphical.target
   fi
 }
 
@@ -720,15 +775,15 @@ setupIPv6() {
   # Check if changes were already made to the network config file
   if grep -q "IPV6INIT=yes" /etc/sysconfig/network-scripts/ifcfg-eth0
   then
-      echo "Network config file already has IPv6 settings"
+    echo "Network config file already has IPv6 settings"
   else
-      echo "Setting up IPv6..."
-      # get the interface name
-      INTERFACE=$(ip route | grep default | awk '{print $5}')
-      echo "IPV6INIT=yes" >> /etc/sysconfig/network-scripts/ifcfg-$INTERFACE
-      echo "IPV6ADDR=fd00:3::60/64" >> /etc/sysconfig/network-scripts/ifcfg-$INTERFACE
-      echo "IPV6_DEFAULTGW=fd00:3::1" >> /etc/sysconfig/network-scripts/ifcfg-$INTERFACE
-      systemctl restart network
+    echo "Setting up IPv6..."
+    # get the interface name
+    INTERFACE=$(ip route | grep default | awk '{print $5}')
+    echo "IPV6INIT=yes" >> /etc/sysconfig/network-scripts/ifcfg-$INTERFACE
+    echo "IPV6ADDR=fd00:3::60/64" >> /etc/sysconfig/network-scripts/ifcfg-$INTERFACE
+    echo "IPV6_DEFAULTGW=fd00:3::1" >> /etc/sysconfig/network-scripts/ifcfg-$INTERFACE
+    systemctl restart network
   fi
 }
 
@@ -785,6 +840,7 @@ restrictUserCreation
 firewallSetup
 securePermissions
 cronAndAtSecurity
+clearPromptCommand
 stopSSH
 setupAIDE
 setDNS
@@ -815,10 +871,10 @@ echo "\e[32mSplunk setup complete. Reboot to apply changes and clear in-memory b
 # Only in a function so I can collapse this in my editor
 functionList() {
   # List of all current functions (as of last commit)
+
+  # Security Config Functions
   # changePasswords
   # createNewAdmin
-  # webUIPassword
-  # disableSketchyTokens
   # installTools
   # lockUnusedAccounts
   # secureRootLogin
@@ -827,6 +883,7 @@ functionList() {
   # firewallSetup
   # securePermissions
   # cronAndAtSecurity
+  # clearPromptCommand
   # stopSSH
   # setupAIDE
   # setDNS
@@ -837,18 +894,22 @@ functionList() {
   # secureSysctl
   # secureGrub
   # setSELinuxPolicy
-  # disableVulnerableSplunkApps
-  # fixSplunkXMLParsingRCE
-  # setSplunkRecievers
-  # setupPaloApps
-  # disableDistrubutedSearch
-  # addMonitorFiles
   # installGUI
   # bulkRemoveServices
   # bulkDisableServices
   # setupIPv6
   # disableRootSSH
   # initilizeClamAV
+
+  # Splunk Specific Functions
+  # webUIPassword
+  # disableSketchyTokens
+  # disableVulnerableSplunkApps
+  # fixSplunkXMLParsingRCE
+  # setSplunkRecievers
+  # setupPaloApps
+  # disableDistrubutedSearch
+  # addMonitorFiles
 
   # List of helper functions
   # backup
