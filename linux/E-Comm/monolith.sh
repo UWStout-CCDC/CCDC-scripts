@@ -1314,6 +1314,44 @@ EOF
     sendLog "Backup copied to $BKP_DIR"
 }
 
+chroot_config() {
+    #////////////////////////////////////////
+    # Chroot Configuration for Apache
+    #////////////////////////////////////////
+    # This function will configure Apache to run in a chroot jail, we can do this pretty easily in the apache config file
+    # We gonna chroot the /var/www/html directory
+
+    # Get the apache config file
+    if [ -d "/etc/httpd" ]; then
+        APACHE_CONFIG="/etc/httpd/conf/httpd.conf"
+    elif [ -d "/etc/apache2" ]; then
+        APACHE_CONFIG="/etc/apache2/apache2.conf"
+    fi
+
+    # Check if chroot is already enabled
+    if [ -z "$(grep -i 'ChrootDir /var/www/html' $APACHE_CONFIG)" ]; then
+        echo "Adding configuration to enable chroot..."
+        echo "ChrootDir /var/www/html" >> $APACHE_CONFIG
+        sendLog "Chroot enabled"
+    fi
+
+    # check if document root is set to /var/www/html
+    if [ -z "$(grep -i 'DocumentRoot /var/www/html' $APACHE_CONFIG)" ]; then
+        echo "Adding configuration to set DocumentRoot to /var/www/html..."
+        sed -i 's/^\([[:space:]]*DocumentRoot\)[[:space:]]*.*$/\1 \/var\/www\/html/g' $APACHE_CONFIG
+        sendLog "DocumentRoot set to /var/www/html"
+    fi
+
+    # Restart apache
+    if [ -d "/etc/httpd" ]; then
+        systemctl restart httpd
+        sendLog "Apache restarted"
+    elif [ -d "/etc/apache2" ]; then
+        systemctl restart apache2
+        sendLog "Apache restarted"
+    fi
+}
+
 cronjail() {
     #////////////////////////////////////////
     # cronjail
@@ -1850,7 +1888,20 @@ initialize_auditd(){
     # Install and Configure Auditd
     systemctl enable auditd
     systemctl start auditd
-    wget raw.githubusercontent.com/Neo23x0/auditd/refs/heads/master/audit.rules
+    # wget raw.githubusercontent.com/Neo23x0/auditd/refs/heads/master/audit.rules
+    attempts=0
+    while [ ! -f ./audit.rules ] || [ ! -s ./audit.rules ]; do
+        if [ $attempts -ge 5 ]; then
+            echo "Failed to download audit.rules after 5 attempts, exiting..."
+            sendError "Failed to download audit.rules"
+            exit 1
+        fi
+        echo "Waiting for audit.rules to be created..."
+        wget $BASEURL/linux/CustomAudit.rules -O audit.rules
+        sleep 1
+        attempts=$((attempts + 1))
+    done
+
     rm /etc/audit/rules.d/audit.rules
     mv audit.rules audit.rules /etc/audit/rules.d/
     # CHANGE VALUE TO RefuseManualStop=no
@@ -1866,6 +1917,8 @@ initialize_auditd(){
     systemctl restart auditd
     service auditd restart
     systemctl daemon-reload
+
+    sendLog "Auditd configured"
 }
 
 install_additional_scripts() {
@@ -1873,12 +1926,14 @@ install_additional_scripts() {
         # Install monitor script
         wget $BASEURL/linux/E-Comm/monitor.sh -O /ccdc/scripts/monitor.sh
         chmod +x /ccdc/scripts/linux/monitor.sh
+        sendLog "Monitor script installed"
     fi
 
     if [ ! -f /ccdc/scripts/update_apache.sh ]; then
         # Install apache_update script
         wget $BASEURL/linux/E-Comm/update_apache.sh -O /ccdc/scripts/update_apache.sh
         chmod +x /ccdc/scripts/linux/update_apache.sh
+        sendLog "Apache update script installed"
     fi
 }
 
@@ -2125,6 +2180,8 @@ iptables_config
 
 if [ "$APACHE" == "true" ]; then
     prestashop_config
+    chroot_config
+    modsecurity
 fi
 
 legalese

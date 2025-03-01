@@ -82,6 +82,9 @@ fi
 if [ ! -f /ccdc/scripts/monitor/monitor_http.sh ]; then
   wget $BASE_URL/linux/E-Comm/monitor/monitor_http.sh -O /ccdc/scripts/monitor/monitor_http.sh
 fi
+if [ ! -f /ccdc/scripts/monitor/service-check.sh ]; then
+  wget $BASE_URL/linux/E-Comm/monitor/service-check.sh -O /ccdc/scripts/monitor/service-check.sh
+fi
 
 # Create a new tmux session
 tmux new-session -d -s monitor
@@ -97,6 +100,7 @@ tmux new-window -t monitor:7 -n "processes" "bash /ccdc/scripts/monitor/processe
 tmux new-window -t monitor:8 -n "monitor_bash_files" "bash /ccdc/scripts/monitor/monitor_bash_files.sh"
 tmux new-window -t monitor:9 -n "active_services" "bash /ccdc/scripts/monitor/monitor_services.sh"
 tmux new-window -t monitor:10 -n "Non SE Logs" "bash /ccdc/scripts/monitor/monitor_http.sh"
+tmux new-window -t monitor:11 -n "service-check" "bash /ccdc/scripts/monitor/service-check.sh"
 
 
 # attach to the tmux session
