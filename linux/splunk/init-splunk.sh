@@ -839,13 +839,13 @@ bulkDisableServices() {
 
 setupIPv6() {
   # Check if changes were already made to the network config file
-  if grep -q "IPV6INIT=yes" /etc/sysconfig/network-scripts/ifcfg-eth0
+  if grep -q "IPV6INIT=yes" /etc/sysconfig/network-scripts/ifcfg-*;
   then
     echo "Network config file already has IPv6 settings"
   else
     echo "Setting up IPv6..."
     # get the interface name
-    INTERFACE=$(ip route | grep default | awk '{print $5}')
+    INTERFACE=$(ip a | grep "2: " | awk '{print $2}' | cut -d: -f1)
     echo "IPV6INIT=yes" >> /etc/sysconfig/network-scripts/ifcfg-$INTERFACE
     echo "IPV6ADDR=fd00:3::60/64" >> /etc/sysconfig/network-scripts/ifcfg-$INTERFACE
     echo "IPV6_DEFAULTGW=fd00:3::1" >> /etc/sysconfig/network-scripts/ifcfg-$INTERFACE
