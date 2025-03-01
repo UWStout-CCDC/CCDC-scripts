@@ -823,9 +823,10 @@ fi
 ##   Main Runnables  ##
 #######################
 
-# Add function calls in order of how you want them executed here
-# Add the functions themselves above
+# Start script error logging
+exec 2> /ccdc/init-splunk.log
 
+# Add function calls in order of how you want them executed here
 changePasswords
 createNewAdmin
 webUIPassword
