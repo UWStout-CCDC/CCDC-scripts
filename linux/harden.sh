@@ -7,13 +7,10 @@
 # To run any of these functions individually, run the script with the function name as an argument. For example:
 # ./harden.sh <function name> <args if any>
 # Might error a bit but should still execute
-#
-# Code is in functions for easy readability and maintainability
-# Got annoyed trying to reorder/copy giant blocks of code around
 
 ## TODO
 # - TEST THE SCRIPT IN ENVIRONMENT
-# - Update auditd.rules to use new rule set
+# - Add checks to see if the changes have already been made
 
 if [[ $EUID -ne 0 ]]
 then
@@ -29,10 +26,10 @@ BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master"
 
 adminUser=""
 
-# make directories and set current directory
-mkdir -p $CCDC_DIR
-mkdir -p $CCDC_ETC
-mkdir -p $SCRIPT_DIR
+# make directories and set current directory if they don't exist
+[ ! -d "$CCDC_DIR" ] && mkdir -p $CCDC_DIR
+[ ! -d "$CCDC_ETC" ] && mkdir -p $CCDC_ETC
+[ ! -d "$SCRIPT_DIR" ] && mkdir -p $SCRIPT_DIR
 
 # Detect OS and set var for package manager
 if [ -f /etc/redhat-release ]; then
@@ -463,7 +460,7 @@ setLegalBanners() {
 setupAuditd() {
   # Auditd setup
   # Download audit rules
-  wget $BASE_UEL/linux/splunk/audit.rules -O audit.rules --no-check-certificate # Change to use Kayne's rules
+  wget $BASE_UEL/linux/splunk/CustomAudit.rules -O audit.rules --no-check-certificate
   # Run auditd setup
   echo -e "\e[33mSetting up Auditd\e[0m"
   cat audit.rules >> /etc/audit/audit.rules

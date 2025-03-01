@@ -2,7 +2,7 @@
 
 # This script is intended as a automated setup for Splunk for the CCDC competition.
 # This makes a number of changes to the system, to do a baseline setup for the system both security and Splunk wise.
-# Some of the code was taken from our other scritps, other team's scripts, and from this blog: https://highon.coffee/blog/security-harden-centos-7/#auditd---audit-daemon
+# Some of the code was taken from our other scritps, other team's scripts, ai, and from this blog: https://highon.coffee/blog/security-harden-centos-7/#auditd---audit-daemon
 
 ## NOTE ##
 # To run any of these functions individually, run the script with the function name as an argument. For example:
@@ -14,9 +14,8 @@
 
 ## TODO
 # - TEST THE SCRIPT IN ENVIRONMENT
-# - Make the script more monolithic
-# - Double check I am not missing anything from SEMO, init.sh, or other scripts
-# - Put splunk functions in a category for easier reading
+# - Double check I am not missing anything from other scripts
+# - Add more checks to see if the functions are already done
 
 ################################
 ##    Splunk Specific Init    ##
@@ -34,10 +33,10 @@ CCDC_ETC="$CCDC_DIR/etc"
 SCRIPT_DIR="$CCDC_DIR/scripts"
 BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master"
 
-# make directories and set current directory
-mkdir -p $CCDC_DIR
-mkdir -p $CCDC_ETC
-mkdir -p $SCRIPT_DIR
+# make directories and set current directory if they don't exist
+[ ! -d "$CCDC_DIR" ] && mkdir -p $CCDC_DIR
+[ ! -d "$CCDC_ETC" ] && mkdir -p $CCDC_ETC
+[ ! -d "$SCRIPT_DIR" ] && mkdir -p $SCRIPT_DIR
 
 #######################
 ## Helper Functions  ##
