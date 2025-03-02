@@ -409,6 +409,17 @@ iptables -t filter -A OUTPUT -p udp --dport 123 -j ACCEPT
 # iptables -t filter -A OUTPUT -p tcp --dport 8089 -j ACCEPT
 # iptables -t filter -A OUTPUT -p tcp --dport 9997 -j ACCEPT
 
+# Bad Flag Combinations
+# Prevent an attacker from sending flags for reconnaissance. 
+# These kinds of packets  typically are not done as an attack.
+iptables -N BAD_FLAGS
+iptables -A INPUT -p tcp -j BAD_FLAGS
+
+# Fragmented Packets
+iptables -A INPUT -f -j LOG --log-prefix "IT Fragmented "
+iptabes -A INPUT -f -j DROP
+
+
 ######## OUTBOUND SERVICES ###############
 EOF
     if [ "$APACHE" == "true" ]; then
@@ -2180,7 +2191,7 @@ iptables_config
 
 if [ "$APACHE" == "true" ]; then
     prestashop_config
-    chroot_config
+    # chroot_config
     modsecurity
 fi
 
