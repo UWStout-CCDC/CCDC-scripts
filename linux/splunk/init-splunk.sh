@@ -32,7 +32,8 @@ CCDC_DIR="/ccdc"
 CCDC_ETC="$CCDC_DIR/etc"
 SCRIPT_DIR="$CCDC_DIR/scripts"
 BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master"
-$SPLUNK_HOME="/opt/splunk"
+SPLUNK_HOME="/opt/splunk"
+admin_password="changeme"
 
 # make directories and set current directory if they don't exist
 [ ! -d "$CCDC_DIR" ] && mkdir -p $CCDC_DIR
@@ -93,11 +94,6 @@ checkImmutable() {
       /tmp/chattr -R -i $1
     fi
   fi
-}
-
-restartSplunk() {
-  echo -e "\e[33mRestarting Splunk\e[0m"
-  $SPLUNK_HOME/bin/splunk restart
 }
 
 backup() {
@@ -235,7 +231,6 @@ webUIPassword() {
   # Changing default Splunk Web UI admin password
   # echo "Enter Splunk Web UI admin password:"
   # read -s admin_password
-  admin_password="changeme"
   echo "Enter new Splunk Web UI admin password:"
   read -s password
   $SPLUNK_HOME/bin/splunk edit user admin -auth admin:$admin_password -password $password
@@ -822,16 +817,26 @@ setSELinuxPolicy() {
   fi
 }
 
-disableVulnerableSplunkApps() {
+################################
+##    End Security Configs    ##
+################################
+
+################################
+##    Start Splunk Configs    ##
+################################
+
+configureSplunk() {
   # Disable vulnerable Splunk apps
   echo -e "\e[33mDisabling vulnerable Splunk apps\e[0m"
-  echo "Enter Splunk Web UI admin password:"
-  read -s admin_password
-  $SPLUNK_HOME/bin/splunk disable app splunk_secure_gateway -auth admin:$admin_password
-  $SPLUNK_HOME/bin/splunk disable app splunk_archiver -auth admin:$admin_password
-}
+  if $SPLUNK_HOME/bin/splunk list app | grep -q splunk_secure_gateway; then
+    $SPLUNK_HOME/bin/splunk disable app splunk_secure_gateway -auth admin:$admin_password
+    sendLog "Splunk Secure Gateway disabled"
+  fi
+  if $SPLUNK_HOME/bin/splunk list app | grep -q splunk_archiver; then
+    $SPLUNK_HOME/bin/splunk disable app splunk_archiver -auth admin:$admin_password
+    sendLog "Splunk Archiver disabled"
+  fi
 
-fixSplunkXMLParsingRCE() {
   # Fix Splunk XML parsing RCE vulnerability
   echo -e "\e[33mFixing Splunk XML parsing RCE vulnerability\e[0m"
   cd /opt/splunk/etc/system/local
@@ -841,15 +846,10 @@ fixSplunkXMLParsingRCE() {
 
   if [ ! grep -q "enableSearchJobXslt = false" web.conf ]; then
     echo -e "[settings]\nenableSearchJobXslt = false" >> web.conf
+    sendLog "Splunk XML parsing RCE vulnerability fixed"
   fi
   cd ~
-}
 
-################################
-##    End Security Configs    ##
-################################
-
-setSplunkRecievers() {
   # Enable Splunk reciever
   echo -e "\e[33mEnabling Splunk receivers\e[0m"
   $SPLUNK_HOME/bin/splunk enable listen 9997 -auth admin:$password
@@ -868,9 +868,8 @@ sourcetype = pan:firewall
 no_appending_timestamp = true
 index = pan_logs
 EOF
-}
+  sendLog "Splunk receivers enabled"
 
-setupPaloApps() {
   #Add the index for Palo logs
   $SPLUNK_HOME/bin/splunk add index pan_logs
 
@@ -881,16 +880,16 @@ setupPaloApps() {
   if [ ! -d "$SPLUNK_HOME/etc/apps/SplunkforPaloAltoNetworks" ]; then
     git clone https://github.com/PaloAltoNetworks/SplunkforPaloAltoNetworks.git SplunkforPaloAltoNetworks
     mv SplunkforPaloAltoNetworks "$SPLUNK_HOME/etc/apps/"
+    sendLog "Palo Alto Splunk app installed"
   fi
 
   # Check if the Palo Alto Splunk add-on exists, if not, clone it
   if [ ! -d "$SPLUNK_HOME/etc/apps/Splunk_TA_paloalto" ]; then
     git clone https://github.com/PaloAltoNetworks/Splunk_TA_paloalto.git Splunk_TA_paloalto
     mv Splunk_TA_paloalto "$SPLUNK_HOME/etc/apps/"
+    sendLog "Palo Alto Splunk add-on installed"
   fi
-}
 
-disableDistrubutedSearch() {
   echo -e "\e[33mDisabling distributed search\e[0m"
 
   if [ ! -f $SPLUNK_HOME/etc/system/local/distsearch.conf ]; then
@@ -900,10 +899,9 @@ disableDistrubutedSearch() {
   if ! grep -q "disabled = true" $SPLUNK_HOME/etc/system/local/distsearch.conf; then
     echo "[distributedSearch]" > $SPLUNK_HOME/etc/system/local/distsearch.conf
     echo "disabled = true" >> $SPLUNK_HOME/etc/system/local/distsearch.conf
+    sendLog "Distributed search disabled"
   fi
-}
 
-addMonitorFiles() {
   echo -e "\e[33mAdding log files to monitor\e[0m"
   # Add files to log
   # Log files
@@ -918,7 +916,19 @@ addMonitorFiles() {
   monitor /var/log/mysql.log
   monitor /var/log/mysqld.log
   # TODO: add more files
+  sendLog "Log files added to monitor"
+
+  # Restart Splunk
+  echo -e "\e[33mRestarting Splunk\e[0m"
+  $SPLUNK_HOME/bin/splunk restart
+  sendLog "Splunk restarted"
+
+  sendLog "Splunk configured"
 }
+
+################################
+##     End Splunk Configs     ##
+################################
 
 installGUI() {
   # Install GUI
@@ -1101,12 +1111,12 @@ fi
 # Start script error logging
 exec 2> /ccdc/init-splunk.log
 
-# Add function calls in order of how you want them executed here
-
 # Start the scripts for these to take care of the low hanging persistent right off the rip
 cronjail &
 check_for_malicious_bash &
-checkImmutable $SPLUNK_HOME & # Check if the splunk directory is immutable, red team really likes to do this
+
+# Check if the splunk directory is immutable, red team really likes to do this
+checkImmutable $SPLUNK_HOME &
 
 wait
 
@@ -1114,40 +1124,62 @@ changePasswords # Should have already changed the passwords for root and sysadmi
 webUIPassword
 createNewAdmin
 installTools
-backup # Backup here so that we have a mostly clean backup before we start making changes, we want webUI password and tools to be backed up
 firewallSetup
 lockUnusedAccounts
+backup # Backup here so that we have a baseline before we start making changes
 restrictUserCreation
+disableRootSSH
 stopSSH
 cronAndAtSecurity
 secureRootLogin
 setUmask
 securePermissions
-setupAIDE
 setDNS
 setLegalBanners
-setupAuditd
 disableUncommonProtocols
 disableCoreDumps
 secureSysctl
 secureGrub
 setSELinuxPolicy
 disableSketchyTokens
-disableVulnerableSplunkApps
-fixSplunkXMLParsingRCE
-setSplunkRecievers
-setupPaloApps
-disableDistrubutedSearch
-restartSplunk
-addMonitorFiles
+configureSplunk
 updateSystem
 installGUI
-disableRootSSH
 bulkRemoveServices
 bulkDisableServices
-setupIPv6
-initilizeClamAV
-backup
+
+initilizeClamAV > /dev/null 2>&1 &
+clamav_pid=$!
+setupAIDE > /dev/null 2>&1 &
+aide_pid=$!
+setupAuditd > /dev/null 2>&1 &
+auditd_pid=$!
+setupIPv6 > /dev/null 2>&1 &
+ipv6_pid=$!
+backup > /dev/null 2>&1 &
+backup_pid=$!
+
+#output the services that we are still waiting on, and when they complete then put an ok message next to the service
+while [ -e /proc/$clamav_pid ] || [ -e /proc/$aide_pid ] || [ -e /proc/$auditd_pid ] || [ -e /proc/$ipv6_pid ] || [ -e /proc/$backup_pid ]; do
+    clear
+    printf "Waiting for the final services to initialize...\n\n"
+    printf "Waiting for ClamAV to initialize... $(if [ ! -e /proc/$clamav_pid ]; then printf "[$GREEN OK $NC]\n"; else printf "[$RED WAITING $NC]\n"; fi)\n"
+    printf "Waiting for AIDE to initialize... $(if [ ! -e /proc/$aide_pid ]; then printf "[$GREEN OK $NC]\n"; else printf "[$RED WAITING $NC]\n"; fi)\n"
+    printf "Waiting for Auditd to initialize... $(if [ ! -e /proc/$auditd_pid ]; then printf "[$GREEN OK $NC]\n"; else printf "[$RED WAITING $NC]\n"; fi)\n"
+    printf "Waiting for netconfig script to complete... $(if [ ! -e /proc/$netconfig_pid ]; then printf "[$GREEN OK $NC]\n"; else printf "[$RED WAITING $NC]\n"; fi)\n"
+    printf "Waiting for backup to complete... $(if [ ! -e /proc/$backup_pid ]; then printf "[$GREEN OK $NC]\n"; else printf "[$RED WAITING $NC]\n"; fi)\n"
+    sleep 5
+    # remove the last 6 lines
+done
+
+
+clear
+printf "Waiting for the final services to initialize...\n\n"
+printf "Waiting for ClamAV to initialize... [$GREEN OK $NC]\n"
+printf "Waiting for AIDE to initialize... [$GREEN OK $NC]\n"
+printf "Waiting for Auditd to initialize... [$GREEN OK $NC]\n"
+printf "Waiting for netconfig script to complete... [$GREEN OK $NC]\n"
+printf "Waiting for backup to complete... [$GREEN OK $NC]\n"
 
 # End the script logging
 exec 2>&1
