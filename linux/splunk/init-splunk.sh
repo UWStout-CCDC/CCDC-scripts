@@ -72,6 +72,29 @@ monitor() {
   fi
 }
 
+checkImmutable() {
+  # Moves the chattr command to a different location if it exists
+  if [ -f /bin/chattr ] || [ -f /usr/bin/chattr ]; then
+    if [ -f /bin/chattr ]; then
+      mv /bin/chattr /tmp/chattr
+      sendLog "Moved /bin/chattr"
+    fi
+    if [ -f /usr/bin/chattr ]; then
+      mv /usr/bin/chattr /tmp/chattr
+      sendLog "Moved /usr/bin/chattr"
+    fi
+  fi
+
+  # Check if the file is immutable and remove the immutable flag
+  if [ -f $1 ] || [ -d $1 ];
+  then
+    if lsattr $1 | grep -q 'i'
+    then
+      /tmp/chattr -R -i $1
+    fi
+  fi
+}
+
 restartSplunk() {
   echo -e "\e[33mRestarting Splunk\e[0m"
   $SPLUNK_HOME/bin/splunk restart
@@ -97,6 +120,29 @@ restore() {
   # Restore the /opt/splunk/etc configuration directory
   tar -xzvf /ccdc/backups/splunk-etc-$newestSplunk.tgz -C /opt/splunk
   tar -xzvf /ccdc/backups/system-etc-$newestSystem.tgz -C /
+}
+
+sendLog(){
+  if [ ! -f $LOGFILE ]; then
+    mkdir -p $CCDC_DIR/logs
+    touch $LOGFILE
+  fi
+  if [ -z "$1" ]; then
+    echo "No message provided to log"
+    return 1
+  fi
+  echo "$(date +"%x %X") - $1" >> $LOGFILE
+}
+
+sendError(){
+  if [ ! -f $LOGFILE ]; then
+    touch $LOGFILE
+  fi
+  if [ -z "$1" ]; then
+    echo "No message provided to log"
+    return 1
+  fi
+  echo "$RED$(date +"%x %X") - ERROR: $1$NC" >> $LOGFILE
 }
 
 #######################
@@ -148,7 +194,7 @@ changePasswords() {
 
     echo "sysadmin:$sysadminPass" | chpasswd
   else 
-    echo "Skipping password change"
+    sendLog "Skipping password change"
   fi
 }
 
@@ -181,7 +227,7 @@ createNewAdmin() {
     echo "Adding $adminUser sudo"
     usermod -aG wheel $adminUser
   else
-    echo "Skipping admin user creation"
+    sendLog "Skipping admin user creation"
   fi
 }
 
@@ -284,7 +330,7 @@ EOF
     username=$(echo $line | cut -d: -f1)
     # Check if the user is root
     if [ "$username" == "root" ] || [ "$username" == "sysadmin" ] || [ "$username" == "splunkadmin" ]; then
-      # Skip the root user and the sysadmin user
+      # Skip the root, sysadmin, and splunkadmin users
       continue
     fi
     # Ask the user if they want to keep the user only if the user can login
@@ -385,6 +431,19 @@ iptables -A OUTPUT -p tcp --sport 8000 -m conntrack --ctstate ESTABLISHED -j ACC
 # Log dropped packets
 iptables -A INPUT -j LOG --log-prefix "DROP-IN:" --log-level 4 --log-ip-options --log-tcp-options --log-tcp-sequence
 iptables -A OUTPUT -j LOG --log-prefix "DROP-OUT:" --log-level 4 --log-ip-options --log-tcp-options --log-tcp-sequence
+
+# Bad Flag Combinations
+# Prevent an attacker from sending flags for reconnaissance. 
+# These kinds of packets  typically are not done as an attack.
+iptables -N BAD_FLAGS
+iptables -A INPUT -p tcp -j BAD_FLAGS
+
+# Fragmented Packets
+iptables -A INPUT -f -j LOG --log-prefix "IT Fragmented "
+iptabes -A INPUT -f -j DROP
+
+# NOT SURE WHAT THIS DOES, THINGS BREAK WITHOUT IT
+iptables -I INPUT -m u32 --u32 "4 & 0x8000 = 0x8000" -j DROP
 EOF
 
   # Set firewall rules
@@ -470,10 +529,153 @@ cronAndAtSecurity() {
   echo "" > /etc/crontab
 }
 
-clearPromptCommand() {
-  # Clear the prompt command
-  echo -e "\e[33mClearing prompt command\e[0m"
-  unset PROMPT_COMMAND
+cronjail() {
+  #////////////////////////////////////////
+  # cronjail
+  #////////////////////////////////////////
+  # We will move all cron jobs to a jail directory so they can be reviewed before being re-enabled
+  # Check if the cron jail directory exists, if it does not, create it
+  if [ ! -d "$CCDC_ETC/cron.jail" ]; then
+    mkdir -p $CCDC_ETC/cron.jail
+  fi
+
+  # Move all cron jobs to the jail directory in a folder indicating where they came from
+  if [ -f "/etc/cron.deny" ]; then
+    mv /etc/cron.deny $CCDC_ETC/cron.jail
+    cat /dev/null > /etc/cron.deny
+    sendLog "cron.deny moved to $CCDC_ETC/cron.jail"
+  fi
+
+  # if there is a cron.deny.rpmsave file, copy it to the jail directory, and rename it to cron.deny
+  if [ -f "/etc/cron.deny.rpmsave" ]; then
+    cp /etc/cron.deny.rpmsave $CCDC_ETC/cron.jail
+    cat /dev/null > /etc/cron.deny.rpmsave
+    mv /etc/cron.deny.rpmsave /etc/cron.deny
+    sendLog "cron.deny.rpmsave moved to $CCDC_ETC/cron.jail"
+  fi
+
+  if [ -f "/etc/cron.allow" ]; then
+    mv /etc/cron.allow $CCDC_ETC/cron.jail
+    cat /dev/null > /etc/cron.allow
+    sendLog "cron.allow moved to $CCDC_ETC/cron.jail"
+  fi
+
+  if [ -f "/etc/crontab" ]; then
+    mv /etc/crontab $CCDC_ETC/cron.jail
+    cat /dev/null > /etc/crontab
+    sendLog "crontab moved to $CCDC_ETC/cron.jail"
+  fi
+
+  if [ -d "/etc/cron.d" ] && [ "$(ls -A /etc/cron.d)" ]; then
+    mkdir -p $CCDC_ETC/cron.jail/cron.d
+    mv /etc/cron.d/* $CCDC_ETC/cron.jail/cron.d
+    sendLog "cron.d moved to $CCDC_ETC/cron.jail"
+  fi
+
+  if [ -d "/etc/cron.daily" ] && [ "$(ls -A /etc/cron.daily)" ]; then
+    mkdir -p $CCDC_ETC/cron.jail/daily
+    mv /etc/cron.daily/* $CCDC_ETC/cron.jail/daily
+    sendLog "cron.daily moved to $CCDC_ETC/cron.jail"
+  fi
+
+  if [ -d "/etc/cron.hourly" ] && [ "$(ls -A /etc/cron.hourly)" ]; then
+    mkdir -p $CCDC_ETC/cron.jail/hourly
+    mv /etc/cron.hourly/* $CCDC_ETC/cron.jail/hourly
+    sendLog "cron.hourly moved to $CCDC_ETC/cron.jail"
+  fi
+
+  if [ -d "/etc/cron.monthly" ] && [ "$(ls -A /etc/cron.monthly)" ]; then
+    mkdir -p $CCDC_ETC/cron.jail/monthly
+    mv /etc/cron.monthly/* $CCDC_ETC/cron.jail/monthly
+    sendLog "cron.monthly moved to $CCDC_ETC/cron.jail"
+  fi
+
+  if [ -d "/etc/cron.weekly" ] && [ "$(ls -A /etc/cron.weekly)" ]; then
+    mkdir -p $CCDC_ETC/cron.jail/weekly
+    mv /etc/cron.weekly/* $CCDC_ETC/cron.jail/weekly
+    sendLog "cron.weekly moved to $CCDC_ETC/cron.jail"
+  fi
+
+  if [ -d "/var/spool/cron" ] && [ "$(ls -A /var/spool/cron)" ]; then
+    mkdir -p $CCDC_ETC/cron.jail/spool
+    mv /var/spool/cron/* $CCDC_ETC/cron.jail/spool
+    sendLog "cron spool moved to $CCDC_ETC/cron.jail"
+  fi
+
+  if [ -d "/var/spool/at" ] && [ "$(ls -A /var/spool/at)" ]; then
+    mkdir -p $CCDC_ETC/cron.jail/at
+    mv /var/spool/at/* $CCDC_ETC/cron.jail/at
+    sendLog "at spool moved to $CCDC_ETC/cron.jail"
+  fi
+
+  if [ -d "/var/spool/atjobs" ] && [ "$(ls -A /var/spool/atjobs)" ]; then
+    mkdir -p $CCDC_ETC/cron.jail/atjobs
+    mv /var/spool/atjobs/* $CCDC_ETC/cron.jail/atjobs
+    sendLog "atjobs spool moved to $CCDC_ETC/cron.jail"
+  fi
+
+  # Restart the cron service
+  systemctl restart crond 2>/dev/null
+  systemctl restart cron 2>/dev/null
+  # Restart the atd service
+  systemctl restart atd 2>/dev/null
+  sendLog "Cron and atd services restarted"
+}
+
+check_for_malicious_bash() {
+  # we need to check all of the bash configuration files to see if they ever set a trap, or set PROMPT_COMMAND
+  # if they do, we need to check the contents of the trap or PROMPT_COMMAND and print them to a file, and remove them
+
+  # Check if logs directory exists
+  if [ ! -d /ccdc ]; then
+      mkdir -p /ccdc/logs
+  fi
+
+  for FILE in /etc/bashrc /etc/profile /etc/profile.d/* /root/.bashrc /root/.bash_profile /root/.bash_logout /home/*/.bashrc /home/*/.bash_profile /home/*/.bash_logout /etc/bash.bashrc /etc/bash.bash_logout /etc/bash.bash_profile /root/.bash_login /home/*/.bash_login /root/.profile /home/*/.profile /etc/environment
+  do
+    if [ -f "$FILE" ]; then
+      # check if the file contains a trap or PROMPT_COMMAND
+      if grep -q "trap" "$FILE" || grep -q "PROMPT_COMMAND" $FILE || grep -q "watch" "$FILE"; then
+          # get the contents of the trap or PROMPT_COMMAND
+          if grep -q "^[^#]*trap" "$FILE"; then
+            TRAP_CONTENT=$(grep "^[^#]*trap" "$FILE")
+          fi
+          if grep -q "^[^#]*PROMPT_COMMAND" "$FILE"; then
+            PROMPT_COMMAND_CONTENT=$(grep "^[^#]*PROMPT_COMMAND" $FILE)
+          fi
+          if grep -q "^[^#]*watch" "$FILE"; then
+            WATCH_CONTENT=$(grep "^[^#]*watch" $FILE)
+          fi
+
+          # remove the trap or PROMPT_COMMAND
+          sed -i '/^[^#]*trap/d' "$FILE"
+          # sed -i '/^[^#]*PROMPT_COMMAND/d' "$FILE" #This sometimes breaks the shell, need to further investigate
+          sed -i '/^[^#]*watch/d' "$FILE"
+
+          # print the contents of the trap or PROMPT_COMMAND to a file
+          if [ -n "$TRAP_CONTENT" ]; then
+            echo "$TRAP_CONTENT   Found in $FILE On $(date)" >> /ccdc/logs/malicious_bash.txt
+            sendLog "Malicious trap found in $FILE"
+          fi
+          if [ -n "$PROMPT_COMMAND_CONTENT" ]; then
+            echo "$PROMPT_COMMAND_CONTENT   Found in $FILE On $(date)" >> /ccdc/logs/malicious_bash.txt
+            sendLog "Malicious PROMPT_COMMAND found in $FILE"
+          fi
+          if [ -n "$WATCH_CONTENT" ]; then
+            echo "$WATCH_CONTENT   Found in $FILE On $(date)" >> /ccdc/logs/malicious_bash.txt
+            sendLog "Malicious watch found in $FILE"
+          fi
+        fi
+      fi
+  done
+
+  # set PROMPT_COMMAND to '', and remove any traps
+  export PROMPT_COMMAND=''
+  TRAPS=$(trap -p | awk '{print $NF}')
+  for TRAP in $TRAPS
+  do
+    trap $TRAP
+  done
 }
 
 stopSSH() {
@@ -488,12 +690,14 @@ setupAIDE() {
   echo -e "\e[33mSetting up AIDE\e[0m"
 
   # Disable prelinking altogether for aide
-  if grep -q ^PRELINKING /etc/sysconfig/prelink
-  then
-    sed -i 's/PRELINKING.*/PRELINKING=no/g' /etc/sysconfig/prelink
-  else
-    echo -e "\n# Set PRELINKING=no per security requirements" >> /etc/sysconfig/prelink
-    echo "PRELINKING=no" >> /etc/sysconfig/prelink
+  if [ -f /etc/sysconfig/prelink ]; then
+    if [ grep -q ^PRELINKING /etc/sysconfig/prelink ] && [ ! grep -q ^PRELINKING=no /etc/sysconfig/prelink ];
+    then
+      sed -i 's/PRELINKING.*/PRELINKING=no/g' /etc/sysconfig/prelink
+    else
+      echo -e "\n# Set PRELINKING=no per security requirements" >> /etc/sysconfig/prelink
+      echo "PRELINKING=no" >> /etc/sysconfig/prelink
+    fi
   fi
 
   aide --init
@@ -726,6 +930,7 @@ installGUI() {
     yum install firefox -y
     systemctl set-default graphical.target
     systemctl isolate graphical.target
+    sendLog "GUI installed"
   fi
 }
 
@@ -897,21 +1102,27 @@ fi
 exec 2> /ccdc/init-splunk.log
 
 # Add function calls in order of how you want them executed here
-changePasswords
-createNewAdmin
+
+# Start the scripts for these to take care of the low hanging persistent right off the rip
+cronjail &
+check_for_malicious_bash &
+checkImmutable $SPLUNK_HOME & # Check if the splunk directory is immutable, red team really likes to do this
+
+wait
+
+changePasswords # Should have already changed the passwords for root and sysadmin before running this so that you can skip this section
 webUIPassword
-disableSketchyTokens
+createNewAdmin
 installTools
-backup
+backup # Backup here so that we have a mostly clean backup before we start making changes, we want webUI password and tools to be backed up
+firewallSetup
 lockUnusedAccounts
+restrictUserCreation
+stopSSH
+cronAndAtSecurity
 secureRootLogin
 setUmask
-restrictUserCreation
-firewallSetup
 securePermissions
-cronAndAtSecurity
-clearPromptCommand
-stopSSH
 setupAIDE
 setDNS
 setLegalBanners
@@ -921,6 +1132,7 @@ disableCoreDumps
 secureSysctl
 secureGrub
 setSELinuxPolicy
+disableSketchyTokens
 disableVulnerableSplunkApps
 fixSplunkXMLParsingRCE
 setSplunkRecievers
