@@ -24,7 +24,7 @@ CCDC_DIR="/ccdc"
 CCDC_ETC="$CCDC_DIR/etc"
 SCRIPT_DIR="$CCDC_DIR/scripts"
 #BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master"
-BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/splunk-scripting"
+BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/splunk-scripting" # For testing
 SPLUNK_HOME="/opt/splunk"
 admin_password="changeme"
 
