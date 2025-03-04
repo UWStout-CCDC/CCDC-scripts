@@ -1170,8 +1170,8 @@ createNewAdmin
 installTools
 firewallSetup
 lockUnusedAccounts
-backup # Backup here so that we have a baseline before we start making changes
 restrictUserCreation
+backup # Backup here so that we have a decent baseline before we start making tons of changes
 disableRootSSH
 stopSSH
 cronAndAtSecurity
@@ -1200,22 +1200,20 @@ setupAuditd > /dev/null 2>&1 &
 auditd_pid=$!
 setupIPv6 > /dev/null 2>&1 &
 ipv6_pid=$!
-backup > /dev/null 2>&1 &
+backup > /dev/null 2>&1 & # Backup again to save all our changes with our final baseline and hope to god that there isn't a ton of red team persistence saved in the backup
 backup_pid=$!
 
 #output the services that we are still waiting on, and when they complete then put an ok message next to the service
 while [ -e /proc/$clamav_pid ] || [ -e /proc/$aide_pid ] || [ -e /proc/$auditd_pid ] || [ -e /proc/$ipv6_pid ] || [ -e /proc/$backup_pid ]; do
-    clear
-    printf "Waiting for the final services to initialize...\n\n"
-    printf "Waiting for ClamAV to initialize... $(if [ ! -e /proc/$clamav_pid ]; then printf "[$GREEN OK $NC]\n"; else printf "[$RED WAITING $NC]\n"; fi)\n"
-    printf "Waiting for AIDE to initialize... $(if [ ! -e /proc/$aide_pid ]; then printf "[$GREEN OK $NC]\n"; else printf "[$RED WAITING $NC]\n"; fi)\n"
-    printf "Waiting for Auditd to initialize... $(if [ ! -e /proc/$auditd_pid ]; then printf "[$GREEN OK $NC]\n"; else printf "[$RED WAITING $NC]\n"; fi)\n"
-    printf "Waiting for netconfig script to complete... $(if [ ! -e /proc/$netconfig_pid ]; then printf "[$GREEN OK $NC]\n"; else printf "[$RED WAITING $NC]\n"; fi)\n"
-    printf "Waiting for backup to complete... $(if [ ! -e /proc/$backup_pid ]; then printf "[$GREEN OK $NC]\n"; else printf "[$RED WAITING $NC]\n"; fi)\n"
-    sleep 5
-    # remove the last 6 lines
+  clear
+  printf "Waiting for the final services to initialize...\n\n"
+  printf "Waiting for ClamAV to initialize... $(if [ ! -e /proc/$clamav_pid ]; then printf "[$GREEN OK $NC]\n"; else printf "[$RED WAITING $NC]\n"; fi)\n"
+  printf "Waiting for AIDE to initialize... $(if [ ! -e /proc/$aide_pid ]; then printf "[$GREEN OK $NC]\n"; else printf "[$RED WAITING $NC]\n"; fi)\n"
+  printf "Waiting for Auditd to initialize... $(if [ ! -e /proc/$auditd_pid ]; then printf "[$GREEN OK $NC]\n"; else printf "[$RED WAITING $NC]\n"; fi)\n"
+  printf "Waiting for netconfig script to complete... $(if [ ! -e /proc/$netconfig_pid ]; then printf "[$GREEN OK $NC]\n"; else printf "[$RED WAITING $NC]\n"; fi)\n"
+  printf "Waiting for backup to complete... $(if [ ! -e /proc/$backup_pid ]; then printf "[$GREEN OK $NC]\n"; else printf "[$RED WAITING $NC]\n"; fi)\n"
+  sleep 5
 done
-
 
 clear
 printf "Waiting for the final services to initialize...\n\n"
