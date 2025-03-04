@@ -656,7 +656,7 @@ check_for_malicious_bash() {
 
           # remove the trap or PROMPT_COMMAND
           sed -i '/^[^#]*trap/d' "$FILE"
-          # sed -i '/^[^#]*PROMPT_COMMAND/d' "$FILE" #This sometimes breaks the shell, need to further investigate
+          # sed -i '/^[^#]*PROMPT_COMMAND/d' "$FILE" #This sometimes breaks the shell, need to investigate further
           sed -i '/^[^#]*watch/d' "$FILE"
 
           # print the contents of the trap or PROMPT_COMMAND to a file
@@ -678,6 +678,7 @@ check_for_malicious_bash() {
 
   # set PROMPT_COMMAND to '', and remove any traps
   export PROMPT_COMMAND=''
+  unset PROMPT_COMMAND # This is to ensure that the PROMPT_COMMAND is not set again
   TRAPS=$(trap -p | awk '{print $NF}')
   for TRAP in $TRAPS
   do
