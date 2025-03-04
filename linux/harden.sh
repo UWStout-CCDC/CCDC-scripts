@@ -1,16 +1,8 @@
 #!/bin/bash
 
-# This script is intended as a automated setup for Splunk for the CCDC competition.
-# This makes a number of changes to the system, to do a baseline setup for the system both security and Splunk wise.
+# This script is intended as a automated hardening script for systems we may not have previous knowledge of in the CCDC environment.
+# This makes a number of changes to the system to do a baseline setup for the system
 # Some of the code was taken from our other scritps, other team's scripts, ai, and from this blog: https://highon.coffee/blog/security-harden-centos-7/#auditd---audit-daemon
-
-## NOTE ##
-# To run any of these functions individually, run the script with the function name as an argument. For example:
-# ./init-splunk.sh <function name> <args if any>
-# Might error a bit but should still execute
-#
-# Code is in functions for easy readability and maintainability
-# Got annoyed trying to reorder/copy giant blocks of code around
 
 ## TODO
 # - TEST THE SCRIPT IN ENVIRONMENT
@@ -32,14 +24,31 @@ CCDC_DIR="/ccdc"
 CCDC_ETC="$CCDC_DIR/etc"
 SCRIPT_DIR="$CCDC_DIR/scripts"
 BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master"
-SPLUNK_HOME="/opt/splunk"
 adminUser=""
-admin_password="changeme"
+
+# Color Variables
+RED='\033[0;31m'
+NC='\033[0m'
+BLUE='\033[0;34m'
+GREEN='\033[0;32m'
 
 # make directories and set current directory if they don't exist
 [ ! -d "$CCDC_DIR" ] && mkdir -p $CCDC_DIR
 [ ! -d "$CCDC_ETC" ] && mkdir -p $CCDC_ETC
 [ ! -d "$SCRIPT_DIR" ] && mkdir -p $SCRIPT_DIR
+
+# Detect OS
+if command -v yum &> /dev/null; then
+  PKG_MANAGER="yum"
+elif command -v apt-get &> /dev/null; then
+  PKG_MANAGER="apt-get"
+elif command -v dnf &> /dev/null; then
+  PKG_MANAGER="dnf"
+else
+  PKG_MANAGER="unknown"
+fi
+
+sendLog "Detected package manager: $PKG_MANAGER"
 
 #######################
 ## Helper Functions  ##
@@ -64,14 +73,6 @@ replace() {
   cp $1/$2 $CCDC_ETC/$2.old
   mkdir -p $(dirname $1/$2)
   cp $(get $3) $1/$2
-}
-
-# Quick function to check if a file exists, and monitor it
-monitor() {
-  if [ -f $1 ]
-  then
-    $SPLUNK_HOME/bin/splunk add monitor $1
-  fi
 }
 
 checkImmutable() {
@@ -224,35 +225,63 @@ createNewAdmin() {
   fi
 }
 
-# CentOS is EOL so this likely won't ever be used anymore, uncomment if needed
-#function fixCentOSRepos() {
-  # Fix repos preemtively (if CentOS)
-  # wget $BASE_URL/linux/splunk/CentOS-Base.repo -O CentOS-Base.repo --no-check-certificate
-  # echo -e "\e[33mFixing repos\e[0m"
-  # cd ~
-  # mv /etc/yum.repos.d/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo.bak
-  # mv ~/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo
-  # yum clean all
-  # rm -rf /var/cache/yum
-  # yum makecache
+fixCentOSRepos() {
+  Fix repos preemtively (if CentOS)
+  wget $BASE_URL/linux/splunk/CentOS-Base.repo -O CentOS-Base.repo --no-check-certificate
+  echo -e "\e[33mFixing repos\e[0m"
+  cd ~
+  mv /etc/yum.repos.d/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo.bak
+  mv ~/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo
+  yum clean all
+  rm -rf /var/cache/yum
+  yum makecache
 
-  # Update CA certs
-  # echo -e "\e[33mUpdating CA certificates\e[0m"
-  # yum update -y ca-certificates
-#}
+  Update CA certs
+  echo -e "\e[33mUpdating CA certificates\e[0m"
+  yum update -y ca-certificates
+}
 
 updateSystem() {
   # Update the system
   echo -e "\e[33mUpdating system\e[0m"
-  yum update -y
-  yum autoremove -y
+  case "$PKG_MANAGER" in
+    yum)
+      yum update -y
+      ;;
+    apt-get)
+      apt-get update -y && apt-get upgrade -y
+      ;;
+    dnf)
+      dnf update -y
+      ;;
+    *)
+      sendError "Unsupported package manager: $PKG_MANAGER"
+      exit 1
+      ;;
+  esac
 }
 
 installTools() {
-  # Install tools (if not already)
+  # Install tools based on detected distro
   echo -e "\e[33mInstalling tools\e[0m"
-  yum install epel-release -y
-  yum install iptables iptables-services wget git aide net-tools audit audit-libs rkhunter clamav -y
+  case "$PKG_MANAGER" in
+    yum|dnf)
+      #Check for CentOS, will fix repos preemtively if it is
+      if [ -f /etc/centos-release ]; then
+        fixCentOSRepos
+      fi
+      $PKG_MANAGER install epel-release -y
+      $PKG_MANAGER install iptables iptables-services wget git aide net-tools audit audit-libs rkhunter clamav -y
+      ;;
+    apt-get)
+      apt-get update -y
+      apt-get install iptables wget git aide net-tools auditd rkhunter clamav -y
+      ;;
+    *)
+      sendError "Unsupported package manager: $PKG_MANAGER"
+      exit 1
+      ;;
+  esac
 
   # Install Lynis
   if [ ! -f /ccdc/lynis ]; then
@@ -711,8 +740,8 @@ setupAIDE() {
 setDNS() {
   # Set DNS
   echo -e "\e[33mSetting DNS\e[0m"
+  INTERFACE=$(ip addr | awk '/state UP/ {print $2}' | cut -d: -f1)
   if command -v nmcli &> /dev/null; then
-    INTERFACE=$(nmcli -t -f DEVICE,STATE d | grep ':connected' | cut -d: -f1)
     nmcli con mod "$INTERFACE" ipv4.dns "1.1.1.1 9.9.9.9" # Replace the IPs as needed
     systemctl restart NetworkManager
   elif command -v resolvconf &> /dev/null; then
@@ -971,6 +1000,12 @@ if [[ "$1" == "restore" ]]; then
   echo -e "\e[33mStarting Restore of Latest Backup!\e[0m"
   restore
   echo -e "\e[32mRestore complete!\e[0m"
+  exit 0
+fi
+
+if [[ "$1" == "check"]]; then
+  echo -e "\e[33mChecking $2 for immutability!\e[0m"
+  checkImmutability $2
   exit 0
 fi
 

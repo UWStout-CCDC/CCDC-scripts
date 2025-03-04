@@ -35,6 +35,12 @@ BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master"
 SPLUNK_HOME="/opt/splunk"
 admin_password="changeme"
 
+# Color Variables
+RED='\033[0;31m'
+NC='\033[0m'
+BLUE='\033[0;34m'
+GREEN='\033[0;32m'
+
 # make directories and set current directory if they don't exist
 [ ! -d "$CCDC_DIR" ] && mkdir -p $CCDC_DIR
 [ ! -d "$CCDC_ETC" ] && mkdir -p $CCDC_ETC
@@ -1101,6 +1107,12 @@ if [[ "$1" == "restore" ]]; then
   echo -e "\e[33mStarting Restore of Latest Backup!\e[0m"
   restore
   echo -e "\e[32mRestore complete!\e[0m"
+  exit 0
+fi
+
+if [[ "$1" == "check"]]; then
+  echo -e "\e[33mChecking $2 for immutability!\e[0m"
+  checkImmutability $2
   exit 0
 fi
 
