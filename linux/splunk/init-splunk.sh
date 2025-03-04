@@ -144,6 +144,10 @@ sendError(){
 ## End Helper Funcs  ##
 #######################
 
+####################################
+##  Start User/System Management  ##
+####################################
+
 changePasswords() {
   echo -e "\e[33mChanging passwords\e[0m"
   # Set root password
@@ -309,6 +313,10 @@ installTools() {
   #chmod +x init.sh
   #./init.sh
 #}
+
+##################################
+##  End User/System Management  ##
+##################################
 
 #################################
 ##   Start Security Configs    ##
@@ -933,6 +941,10 @@ EOF
 ################################
 ##     End Splunk Configs     ##
 ################################
+
+##############################
+##  Finish System Configs   ##
+##############################
 
 installGUI() {
   # Install GUI
