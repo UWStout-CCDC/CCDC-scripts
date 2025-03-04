@@ -4,11 +4,6 @@
 # This makes a number of changes to the system, to do a baseline setup for the system both security and Splunk wise.
 # Some of the code was taken from our other scritps, other team's scripts, ai, and from this blog: https://highon.coffee/blog/security-harden-centos-7/#auditd---audit-daemon
 
-## TODO
-# - TEST THE SCRIPT IN ENVIRONMENT
-# - Double check I am not missing anything from other scripts
-# - Add more checks to see if the functions are already done
-
 ################################
 ##    Splunk Specific Init    ##
 ################################
