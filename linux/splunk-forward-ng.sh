@@ -2,7 +2,7 @@
 
 # Splunk Universal Forwarder installation script
 # Script is a modified version of the forwarder script created by SEMO at: https://github.com/SEMO-Cyber/CyberDefenseTeamPrep/blob/main/Splunk/linuxSplunkForwarderInstall.sh
-# Thanks to SEMO for the original script! Saved me a lot of time lol
+# Thanks to SEMO for the original script! Saved me a lot of headache lol
 
 # Main modifications are:
 # - Non-hard coded password

@@ -4,14 +4,6 @@
 # This makes a number of changes to the system, to do a baseline setup for the system both security and Splunk wise.
 # Some of the code was taken from our other scritps, other team's scripts, ai, and from this blog: https://highon.coffee/blog/security-harden-centos-7/#auditd---audit-daemon
 
-## NOTE ##
-# To run any of these functions individually, run the script with the function name as an argument. For example:
-# ./init-splunk.sh <function name> <args if any>
-# Might error a bit but should still execute
-#
-# Code is in functions for easy readability and maintainability
-# Got annoyed trying to reorder/copy giant blocks of code around
-
 ## TODO
 # - TEST THE SCRIPT IN ENVIRONMENT
 # - Double check I am not missing anything from other scripts
@@ -31,7 +23,8 @@ fi
 CCDC_DIR="/ccdc"
 CCDC_ETC="$CCDC_DIR/etc"
 SCRIPT_DIR="$CCDC_DIR/scripts"
-BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master"
+#BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master"
+BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/splunk-scripting"
 SPLUNK_HOME="/opt/splunk"
 admin_password="changeme"
 
@@ -298,6 +291,11 @@ installTools() {
   if [ ! -f /ccdc/scripts/monitor.sh ]; then
       get linux/monitor/monitor.sh
       chmod +x /ccdc/scripts/linux/monitor/monitor.sh
+  fi
+
+  if [ ! -f /ccdc/scripts/upgradeSplunk.sh ]; then
+      get linux/splunk/upgradeSplunk.sh
+      chmod +x /ccdc/scripts/linux/splunk/upgradeSplunk.sh
   fi
 }
 

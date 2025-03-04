@@ -1,5 +1,5 @@
 # Splunk forwarder script adapted from https://github.com/SEMO-Cyber/CyberDefenseTeamPrep/blob/main/Splunk/ and modified to better suit our use case
-# Thanks to SEMO Cyber Defense Team for the original script
+# Thanks to SEMO Cyber Defense Team for the original script, saved me quite a bit of time!
 
 # Define variables
 $SPLUNK_VERSION = "9.4.0"
