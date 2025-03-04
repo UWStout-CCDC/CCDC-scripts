@@ -702,7 +702,7 @@ setupAIDE() {
 setDNS() {
   # Set DNS
   echo -e "\e[33mSetting DNS\e[0m"
-  INTERFACE=$(ip route | grep default | awk '{print $5}')
+  INTERFACE=$(ip addr | grep -oP '^\d+: \Kens\S+' | sed -n 2p)
   sed -i '/^dns=/c\dns=1.1.1.1;9.9.9.9;172.20.240.20' /etc/NetworkManager/system-connections/$INTERFACE.nmconnection # Replace the IPs as needed
   systemctl restart NetworkManager
 }
