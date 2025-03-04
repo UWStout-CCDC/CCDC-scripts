@@ -140,6 +140,19 @@ sendError(){
   echo "$RED$(date +"%x %X") - ERROR: $1$NC" >> $LOGFILE
 }
 
+upgradeSplunk() {
+  echo -e "\e[33mUpgrading Splunk\e[0m"
+
+  # Check if the upgradeSplunk.sh script exists
+  if [ ! -f /ccdc/scripts/upgradeSplunk.sh ]; then
+    get linux/splunk/upgradeSplunk.sh
+    chmod +x /ccdc/scripts/upgradeSplunk.sh
+  fi
+
+  # Run the upgradeSplunk.sh script
+  /ccdc/scripts/upgradeSplunk.sh
+}
+
 #######################
 ## End Helper Funcs  ##
 #######################
@@ -1124,6 +1137,14 @@ fi
 if [[ "$1" == "check"]]; then
   echo -e "\e[33mChecking $2 for immutability!\e[0m"
   checkImmutability $2
+  exit 0
+fi
+
+# Check for the update argument and update the system
+if [[ "$1" == "upgrade" ]]; then
+  echo -e "\e[33mStarting Splunk Upgrade!\e[0m"
+  upgradeSplunk
+  echo -e "\e[32mSplunk Upgrade complete!\e[0m"
   exit 0
 fi
 
