@@ -4,9 +4,9 @@
 # This makes a number of changes to the system to do a baseline setup for the system
 # Some of the code was taken from our other scritps, other team's scripts, ai, and from this blog: https://highon.coffee/blog/security-harden-centos-7/#auditd---audit-daemon
 
-################################
-##    Splunk Specific Init    ##
-################################
+###############################
+##    Linux Agnostic Init    ##
+###############################
 
 if [[ $EUID -ne 0 ]]
 then
