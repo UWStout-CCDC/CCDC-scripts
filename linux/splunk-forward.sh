@@ -64,7 +64,6 @@ install_splunk() {
 
     echo "${BLUE}Setting permissions...${NC}"
     create_splunk_user
-    chown -R splunkfwd:splunkfwd $SPLUNK_HOME
   else
     echo "${RED}Failed to download Splunk Forwarder tarball. Installation aborted.${NC}"
     exit 1
