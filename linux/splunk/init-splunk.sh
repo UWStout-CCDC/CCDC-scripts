@@ -866,6 +866,7 @@ configureSplunk() {
   # Enable Splunk reciever
   echo -e "\e[33mEnabling Splunk receivers\e[0m"
   $SPLUNK_HOME/bin/splunk enable listen 9997 -auth admin:$password
+  $SPLUNK_HOME/bin/splunk enable listen 514 -auth admin:$password
 
   cat <<-EOF > "$SPLUNK_HOME/etc/system/local/inputs.conf"
 #TCP input for Splunk forwarders (port 9997)
