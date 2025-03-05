@@ -753,16 +753,16 @@ setupAuditd() {
 disableUncommonProtocols() {
   # Disable uncommon protocols
   echo -e "\e[33mDisabling uncommon protocols\e[0m"
-  if ! grep -q "install dccp /bin/false" /etc/modprobe.d/dccp.conf; then
+  if [ ! grep "install dccp /bin/false" /etc/modprobe.d/dccp.conf ]; then
     echo "install dccp /bin/false" >> /etc/modprobe.d/dccp.conf
   fi
-  if ! grep -q "install sctp /bin/false" /etc/modprobe.d/sctp.conf; then
+  if [ ! grep "install sctp /bin/false" /etc/modprobe.d/sctp.conf ]; then
     echo "install sctp /bin/false" >> /etc/modprobe.d/sctp.conf
   fi
-  if ! grep -q "install rds /bin/false" /etc/modprobe.d/rds.conf; then
+  if [ ! grep "install rds /bin/false" /etc/modprobe.d/rds.conf ]; then
     echo "install rds /bin/false" >> /etc/modprobe.d/rds.conf
   fi
-  if ! grep -q "install tipc /bin/false" /etc/modprobe.d/tipc.conf; then
+  if [ ! grep "install tipc /bin/false" /etc/modprobe.d/tipc.conf ]; then
     echo "install tipc /bin/false" >> /etc/modprobe.d/tipc.conf
   fi
 }
@@ -770,7 +770,7 @@ disableUncommonProtocols() {
 disableCoreDumps() {
   # Disable core dumps for users
   echo -e "\e[33mDisabling core dumps for users\e[0m"
-  if ! grep -q "^* hard core 0" /etc/security/limits.conf; then
+  if [ ! grep "^* hard core 0" /etc/security/limits.conf ]; then
     echo "* hard core 0" >> /etc/security/limits.conf
   fi
 }
@@ -831,7 +831,7 @@ setSELinuxPolicy() {
   # Ensure SELinux is enabled and enforcing
   # Check if SELINUX is already set to enforcing
   echo -e "\e[33mSetting SELinux to enforcing\e[0m"
-  if [ ! grep -q SELINUX=enforcing /etc/selinux/config ]; then
+  if [ ! grep SELINUX=enforcing /etc/selinux/config ]; then
     sed -i 's/SELINUX=disabled/SELINUX=enforcing/g' /etc/selinux/config
   fi
 }
@@ -863,7 +863,7 @@ configureSplunk() {
     touch web.conf
   fi
 
-  if [ ! grep -q "enableSearchJobXslt = false" web.conf ]; then
+  if [ ! grep "enableSearchJobXslt = false" web.conf ]; then
     echo -e "[settings]\nenableSearchJobXslt = false" >> web.conf
     sendLog "Splunk XML parsing RCE vulnerability fixed"
   fi
@@ -916,7 +916,7 @@ EOF
     touch $SPLUNK_HOME/etc/system/local/distsearch.conf
   fi
 
-  if ! grep -q "disabled = true" $SPLUNK_HOME/etc/system/local/distsearch.conf; then
+  if [ ! grep "disabled = true" $SPLUNK_HOME/etc/system/local/distsearch.conf ]; then
     echo "[distributedSearch]" > $SPLUNK_HOME/etc/system/local/distsearch.conf
     echo "disabled = true" >> $SPLUNK_HOME/etc/system/local/distsearch.conf
     sendLog "Distributed search disabled"
@@ -1095,7 +1095,7 @@ setupIPv6() {
 disableRootSSH() {
   # Disable root SSH
   echo -e "\e[33mDisabling root SSH\e[0m"
-  if ! grep -q "PermitRootLogin yes" /etc/ssh/sshd_config; then
+  if [ ! grep "PermitRootLogin yes" /etc/ssh/sshd_config ]; then
     sed -i 's/PermitRootLogin yes/PermitRootLogin no/g' /etc/ssh/sshd_config
   fi
 }
