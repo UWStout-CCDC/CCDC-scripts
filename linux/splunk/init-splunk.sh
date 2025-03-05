@@ -1129,7 +1129,7 @@ if [[ "$1" == "restore" ]]; then
   exit 0
 fi
 
-if [[ "$1" == "check"]]; then
+if [[ "$1" == "check" ]]; then
   echo -e "\e[33mChecking $2 for immutability!\e[0m"
   checkImmutability $2
   exit 0
@@ -1205,7 +1205,7 @@ while [ -e /proc/$clamav_pid ] || [ -e /proc/$aide_pid ] || [ -e /proc/$auditd_p
   printf "Waiting for ClamAV to initialize... $(if [ ! -e /proc/$clamav_pid ]; then printf "[$GREEN OK $NC]\n"; else printf "[$RED WAITING $NC]\n"; fi)\n"
   printf "Waiting for AIDE to initialize... $(if [ ! -e /proc/$aide_pid ]; then printf "[$GREEN OK $NC]\n"; else printf "[$RED WAITING $NC]\n"; fi)\n"
   printf "Waiting for Auditd to initialize... $(if [ ! -e /proc/$auditd_pid ]; then printf "[$GREEN OK $NC]\n"; else printf "[$RED WAITING $NC]\n"; fi)\n"
-  printf "Waiting for netconfig script to complete... $(if [ ! -e /proc/$netconfig_pid ]; then printf "[$GREEN OK $NC]\n"; else printf "[$RED WAITING $NC]\n"; fi)\n"
+  printf "Waiting for netconfig script to complete... $(if [ ! -e /proc/$ipv6_pid ]; then printf "[$GREEN OK $NC]\n"; else printf "[$RED WAITING $NC]\n"; fi)\n"
   printf "Waiting for backup to complete... $(if [ ! -e /proc/$backup_pid ]; then printf "[$GREEN OK $NC]\n"; else printf "[$RED WAITING $NC]\n"; fi)\n"
   sleep 5
 done
