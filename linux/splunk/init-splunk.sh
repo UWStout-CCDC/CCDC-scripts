@@ -1204,7 +1204,6 @@ updateSystem
 installGUI
 bulkRemoveServices
 bulkDisableServices
-moveBinaries
 
 initilizeClamAV > /dev/null 2>&1 &
 clamav_pid=$!
@@ -1214,6 +1213,12 @@ setupAuditd > /dev/null 2>&1 &
 auditd_pid=$!
 setupIPv6 > /dev/null 2>&1 &
 ipv6_pid=$!
+
+# Move binaries after all changes to avoid issues. After restarting system, if the red team was using any of these binaries for scripts, they won't work anymore
+# Still might be other persistence though
+# These changes will be backed up in the final backup
+moveBinaries
+
 backup > /dev/null 2>&1 & # Backup again to save all our changes with our final baseline and hope to god that there isn't a ton of red team persistence saved in the backup
 backup_pid=$!
 
