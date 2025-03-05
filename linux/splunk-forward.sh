@@ -11,7 +11,7 @@
 # Splunk UF 9.4.0 download link: https://download.splunk.com/products/universalforwarder/releases/9.4.0/linux/splunkforwarder-9.4.0-6b4ebe426ca6-linux-amd64.tgz
 SPLUNK_VERSION="9.4.0"
 SPLUNK_BUILD="6b4ebe426ca6"
-SPLUNK_PACKAGE_TGZ="splunkforwarder-$SPLUNK_VERSION-$SPLUNK_BUILD-Linux-x86_64.tgz"
+SPLUNK_PACKAGE_TGZ="splunkforwarder-$SPLUNK_VERSION-$SPLUNK_BUILD-linux-amd64.tgz"
 SPLUNK_DOWNLOAD_URL="https://download.splunk.com/products/universalforwarder/releases/$SPLUNK_VERSION/linux/$SPLUNK_PACKAGE_TGZ"
 SPLUNK_HOME="/opt/splunkforwarder"
 INDEXER_IP="172.20.241.20"
