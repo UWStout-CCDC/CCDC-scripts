@@ -210,8 +210,7 @@ createNewAdmin() {
   echo "Create new admin user? (y/n)"
   read createAdmin
   if [ "$createAdmin" == "y" ]; then
-    echo "Enter new admin username: "
-    read adminUser
+    adminUser="splunkadmin"
     useradd $adminUser
 
     while true; do
@@ -498,7 +497,7 @@ securePermissions() {
   echo -e "\e[33mSecuring Splunk configurations\e[0m"
   chmod -R 700 "$SPLUNK_HOME/etc/system/local"
   chmod -R 700 "$SPLUNK_HOME/etc/system/default"
-  chown -R splunk:splunk "$SPLUNK_HOME/etc"
+  chown -R splunkadmin:splunkadmin "$SPLUNK_HOME/etc"
 
   # Secure system permissions
   # Fix permissions (just in case)
