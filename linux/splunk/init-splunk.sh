@@ -22,6 +22,7 @@ SCRIPT_DIR="$CCDC_DIR/scripts"
 BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/splunk-scripting" # For testing
 SPLUNK_HOME="/opt/splunk"
 admin_password="changeme"
+LOGFILE="$CCDC_DIR/logs/init-splunk.txt"
 
 # Color Variables
 RED='\033[0;31m'
