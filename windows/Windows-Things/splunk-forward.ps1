@@ -1,9 +1,11 @@
 # Splunk forwarder script adapted from https://github.com/SEMO-Cyber/CyberDefenseTeamPrep/blob/main/Splunk/ and modified to better suit our use case
 # Thanks to SEMO Cyber Defense Team for the original script, saved me quite a bit of time!
 
+# https://download.splunk.com/products/universalforwarder/releases/9.4.1/windows/splunkforwarder-9.4.1-e3bdab203ac8-windows-x64.msi
+
 # Define variables
-$SPLUNK_VERSION = "9.4.0"
-$SPLUNK_BUILD = "6b4ebe426ca6"
+$SPLUNK_VERSION = "9.4.1"
+$SPLUNK_BUILD = "e3bdab203ac8"
 $SPLUNK_MSI = "splunkforwarder-${SPLUNK_VERSION}-${SPLUNK_BUILD}-x64-release.msi"
 $SPLUNK_DOWNLOAD_URL = "https://download.splunk.com/products/universalforwarder/releases/${SPLUNK_VERSION}/windows/${SPLUNK_MSI}"
 $INSTALL_DIR = "C:\Program Files\SplunkUniversalForwarder"
