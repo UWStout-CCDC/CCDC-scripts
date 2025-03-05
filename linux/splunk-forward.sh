@@ -39,7 +39,7 @@ fi
 
 # Quick function to check if a file exists, and monitor it
 monitor() {
-  if [ -f $1 ]
+  if [ -f $1 ];
   then
     $SPLUNK_HOME/bin/splunk add monitor $1
   fi
