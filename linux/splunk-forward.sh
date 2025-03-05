@@ -78,7 +78,6 @@ install_splunk() {
   if [ -f $SPLUNK_PACKAGE_TGZ ]; then
     echo "${BLUE}Extracting Splunk Forwarder tarball...${NC}"
     sudo tar -xvzf $SPLUNK_PACKAGE_TGZ -C /opt
-    rm -f $SPLUNK_PACKAGE_TGZ
 
     echo "${BLUE}Setting permissions...${NC}"
     create_splunk_user
