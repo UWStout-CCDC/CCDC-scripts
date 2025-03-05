@@ -411,13 +411,6 @@ iptables -A OUTPUT -o lo -j ACCEPT
 iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 
-# Allow limited incoming ICMP traffic and log packets that don't fit the rules
-#sudo iptables -A INPUT -p icmp --icmp-type echo-request -m length --length 0:192 -m limit --limit 1/s --limit-burst 5 -j ACCEPT
-#sudo iptables -A INPUT -p icmp --icmp-type echo-request -m length --length 0:192 -j LOG --log-prefix "Rate-limit exceeded: " --log-level 4
-#sudo iptables -A INPUT -p icmp --icmp-type echo-request -m length ! --length 0:192 -j LOG --log-prefix "Invalid size: " --log-level 4
-#sudo iptables -A INPUT -p icmp --icmp-type echo-reply -m limit --limit 1/s --limit-burst 5 -j ACCEPT
-#sudo iptables -A INPUT -p icmp -j DROP
-
 # Allow DNS traffic
 iptables -A OUTPUT -p udp --dport 53 -m limit --limit 20/min --limit-burst 50 -j ACCEPT
 iptables -A OUTPUT -p tcp --dport 53 -m limit --limit 20/min --limit-burst 50 -j ACCEPT
