@@ -1,22 +1,26 @@
 # Splunk forwarder script adapted from https://github.com/SEMO-Cyber/CyberDefenseTeamPrep/blob/main/Splunk/ and modified to better suit our use case
 
-# https://download.splunk.com/products/universalforwarder/releases/9.4.1/windows/splunkforwarder-9.4.1-e3bdab203ac8-windows-x64.msi
-
 # Define variables
 $SPLUNK_VERSION = "9.4.1"
 $SPLUNK_BUILD = "e3bdab203ac8"
 $SPLUNK_MSI = "splunkforwarder-${SPLUNK_VERSION}-${SPLUNK_BUILD}-windows-x64.msi"
 $SPLUNK_DOWNLOAD_URL = "https://download.splunk.com/products/universalforwarder/releases/${SPLUNK_VERSION}/windows/${SPLUNK_MSI}"
-$INSTALL_DIR = "C:\Program Files\SplunkUniversalForwarder"
+$INSTALL_DIR = "C:\CCDC\Splunk"
 $INDEXER_IP = "172.20.241.20"
 $RECEIVER_PORT = "9997"
 
 # Get system hostname
 $hostname = hostname
 
-# Download Splunk Universal Forwarder MSI
-Write-Host "Downloading Splunk Universal Forwarder MSI..."
-Invoke-WebRequest -Uri $SPLUNK_DOWNLOAD_URL -OutFile $SPLUNK_MSI
+# Create the installation directory if it doesn't exist
+if (!(Test-Path -Path $INSTALL_DIR)) {
+    New-Item -ItemType Directory -Path $INSTALL_DIR
+    Write-Host "Created installation directory: $INSTALL_DIR"
+}
+
+# Download Splunk Universal Forwarder MSI using BITS
+Write-Host "Downloading Splunk Universal Forwarder MSI using BITS..."
+Start-BitsTransfer -Source $SPLUNK_DOWNLOAD_URL -Destination $SPLUNK_MSI
 
 # Install Splunk Universal Forwarder
 Write-Host "Installing Splunk Universal Forwarder..."
@@ -34,7 +38,7 @@ disabled = 0
 index = main
 
 [WinEventLog://Application]
-dsiabled = 0
+disabled = 0
 index = main
 
 [WinEventLog://System]
