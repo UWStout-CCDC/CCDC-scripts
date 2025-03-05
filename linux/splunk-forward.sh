@@ -2,10 +2,6 @@
 
 # Splunk Universal Forwarder installation script for Linux
 
-# Main modifications are:
-# - Non-hard coded password
-# - Added log file monitoring for our team's use case
-
 # TODO:
 # - TEST THE SCRIPT IN ENVIRONMENT
 # - Add more log files to monitor

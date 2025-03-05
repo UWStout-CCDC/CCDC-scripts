@@ -1,5 +1,4 @@
 # Splunk forwarder script adapted from https://github.com/SEMO-Cyber/CyberDefenseTeamPrep/blob/main/Splunk/ and modified to better suit our use case
-# Thanks to SEMO Cyber Defense Team for the original script, saved me quite a bit of time!
 
 # https://download.splunk.com/products/universalforwarder/releases/9.4.1/windows/splunkforwarder-9.4.1-e3bdab203ac8-windows-x64.msi
 
