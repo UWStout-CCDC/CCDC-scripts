@@ -39,6 +39,13 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
+if [ ! -d "$INSTALL_DIR" ]; then
+  echo "${BLUE}Creating installation directory...${NC}"
+  sudo mkdir -p $INSTALL_DIR
+else
+  echo "${GREEN}Installation directory already exists.${NC}"
+fi
+
 # Check the OS and install the necessary packageå
 if [ -f /etc/os-release ]; then
   . /etc/os-release
