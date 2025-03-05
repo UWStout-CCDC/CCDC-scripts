@@ -5,7 +5,7 @@
 # Define variables
 $SPLUNK_VERSION = "9.4.1"
 $SPLUNK_BUILD = "e3bdab203ac8"
-$SPLUNK_MSI = "splunkforwarder-${SPLUNK_VERSION}-${SPLUNK_BUILD}-x64-release.msi"
+$SPLUNK_MSI = "splunkforwarder-${SPLUNK_VERSION}-${SPLUNK_BUILD}-windows-x64.msi"
 $SPLUNK_DOWNLOAD_URL = "https://download.splunk.com/products/universalforwarder/releases/${SPLUNK_VERSION}/windows/${SPLUNK_MSI}"
 $INSTALL_DIR = "C:\Program Files\SplunkUniversalForwarder"
 $INDEXER_IP = "172.20.241.20"
