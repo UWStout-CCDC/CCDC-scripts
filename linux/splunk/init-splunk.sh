@@ -893,8 +893,7 @@ configureSplunk() {
   $SPLUNK_HOME/bin/splunk enable listen 514 -auth admin:$password
 
   cat <<-EOF > "$SPLUNK_HOME/etc/system/local/inputs.conf"
-#TCP input for Splunk forwarders (port 9997)
-#Commented out to see listener in WebUI
+#TCP input for Splunk forwarders (port 9997 & 514)
 [tcp://9997]
 index = main
 sourcetype = tcp:9997
