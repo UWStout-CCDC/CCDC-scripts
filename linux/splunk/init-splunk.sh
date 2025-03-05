@@ -46,7 +46,6 @@ get() {
   if [[ ! -f "$SCRIPT_DIR/$1" ]]
   then
     mkdir -p $(dirname "$SCRIPT_DIR/$1") 1>&2
-    BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master"
     wget --no-check-certificate "$BASE_URL/$1" -O "$SCRIPT_DIR/$1" 1>&2
   fi
   echo "$SCRIPT_DIR/$1"
