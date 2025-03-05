@@ -887,27 +887,26 @@ configureSplunk() {
   fi
   cd ~
 
-# I am doing this manually to avoid some issues I was having with receiving logs
 #   # Enable Splunk reciever
-#   echo -e "\e[33mEnabling Splunk receivers\e[0m"
-#   $SPLUNK_HOME/bin/splunk enable listen 9997 -auth admin:$password
-#   $SPLUNK_HOME/bin/splunk enable listen 514 -auth admin:$password
+  echo -e "\e[33mEnabling Splunk receivers\e[0m"
+  $SPLUNK_HOME/bin/splunk enable listen 9997 -auth admin:$password
+  $SPLUNK_HOME/bin/splunk enable listen 514 -auth admin:$password
 
-#   cat <<-EOF > "$SPLUNK_HOME/etc/system/local/inputs.conf"
-# #TCP input for Splunk forwarders (port 9997)
-# #Commented out to see listener in WebUI
-# [tcp://9997]
-# index = main
-# sourcetype = tcp:9997
-# connection_host = dns
-# disabled = false
+  cat <<-EOF > "$SPLUNK_HOME/etc/system/local/inputs.conf"
+#TCP input for Splunk forwarders (port 9997)
+#Commented out to see listener in WebUI
+[tcp://9997]
+index = main
+sourcetype = tcp:9997
+connection_host = dns
+disabled = false
 
-# [tcp://514]
-# sourcetype = pan:firewall
-# no_appending_timestamp = true
-# index = pan_logs
-# EOF
-#   sendLog "Splunk receivers enabled"
+[tcp://514]
+sourcetype = pan:firewall
+no_appending_timestamp = true
+index = pan_logs
+EOF
+  sendLog "Splunk receivers enabled"
 
   #Add the index for Palo logs
   $SPLUNK_HOME/bin/splunk add index pan_logs
