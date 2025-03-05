@@ -1219,6 +1219,6 @@ printf "Waiting for netconfig script to complete... [$GREEN OK $NC]\n"
 printf "Waiting for backup to complete... [$GREEN OK $NC]\n"
 
 # End the script logging
-exec 2>&1
+reset
 
 echo "\e[32mSplunk setup complete. Reboot to apply changes and clear in-memory beacons.\e[0m"
