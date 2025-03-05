@@ -437,8 +437,8 @@ iptables -A OUTPUT -p tcp --sport 9997 -m conntrack --ctstate NEW,ESTABLISHED -j
 iptables -A INPUT -p tcp --dport 514 -m conntrack --ctstate NEW -j ACCEPT   #Logs from Palo
 iptables -A OUTPUT -p tcp --sport 514 -m conntrack --ctstate ESTABLISHED -j ACCEPT
 
-#sudo iptables -A INPUT -p tcp --dport 8089 -j ACCEPT   #NOT NEEDED
-#sudo iptables -A OUTPUT -p tcp --sport 8089 -j ACCEPT  #NOT NEEDED
+iptables -A INPUT -p tcp --dport 8089 -j ACCEPT
+iptables -A OUTPUT -p tcp --sport 8089 -j ACCEPT
 
 iptables -A INPUT -p tcp --dport 8000 -m conntrack --ctstate NEW -j ACCEPT  #Splunk webGUI
 iptables -A OUTPUT -p tcp --sport 8000 -m conntrack --ctstate ESTABLISHED -j ACCEPT
