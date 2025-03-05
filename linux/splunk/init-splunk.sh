@@ -635,7 +635,7 @@ check_for_malicious_bash() {
   # if they do, we need to check the contents of the trap or PROMPT_COMMAND and print them to a file, and remove them
 
   # Check if logs directory exists
-  if [ ! -d /ccdc ]; then
+  if [ ! -d /ccdc/logs ]; then
       mkdir -p /ccdc/logs
   fi
 
