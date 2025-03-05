@@ -81,13 +81,19 @@ checkImmutable() {
     fi
   fi
 
+  immutable=0
   # Check if the file is immutable and remove the immutable flag
   if [ -f $1 ] || [ -d $1 ];
   then
     if lsattr $1 | grep -q 'i'
     then
-      /tmp/chattr -R -i $1
+      immutable=1
     fi
+  fi
+
+  if [ $immutable -eq 1 ]; then
+    /tmp/chattr -R -i $1
+    sendLog "Removed immutable flag from $1"
   fi
 }
 
