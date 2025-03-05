@@ -255,11 +255,11 @@ webUIPassword() {
 # CentOS is EOL so this likely won't ever be used anymore, uncomment if needed
 #function fixCentOSRepos() {
   # Fix repos preemtively (if CentOS)
-  # wget $BASE_URL/linux/splunk/CentOS-Base.repo -O CentOS-Base.repo --no-check-certificate
+  # get linux/splunk/CentOS-Base.repo
   # echo -e "\e[33mFixing repos\e[0m"
   # cd ~
   # mv /etc/yum.repos.d/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo.bak
-  # mv ~/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo
+  # cp $SCRIPT_DIR/linux/splunk/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo
   # yum clean all
   # rm -rf /var/cache/yum
   # yum makecache
@@ -295,7 +295,7 @@ installTools() {
   # Install tools (if not already)
   echo -e "\e[33mInstalling tools\e[0m"
   yum install epel-release -y
-  yum install iptables iptables-services wget git aide net-tools audit audit-libs rkhunter clamav -y
+  yum install iptables iptables-services git aide net-tools audit audit-libs rkhunter clamav -y
 
   # Install Lynis
   if [ ! -f /ccdc/lynis ]; then
@@ -320,11 +320,11 @@ installTools() {
 #init() {
   # Init script
   # Download init script
-  #wget $BASE_URL/linux/init.sh -O init.sh --no-check-certificate
+  #get linux/init.sh
   # Run init script
   #echo -e "\e[33mRunning init script\e[0m"
-  #chmod +x init.sh
-  #./init.sh
+  #chmod +x $SCRIPT_DIR/linux/init.sh
+  #$SCRIPT_DIR/linux/init.sh
 #}
 
 ##################################
@@ -398,52 +398,50 @@ then
   exit 1
 fi
 
-# Flush existing rules
-iptables -F
-iptables -X
-iptables -Z
+# Empty all rules
+iptables -t filter -F
+iptables -t filter -X
 
-# Set default policies
-iptables -P INPUT DROP
-iptables -P OUTPUT DROP
-iptables -P FORWARD DROP
+# Block everything by default
+iptables -t filter -P INPUT DROP
+iptables -t filter -P FORWARD DROP
+iptables -t filter -P OUTPUT DROP
 
-# Allow loopback traffic
-iptables -A INPUT -i lo -j ACCEPT
-iptables -A OUTPUT -o lo -j ACCEPT
+# Authorize already established connections
+iptables -A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+iptables -A OUTPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+iptables -t filter -A INPUT -i lo -j ACCEPT
+iptables -t filter -A OUTPUT -o lo -j ACCEPT
 
-# Allow established connections
-iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+# ICMP (Ping)
+iptables -t filter -A INPUT -p icmp -j ACCEPT
+iptables -t filter -A OUTPUT -p icmp -j ACCEPT
 
-# Allow DNS traffic
-iptables -A OUTPUT -p udp --dport 53 -m limit --limit 20/min --limit-burst 50 -j ACCEPT
-iptables -A OUTPUT -p tcp --dport 53 -m limit --limit 20/min --limit-burst 50 -j ACCEPT
-iptables -A INPUT -p udp --sport 53 -m state --state ESTABLISHED -j ACCEPT
-iptables -A INPUT -p tcp --sport 53 -m state --state ESTABLISHED -j ACCEPT
+# DNS (Needed for curl, and updates)
+iptables -t filter -A OUTPUT -p tcp --dport 53 -j ACCEPT
+iptables -t filter -A OUTPUT -p udp --dport 53 -j ACCEPT
 
-# Allow HTTP/HTTPS traffic
-iptables -A INPUT -p tcp --dport 80 -m conntrack --ctstate NEW -m limit --limit 100/min --limit-burst 200 -j ACCEPT
-iptables -A OUTPUT -p tcp --dport 80 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
-iptables -A INPUT -p tcp --dport 443 -m conntrack --ctstate NEW -m limit --limit 100/min --limit-burst 200 -j ACCEPT
-iptables -A OUTPUT -p tcp --dport 443 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+# HTTP/HTTPS
+iptables -t filter -A OUTPUT -p tcp --dport 80 -j ACCEPT
+iptables -t filter -A OUTPUT -p tcp --dport 443 -j ACCEPT
 
-# Allow Splunk-specific traffic
-iptables -A INPUT -p tcp --dport 9997 -m conntrack --ctstate NEW -j ACCEPT  #Splunk Forwarders
-iptables -A OUTPUT -p tcp --sport 9997 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+# NTP (server time)
+iptables -t filter -A OUTPUT -p udp --dport 123 -j ACCEPT
 
-iptables -A INPUT -p tcp --dport 514 -m conntrack --ctstate NEW -j ACCEPT   #Logs from Palo
-iptables -A OUTPUT -p tcp --sport 514 -m conntrack --ctstate ESTABLISHED -j ACCEPT
+# Splunk
+iptables -t filter -A OUTPUT -p tcp --dport 8000 -j ACCEPT
+iptables -t filter -A OUTPUT -p tcp --dport 8089 -j ACCEPT
+iptables -t filter -A OUTPUT -p tcp --dport 9997 -j ACCEPT
 
-iptables -A INPUT -p tcp --dport 8089 -j ACCEPT
-iptables -A OUTPUT -p tcp --sport 8089 -j ACCEPT
+# Splunk Web UI
+iptables -t filter -A INPUT -p tcp --dport 8000 -j ACCEPT
 
-iptables -A INPUT -p tcp --dport 8000 -m conntrack --ctstate NEW -j ACCEPT  #Splunk webGUI
-iptables -A OUTPUT -p tcp --sport 8000 -m conntrack --ctstate ESTABLISHED -j ACCEPT
+# Splunk Forwarder
+iptables -t filter -A INPUT -p tcp --dport 8089 -j ACCEPT
+iptables -t filter -A INPUT -p tcp --dport 9997 -j ACCEPT
 
-# Log dropped packets
-iptables -A INPUT -j LOG --log-prefix "DROP-IN:" --log-level 4 --log-ip-options --log-tcp-options --log-tcp-sequence
-iptables -A OUTPUT -j LOG --log-prefix "DROP-OUT:" --log-level 4 --log-ip-options --log-tcp-options --log-tcp-sequence
+# Splunk Syslog (PA)
+iptables -t filter -A INPUT -p tcp --dport 514 -j ACCEPT
 
 # Bad Flag Combinations
 # Prevent an attacker from sending flags for reconnaissance. 
@@ -742,10 +740,10 @@ setLegalBanners() {
 setupAuditd() {
   # Auditd setup
   # Download audit rules
-  wget $BASE_URL/linux/CustomAudit.rules -O audit.rules --no-check-certificate
+  get linux/CustomAudit.rules
   # Run auditd setup
   echo -e "\e[33mSetting up Auditd\e[0m"
-  cat audit.rules > /etc/audit/audit.rules
+  cat $SCRIPT_DIR/linux/CustomAudit.rules > /etc/audit/audit.rules
   systemctl start auditd.service
   systemctl enable auditd.service
 }
@@ -836,6 +834,26 @@ setSELinuxPolicy() {
   fi
 }
 
+moveBinaries() {
+  # Move binaries commonly used for reverse shells to a different directory
+  echo -e "\e[33mMoving binaries\e[0m"
+  mkdir /etc/stb
+  mv /usr/bin/curl /etc/stb/1
+  mv /usr/bin/wget /etc/stb/2
+  mv /usr/bin/ftp /etc/stb/3
+  mv /usr/bin/sftp /etc/stb/4
+  mv /usr/bin/aria2c /etc/stb/5
+  mv /usr/bin/nc /etc/stb/6
+  mv /usr/bin/socat /etc/stb/7
+  mv /usr/bin/telnet /etc/stb/8
+  mv /usr/bin/tftp /etc/stb/9
+  mv /usr/bin/ncat /etc/stb/10
+  mv /usr/bin/gdb /etc/stb/11  
+  mv /usr/bin/strace /etc/stb/12 
+  mv /usr/bin/ltrace /etc/stb/13
+  sendLog "Binaries moved"
+}
+
 ################################
 ##    End Security Configs    ##
 ################################
@@ -869,26 +887,27 @@ configureSplunk() {
   fi
   cd ~
 
-  # Enable Splunk reciever
-  echo -e "\e[33mEnabling Splunk receivers\e[0m"
-  $SPLUNK_HOME/bin/splunk enable listen 9997 -auth admin:$password
-  $SPLUNK_HOME/bin/splunk enable listen 514 -auth admin:$password
+# I am doing this manually to avoid some issues I was having with receiving logs
+#   # Enable Splunk reciever
+#   echo -e "\e[33mEnabling Splunk receivers\e[0m"
+#   $SPLUNK_HOME/bin/splunk enable listen 9997 -auth admin:$password
+#   $SPLUNK_HOME/bin/splunk enable listen 514 -auth admin:$password
 
-  cat <<-EOF > "$SPLUNK_HOME/etc/system/local/inputs.conf"
-#TCP input for Splunk forwarders (port 9997)
-#Commented out to see listener in WebUI
-[tcp://9997]
-index = main
-sourcetype = tcp:9997
-connection_host = dns
-disabled = false
+#   cat <<-EOF > "$SPLUNK_HOME/etc/system/local/inputs.conf"
+# #TCP input for Splunk forwarders (port 9997)
+# #Commented out to see listener in WebUI
+# [tcp://9997]
+# index = main
+# sourcetype = tcp:9997
+# connection_host = dns
+# disabled = false
 
-[tcp://514]
-sourcetype = pan:firewall
-no_appending_timestamp = true
-index = pan_logs
-EOF
-  sendLog "Splunk receivers enabled"
+# [tcp://514]
+# sourcetype = pan:firewall
+# no_appending_timestamp = true
+# index = pan_logs
+# EOF
+#   sendLog "Splunk receivers enabled"
 
   #Add the index for Palo logs
   $SPLUNK_HOME/bin/splunk add index pan_logs
@@ -972,7 +991,7 @@ bulkRemoveServices() {
   ## These are done after the gui is installed as the gui sometimes reinstalls some of these services
   # Bulk remove services
   echo -e "\e[33mRemoving unneeded services\e[0m"
-  yum remove xinetd telnet-server rsh-server telnet rsh ypbind ypserv tftp-server cronie-anacron bind vsftpd dovecot squid net-snmpd postfix libgcc -y
+  yum remove xinetd telnet-server rsh-server telnet rsh ypbind ypserv tftp-server cronie-anacron bind vsftpd dovecot squid net-snmpd postfix libgcc clang make cmake automake autoconf -y
 }
 
 bulkDisableServices() {
@@ -1185,6 +1204,7 @@ updateSystem
 installGUI
 bulkRemoveServices
 bulkDisableServices
+moveBinaries
 
 initilizeClamAV > /dev/null 2>&1 &
 clamav_pid=$!
