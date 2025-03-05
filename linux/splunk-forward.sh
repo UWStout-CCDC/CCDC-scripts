@@ -82,7 +82,7 @@ install_splunk() {
       local status=$?
     fi
 
-    if [ $status -eq 0 ]; then
+    if [ -f $SPLUNK_PACKAGE_TGZ ]; then
       download_success=true
     else
       retry_count=$((retry_count + 1))
