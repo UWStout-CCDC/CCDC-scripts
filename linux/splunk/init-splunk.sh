@@ -35,9 +35,9 @@ GREEN='\033[0;32m'
 [ ! -d "$CCDC_ETC" ] && mkdir -p $CCDC_ETC
 [ ! -d "$SCRIPT_DIR" ] && mkdir -p $SCRIPT_DIR
 
-#######################
-## Helper Functions  ##
-#######################
+########################
+##  Helper Functions  ##
+########################
 
 # get <file>
 # prints the name of the file downloaded
