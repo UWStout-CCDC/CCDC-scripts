@@ -1,8 +1,7 @@
 #!/bin/bash
 #
 # A script to automate upgrading Splunk during competition.
-# Script directly taken from https://github.com/SEMO-Cyber/CyberDefenseTeamPrep/blob/main/Splunk/upgradeSplunk.sh
-# Thanks to SEMO Cyber Defense Team for the script!
+# Script taken from https://github.com/SEMO-Cyber/CyberDefenseTeamPrep/blob/main/Splunk/upgradeSplunk.sh
 
 SPLUNK_UPGRADE_LINK="https://download.splunk.com/products/splunk/releases/9.4.0/linux/splunk-9.4.0-6b4ebe426ca6.x86_64.rpm"
 
