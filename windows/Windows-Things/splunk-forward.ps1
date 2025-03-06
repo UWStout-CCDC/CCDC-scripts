@@ -5,9 +5,10 @@ $SPLUNK_VERSION = "9.4.1"
 $SPLUNK_BUILD = "e3bdab203ac8"
 $SPLUNK_MSI = "splunkforwarder-${SPLUNK_VERSION}-${SPLUNK_BUILD}-windows-x64.msi"
 $SPLUNK_DOWNLOAD_URL = "https://download.splunk.com/products/universalforwarder/releases/${SPLUNK_VERSION}/windows/${SPLUNK_MSI}"
-$INSTALL_DIR = "C:\CCDC\Splunk"
+$INSTALL_DIR = "C:\Program Files\SplunkUniversalForwarder\"
 $INDEXER_IP = "172.20.241.20"
 $RECEIVER_PORT = "9997"
+$DEPLOYMENT_PORT = "8089"
 
 # Get system hostname
 $hostname = hostname
@@ -24,7 +25,7 @@ Start-BitsTransfer -Source $SPLUNK_DOWNLOAD_URL -Destination $SPLUNK_MSI
 
 # Install Splunk Universal Forwarder
 Write-Host "Installing Splunk Universal Forwarder..."
-Start-Process -FilePath "msiexec.exe" -ArgumentList "/i $SPLUNK_MSI AGREETOLICENSE=Yes RECEIVING_INDEXER=${INDEXER_IP}:${RECEIVER_PORT} /quiet" -Wait
+Start-Process -FilePath "msiexec.exe" -ArgumentList "/i $SPLUNK_MSI AGREETOLICENSE=Yes RECEIVING_INDEXER=${INDEXER_IP}:${RECEIVER_PORT} DEPLOYMENT_SERVER=${INDEXER_IP}:${DEPLOYMENT_PORT} /quiet" -Wait
 
 # Configure inputs.conf for monitoring
 $inputsConfPath = "$INSTALL_DIR\etc\system\local\inputs.conf"
