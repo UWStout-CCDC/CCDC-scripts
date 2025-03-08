@@ -161,10 +161,10 @@ prescripts(){
                             mysql -u root -e "FLUSH PRIVILEGES;" -p$NEW_MYSQL_ROOT_PASSWORD
                             MYSQL_ROOT_PASSWORD=$NEW_MYSQL_ROOT_PASSWORD
                             # Change the user in presta config
-                            if [ -f /var/www/html/prestashop/config/settings.inc.php ]; then
-                                sed -i "s/define('_DB_PASSWD_', '.*');/define('_DB_PASSWD_', '$MYSQL_ROOT_PASSWORD');/" /var/www/html/prestashop/config/settings.inc.php
-                            elif [ -f /var/www/html/prestashop/app/config/parameters.php ]; then
+                            if [ -f /var/www/html/prestashop/app/config/parameters.php ]; then
                                 sed -i "s/'database_password' => '.*',/'database_password' => '$MYSQL_ROOT_PASSWORD',/" /var/www/html/prestashop/app/config/parameters.php
+                            elif [ -f /var/www/html/prestashop/config/settings.inc.php ]; then
+                                sed -i "s/define('_DB_PASSWD_', '.*');/define('_DB_PASSWD_', '$MYSQL_ROOT_PASSWORD');/" /var/www/html/prestashop/config/settings.inc.php
                             fi
                             break
                         else
@@ -1082,14 +1082,14 @@ fi
 # The database name can be found in the configuration file located in /var/www/html/prestashop/config/settings.inc.php, or in /var/www/html/prestashop/app/config/parameters.php
 # The database name will look like this define('_DB_NAME_', 'prestashop'); or 'database_name' => 'prestashop',
 # Extract the database name from the define statement
-if [ -f "$PRESTASHOP_DIR/config/settings.inc.php" ]; then
-    PHP_FILE="$PRESTASHOP_DIR/config/settings.inc.php"
-    CURRENT_DB_NAME=$(grep -oP "define\('_DB_NAME_', '\K[^']+" "$PHP_FILE")
-    CURRENT_DB_USER=$(grep -oP "define\('_DB_USER_', '\K[^']+" "$PHP_FILE")
-elif [ -f "$PRESTASHOP_DIR/app/config/parameters.php" ]; then
+if [ -f "$PRESTASHOP_DIR/app/config/parameters.php" ]; then
     PHP_FILE="$PRESTASHOP_DIR/app/config/parameters.php"
     CURRENT_DB_NAME=$(grep -oP "'database_name' => '\K[^']+" "$PHP_FILE")
     CURRENT_DB_USER=$(grep -oP "'database_user' => '\K[^']+" "$PHP_FILE")
+elif [ -f "$PRESTASHOP_DIR/config/settings.inc.php" ]; then
+    PHP_FILE="$PRESTASHOP_DIR/config/settings.inc.php"
+    CURRENT_DB_NAME=$(grep -oP "define\('_DB_NAME_', '\K[^']+" "$PHP_FILE")
+    CURRENT_DB_USER=$(grep -oP "define\('_DB_USER_', '\K[^']+" "$PHP_FILE")
 else
     echo "PrestaShop configuration file not found."
     exit 1
@@ -1171,22 +1171,22 @@ EOF
         # The database name can be found in the configuration file located in /var/www/html/prestashop/config/settings.inc.php, or in /var/www/html/prestashop/app/config/parameters.php
         # The database name will look like this define('_DB_NAME_', 'prestashop'); or 'database_name' => 'prestashop',
         # Extract the database name from the define statement
-        if [ -f "$PRESTASHOP_DIR/config/settings.inc.php" ]; then
-            PHP_FILE="$PRESTASHOP_DIR/config/settings.inc.php"
-            CURRENT_DB_NAME=$(grep -oP "define\('_DB_NAME_', '\K[^']+" "$PHP_FILE")
-        elif [ -f "$PRESTASHOP_DIR/app/config/parameters.php" ]; then
+        if [ -f "$PRESTASHOP_DIR/app/config/parameters.php" ]; then
             PHP_FILE="$PRESTASHOP_DIR/app/config/parameters.php"
             CURRENT_DB_NAME=$(grep -oP "'database_name' => '\K[^']+" "$PHP_FILE")
+        elif [ -f "$PRESTASHOP_DIR/config/settings.inc.php" ]; then
+            PHP_FILE="$PRESTASHOP_DIR/config/settings.inc.php"
+            CURRENT_DB_NAME=$(grep -oP "define\('_DB_NAME_', '\K[^']+" "$PHP_FILE")
         else
             echo "PrestaShop configuration file not found."
         fi
 
         # disable smarty cache in the prestashop configuration table
         # first get the db prefix from the two possible locations
-        if [ -f "/var/www/html/prestashop/config/settings.inc.php" ]; then
-            DB_PREFIX=$(grep -oP "define\('_DB_PREFIX_', '\K[^']+" /var/www/html/prestashop/config/settings.inc.php)
-        elif [ -f "/var/www/html/prestashop/app/config/parameters.php" ]; then
+        if [ -f "/var/www/html/prestashop/app/config/parameters.php" ]; then
             DB_PREFIX=$(grep -oP "'database_prefix' => '\K[^']+" /var/www/html/prestashop/app/config/parameters.php)
+        elif [ -f "/var/www/html/prestashop/config/settings.inc.php" ]; then
+            DB_PREFIX=$(grep -oP "define\('_DB_PREFIX_', '\K[^']+" /var/www/html/prestashop/config/settings.inc.php)
         fi
 
         # Ensure DB_PREFIX is set, default to 'ps_' if missing
