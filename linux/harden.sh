@@ -163,25 +163,30 @@ changePasswords() {
 
     echo "root:$rootPass" | chpasswd
 
-    # Set sysadmin password
-    while true; do
-        echo "Enter new sysadmin password: "
-        stty -echo
-        read sysadminPass
-        stty echo
-        echo "Confirm sysadmin password: "
-        stty -echo
-        read confirmSysadminPass
-        stty echo
+    # If sysadmin exists set password
+    if id "sysadmin" &>/dev/null; then
+      echo "sysadmin user exists, setting password"
+      while true; do
+          echo "Enter new sysadmin password: "
+          stty -echo
+          read sysadminPass
+          stty echo
+          echo "Confirm sysadmin password: "
+          stty -echo
+          read confirmSysadminPass
+          stty echo
 
-        if [ "$sysadminPass" = "$confirmSysadminPass" ]; then
-            break
-        else
-            echo "Passwords do not match. Please try again."
-        fi
-    done
+          if [ "$sysadminPass" = "$confirmSysadminPass" ]; then
+              break
+          else
+              echo "Passwords do not match. Please try again."
+          fi
+      done
 
-    echo "sysadmin:$sysadminPass" | chpasswd
+      echo "sysadmin:$sysadminPass" | chpasswd
+    else
+      sendLog "sysadmin user does not exist, skipping!"
+    fi
   else 
     sendLog "Skipping password change"
   fi
@@ -221,17 +226,17 @@ createNewAdmin() {
 }
 
 fixCentOSRepos() {
-  Fix repos preemtively (if CentOS)
-  wget $BASE_URL/linux/splunk/CentOS-Base.repo -O CentOS-Base.repo --no-check-certificate
+  # Fix repos preemtively (if CentOS)
+  get linux/splunk/CentOS-Base.repo
   echo -e "\e[33mFixing repos\e[0m"
   cd ~
   mv /etc/yum.repos.d/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo.bak
-  mv ~/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo
+  cp $SCRIPT_DIR/linux/splunk/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo
   yum clean all
   rm -rf /var/cache/yum
   yum makecache
 
-  Update CA certs
+  # Update CA certs
   echo -e "\e[33mUpdating CA certificates\e[0m"
   yum update -y ca-certificates
 }
@@ -266,11 +271,11 @@ installTools() {
         fixCentOSRepos
       fi
       $PKG_MANAGER install epel-release -y
-      $PKG_MANAGER install iptables iptables-services wget git aide net-tools audit audit-libs rkhunter clamav -y
+      $PKG_MANAGER install iptables iptables-services git aide net-tools audit audit-libs rkhunter clamav -y
       ;;
     apt-get)
       apt-get update -y
-      apt-get install iptables wget git aide net-tools auditd rkhunter clamav -y
+      apt-get install iptables git aide net-tools auditd rkhunter clamav -y
       ;;
     *)
       sendError "Unsupported package manager: $PKG_MANAGER"
@@ -310,7 +315,7 @@ EOF
     # Get the username
     username=$(echo $line | cut -d: -f1)
     # Check if the user is root
-    if [ "$username" == "root" ] || [ "$username" == "sysadmin" ] || [ "$username" == "$adminUser" ]; then
+    if [ "$username" == "root" ] || [ "$username" == "sysadmin" ] || [ "$username" == "splunkadmin" ]; then
       # Skip the root, sysadmin, and splunkadmin users
       continue
     fi
@@ -756,10 +761,10 @@ setLegalBanners() {
 setupAuditd() {
   # Auditd setup
   # Download audit rules
-  wget $BASE_URL/linux/CustomAudit.rules -O audit.rules --no-check-certificate
+  get linux/CustomAudit.rules
   # Run auditd setup
   echo -e "\e[33mSetting up Auditd\e[0m"
-  cat audit.rules > /etc/audit/audit.rules
+  cat $SCRIPT_DIR/linux/CustomAudit.rules > /etc/audit/audit.rules
   systemctl start auditd.service
   systemctl enable auditd.service
 }
@@ -767,16 +772,16 @@ setupAuditd() {
 disableUncommonProtocols() {
   # Disable uncommon protocols
   echo -e "\e[33mDisabling uncommon protocols\e[0m"
-  if ! grep -q "install dccp /bin/false" /etc/modprobe.d/dccp.conf; then
+  if [ ! grep "install dccp /bin/false" /etc/modprobe.d/dccp.conf ]; then
     echo "install dccp /bin/false" >> /etc/modprobe.d/dccp.conf
   fi
-  if ! grep -q "install sctp /bin/false" /etc/modprobe.d/sctp.conf; then
+  if [ ! grep "install sctp /bin/false" /etc/modprobe.d/sctp.conf ]; then
     echo "install sctp /bin/false" >> /etc/modprobe.d/sctp.conf
   fi
-  if ! grep -q "install rds /bin/false" /etc/modprobe.d/rds.conf; then
+  if [ ! grep "install rds /bin/false" /etc/modprobe.d/rds.conf ]; then
     echo "install rds /bin/false" >> /etc/modprobe.d/rds.conf
   fi
-  if ! grep -q "install tipc /bin/false" /etc/modprobe.d/tipc.conf; then
+  if [ ! grep "install tipc /bin/false" /etc/modprobe.d/tipc.conf ]; then
     echo "install tipc /bin/false" >> /etc/modprobe.d/tipc.conf
   fi
 }
@@ -784,7 +789,7 @@ disableUncommonProtocols() {
 disableCoreDumps() {
   # Disable core dumps for users
   echo -e "\e[33mDisabling core dumps for users\e[0m"
-  if ! grep -q "^* hard core 0" /etc/security/limits.conf; then
+  if [ ! grep "^* hard core 0" /etc/security/limits.conf ]; then
     echo "* hard core 0" >> /etc/security/limits.conf
   fi
 }
@@ -858,7 +863,7 @@ bulkRemoveServices() {
   ## These are done after the gui is installed as the gui sometimes reinstalls some of these services
   # Bulk remove services
   echo -e "\e[33mRemoving unneeded services\e[0m"
-  yum remove xinetd telnet-server rsh-server telnet rsh ypbind ypserv tftp-server cronie-anacron bind vsftpd dovecot squid net-snmpd postfix libgcc -y
+  yum remove xinetd telnet-server rsh-server telnet rsh ypbind ypserv tftp-server cronie-anacron bind vsftpd dovecot squid net-snmpd postfix libgcc clang make cmake automake autoconf -y
 }
 
 bulkDisableServices() {
@@ -965,7 +970,7 @@ bulkDisableServices() {
 disableRootSSH() {
   # Disable root SSH
   echo -e "\e[33mDisabling root SSH\e[0m"
-  if ! grep -q "PermitRootLogin yes" /etc/ssh/sshd_config; then
+  if [ ! grep "PermitRootLogin yes" /etc/ssh/sshd_config ]; then
     sed -i 's/PermitRootLogin yes/PermitRootLogin no/g' /etc/ssh/sshd_config
   fi
 }
@@ -1073,4 +1078,4 @@ printf "Waiting for backup to complete... [$GREEN OK $NC]\n"
 # End the script logging
 exec 2>&1
 
-echo "\e[32mHardening complete. Reboot to apply changes and clear in-memory beacons.\e[0m"
+echo -e "\e[32mHardening complete. Reboot to apply changes and clear in-memory beacons.\e[0m"
