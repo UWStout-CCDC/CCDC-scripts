@@ -1,40 +1,83 @@
-# Define the URL for the DoD GPOs
-$gpoUrl = "https://dl.dod.cyber.mil/wp-content/uploads/stigs/zip/U_STIG_GPO_Package_October_2024.zip"
+$ccdcPath = "C:\CCDC"
+$toolsPath = "$ccdcPath\tools-Windows"
 
-# Define the local path to save the GPOs
-$gpoPath = "$env:TEMP\DoD_GPOs.zip"
+# Download Group Policy
+$tools = @(
+    @{ Name = "Windows Defender GPOs"; Url = "https://github.com/UWStout-CCDC/CCDC-scripts/raw/refs/heads/master/windows/CCDL-Resources/Defender-gpos.zip"; Path = "$toolsPath\Defender-gpos.zip" },
+    @{ Name = "Firefox GPOs"; Url = "https://github.com/UWStout-CCDC/CCDC-scripts/raw/refs/heads/master/windows/CCDL-Resources/Firefox-gpos.zip"; Path = "$toolsPath\Firefox-gpos.zip" },
+    @{ Name = "Edge GPOs"; Url = "https://github.com/UWStout-CCDC/CCDC-scripts/raw/refs/heads/master/windows/CCDL-Resources/MS-Edge-gpos.zip"; Path = "$toolsPath\MS-Edge-gpos.zip" },
+    @{ Name = "Windows 10 GPOs"; Url = "https://github.com/UWStout-CCDC/CCDC-scripts/raw/refs/heads/master/windows/CCDL-Resources/Windows-10-gpos.zip"; Path = "$toolsPath\Windows-10-gpos.zip" },
+    @{ Name = "Windows 2019 GPOs"; Url = "https://github.com/UWStout-CCDC/CCDC-scripts/raw/refs/heads/master/windows/CCDL-Resources/Windows-2019-gpos.zip"; Path = "$toolsPath\Windows-2019-gpos.zip" }
+)
 
-# Download the DoD GPOs
-Write-Host "Downloading DoD GPOs..."
-Invoke-WebRequest -Uri $gpoUrl -OutFile $gpoPath
+foreach ($tool in $tools) {
+    Write-Host "Downloading $($tool.Name)..."
+    Start-BitsTransfer -Source $tool.Url -Destination $tool.Path
+}
 
-# Extract the GPOs
-Write-Host "Extracting DoD GPOs..."
-Expand-Archive -Path $gpoPath -DestinationPath "$env:TEMP\DoD_GPOs"
+# Unzip the GPOs
+foreach ($tool in $tools) {
+    if ($tool.Path -like "*.zip") {
+        $destinationPath = "$([System.IO.Path]::GetDirectoryName($tool.Path))\$($tool.Name)"
+        Write-Host "Extracting $($tool.Name) to $destinationPath..."
+        Expand-Archive -Path $tool.Path -DestinationPath $destinationPath -Force
+    }
+}
 
 # Define the path to the specific GPO folder
-$gpoFolder = "$env:TEMP\DoD_GPOs\DoD WinSvr 2019 MS and DC v3r2\GPOs"
-$wmiFilterFolder = "$env:TEMP\DoD_GPOs\DoD WinSvr 2019 MS and DC v3r2\WMI Filter"
+#$gpoFolder = "$env:TEMP\DoD_GPOs\DoD WinSvr 2019 MS and DC v3r2\GPOs"
+#$wmiFilterFolder = "$env:TEMP\DoD_GPOs\DoD WinSvr 2019 MS and DC v3r2\WMI Filter"
+$gpoFolders = @()
+
+# Select the GPOs based on the OS and server role
+$productName = (Get-ComputerInfo).WindowsProductName
+if ($productName -eq "Windows Server 2019 Standard") {
+    if ((Get-WindowsFeature -Name AD-Domain-Services).installed) {
+        $gpoFolders = @(
+            # @{ Name = 'Defender'; Path = "$toolsPath\Windows Defender GPOs"},
+            # @{ Name = 'Firefox'; Path = "$toolsPath\Firefox GPOs"},
+            # @{ Name = 'Edge'; Path = "$toolsPath\Edge GPOs"},
+            @{ Name = 'Windows 2019 DC'; Path = "$toolsPath\Windows 2019 GPOs"; Id = "515BB8D8-8316-445B-8EDF-590B1B434EC8"}
+        )
+    } else {
+        $gpoFolders = @(
+            # @{ Name = 'Defender'; Path = "$toolsPath\Windows Defender GPOs"},
+            # @{ Name = 'Firefox'; Path = "$toolsPath\Firefox GPOs"},
+            # @{ Name = 'Edge'; Path = "$toolsPath\Edge GPOs"},
+            @{ Name = 'Windows 2019 MS'; Path = "$toolsPath\Windows 2019 GPOs"; Id = "314F919C-F030-469C-89C4-6B65CE42AC9D"}
+        )
+    }
+}
+else {
+    $gpoFolders = @(
+        # @{ Name = 'Defender'; Path = "$toolsPath\Windows Defender GPOs"},
+        # @{ Name = 'Firefox'; Path = "$toolsPath\Firefox GPOs"},
+        # @{ Name = 'Edge'; Path = "$toolsPath\Edge GPOs"},
+        @{ Name = 'Windows 10'; Path = "$toolsPath\Windows 10 GPOs"; Id = "11CEE829-941A-4704-B7DC-2880B3D3710E"}
+    )
+}
 
 # Import the GPOs
 Write-Host "Importing DoD GPOs..."
-$gpoSubFolders = Get-ChildItem -Path $gpoFolder -Directory
-
-foreach ($gpoSubFolder in $gpoSubFolders) {
-    $gpoName = $gpoSubFolder.Name
+foreach ($gpoFolder in $gpoFolders) {
+    $gpoName = $gpoFolder.Name
     Write-Host "Importing GPO: $gpoName"
-    Import-GPO -BackupGpoName $gpoName -Path $gpoSubFolder.FullName
+    New-GPO -Name $gpoFolder.Name
+    $gpoId = (Get-GPO -Name $gpoFolder.Name).Id
+    Import-GPO -BackupId $gpoFolder.Id -Path $gpoFolder.Path -TargetGuid $gpoId
+    # Link the GPO to the domain and enforce it
+    Write-Host "GPO has been created, enforce on the next boot."
 }
 
 # Apply WMI filters if they exist
-if (Test-Path $wmiFilterFolder) {
-    Write-Host "Applying WMI Filters..."
-    $wmiFilterFiles = Get-ChildItem -Path $wmiFilterFolder -Filter "*.xml"
-    foreach ($wmiFilterFile in $wmiFilterFiles) {
-        Write-Host "Importing WMI Filter: $($wmiFilterFile.Name)"
-        Import-WmiFilter -Path $wmiFilterFile.FullName
-    }
-}
+# if (Test-Path $wmiFilterFolder) {
+#     Write-Host "Applying WMI Filters..."
+#     $wmiFilterFiles = Get-ChildItem -Path $wmiFilterFolder -Filter "*.xml"
+#     foreach ($wmiFilterFile in $wmiFilterFiles) {
+#         Write-Host "Importing WMI Filter: $($wmiFilterFile.Name)"
+#         Import-WmiFilter -Path $wmiFilterFile.FullName
+#     }
+# }
 
 # Apply the GPOs
 Write-Host "Applying DoD GPOs..."
