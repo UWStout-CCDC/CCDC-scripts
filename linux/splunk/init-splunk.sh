@@ -151,7 +151,7 @@ upgradeSplunk() {
   fi
 
   # Run the upgradeSplunk.sh script
-  /ccdc/scripts/upgradeSplunk.sh
+  $SCRIPT_DIR/linux/splunk/upgradeSplunk.sh
 }
 
 #######################
