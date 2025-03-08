@@ -5,11 +5,6 @@
 # Script taken from https://github.com/SEMO-Cyber/CyberDefenseTeamPrep/blob/main/Splunk/linuxSplunkForwarderInstall.sh
 # Modified slightly to work better for our use case
 
-# TODO:
-# - TEST THE SCRIPT IN ENVIRONMENT
-# - Add more log files to monitor
-#   - Auditd logs primarily
-
 # Define Splunk Forwarder variables
 # Splunk UF 9.4.0 download link: https://download.splunk.com/products/universalforwarder/releases/9.4.0/linux/splunkforwarder-9.4.0-6b4ebe426ca6-linux-amd64.tgz
 SPLUNK_VERSION="9.4.0"
