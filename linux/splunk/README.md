@@ -4,6 +4,8 @@
 ### Download script
 ```
 wget https://tinyurl.com/yx3pmm9m -O init-splunk.sh --no-check-certificate
+OR
+wget https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master/linux/splunk/init-splunk.sh -O init-splunk.sh --no-check-certificate
 ```
 
 ### Make executable and run
