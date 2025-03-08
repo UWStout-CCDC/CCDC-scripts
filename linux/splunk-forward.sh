@@ -1,44 +1,60 @@
 #!/bin/bash
 #
-# splunk.sh
-# Copyright (C) 2021 matthew <matthew@matthew-ubuntu>
+# splunk-forward.sh
 #
-# Distributed under terms of the MIT license.
-#
-# Install and configure the splunk forwarder
+# Scripted install and configuration of the splunk forwarder for the CCDC competition
+
+# TODO:
+# Fix outputs
+# Fix ordering and commands so that the users are created properly and the install happens properly
 
 if [[ $EUID -ne 0 ]]; then
   echo 'Must be run as root, exiting!'
   exit 1
 fi
 
-if [[ $# -lt 1 ]]; then
-  echo 'Must specify a forward-server! (This is the server Splunk-enterprise is on)'
-  echo 'ex: sudo ./splunk.sh 192.168.0.5'
+# Confirm Splunk server IP
+read -p "Enter the Splunk server IP [default: 172.20.241.20]: " SPLUNK_SERVER_IP
+SPLUNK_SERVER_IP=${SPLUNK_SERVER_IP:-172.20.241.20}
+if [[ -z "$SPLUNK_SERVER_IP" ]]; then
+  echo 'Splunk server IP cannot be empty!'
   exit 1
 fi
 
-# Install Splunk
-wget -O splunkforwarder-9.1.1-64e843ea36b1-Linux-x86_64.tgz "https://download.splunk.com/products/universalforwarder/releases/9.1.1/linux/splunkforwarder-9.1.1-64e843ea36b1-Linux-x86_64.tgz"
-tar -xzvf splunkforwarder-9.1.1-64e843ea36b1-Linux-x86_64.tgz -C /opt
-cd /opt/splunkforwarder/bin
+# Create splunkfwd user and group
+useradd -m splunkfwd
+groupadd splunkfwd
 
-# Request and confirm password
-PASSWD_CONFIRM='!'
-while [[ "$PASSWD" != "$PASSWD_CONFIRM" || -z "$PASSWD" ]]
-do
-  read -sr -p "Create splunk user password: " PASSWD
-  echo ""
-  read -sr -p "Confirm password: " PASSWD_CONFIRM
-  echo ""
-done
+# Create Splunk directory
+export SPLUNK_HOME="/opt/splunkforwarder"
+mkdir $SPLUNK_HOME
+
+# Install Splunk Forwarder
+# Splunk Forwarder 9.4.0 - Current version as of this commit
+wget -O splunkforwarder-9.4.0-6b4ebe426ca6-linux-amd64.tgz "https://download.splunk.com/products/universalforwarder/releases/9.4.0/linux/splunkforwarder-9.4.0-6b4ebe426ca6-linux-amd64.tgz"
+tar -xzvf splunkforwarder-9.4.0-6b4ebe426ca6-linux-amd64.tgz -C /opt
+# Splunk Forwarder 9.1.1 - Switch out the version if you need an older one
+# wget -O splunkforwarder-9.1.1-64e843ea36b1-Linux-x86_64.tgz "https://download.splunk.com/products/universalforwarder/releases/9.1.1/linux/splunkforwarder-9.1.1-64e843ea36b1-Linux-x86_64.tgz"
+# tar -xzvf splunkforwarder-9.1.1-64e843ea36b1-Linux-x86_64.tgz -C /opt
+
+# Set permissions
+chown -R splunkfwd:splunkfwd $SPLUNK_HOME
 
 # Start the splunk forwarder, and automatically accept the license
-./splunk start --accept-license --answer-yes --auto-ports --no-prompt --seed-password $PASSWD
+echo "Starting Splunk and accepting license"
+$SPLUNK_HOME/bin/splunk start --accept-license --answer-yes --no-prompt
+$SPLUNK_HOME/bin/splunk enable boot-start
+
+# Changing default admin password
+cd /opt/splunkforwarder/bin
+default_password=changeme
+echo "Enter new Splunk admin password:"
+read -s password
+$SPLUNK_HOME/bin/splunk edit user admin -auth admin:$default_password -password $password
+
 # Add the server to forward to (ip needs to be the first param)
-./splunk add forward-server "$1":9997 # User will have to input the same creds here
-# Server to poll updates from (same as above, but a different port)
-./splunk set deploy-poll "$1":8089 # User will have to input the same creds here
+echo "Adding server to forward to $SPLUNK_SERVER_IP. Use admin credentials"
+$SPLUNK_HOME/bin/splunk add forward-server $SPLUNK_SERVER_IP:9997 -auth admin:$password # User will have to input the same creds here
 
 # Quick function to check if a file exists, and monitor it
 monitor() {
@@ -48,36 +64,18 @@ monitor() {
   fi
 }
 
+cd $SPLUNK_HOME/bin
 # Add files to log
+echo "Adding log files to monitor"
+# Log files
 monitor /var/log/syslog
 monitor /var/log/messages
-# Apache
-monitor /var/log/apache/access.log
-monitor /var/log/apache/error.log
-monitor /var/log/apache2/access.log
-monitor /var/log/apache2/error.log
 # SSH
 monitor /var/log/auth.log
 monitor /var/log/secure
-
-#monitor /var/log/httpd/*_log
-#watch /var/log/https/modsec_*.log
+# HTTP
+monitor /var/log/httpd/
+# MySQL
 monitor /var/log/mysql.log
 monitor /var/log/mysqld.log
 # TODO: add more files
-
-# == Configure options ==
-
-# Add Splunk user
-useradd -d /opt/splunkforwarder splunk
-groupadd splunk
-usermod -a -G splunk splunk
-
-# Set Splunk to start as Splunk user
-./splunk enable boot-start -user splunk
-#which systemd && ./splunk enable boot-start -systemd-managed 1 -user splunk 
-chown -R splunk /opt/splunkforwarder
-
-# This doesn't always seem to be able to restart on it's own, so we just kill it
-killall splunkd
-/opt/splunkforwarder/bin/splunk restart

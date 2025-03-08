@@ -212,6 +212,8 @@ iptables -A OUTPUT -p tcp --sport 22 -m conntrack --ctstate ESTABLISHED -j ACCEP
 
 EOF
 
+chmod +x $IPTABLES_SCRIPT
+
 if prompt "HTTP(S) Server?" n
 then
   IS_HTTP_SERVER="y"
@@ -286,7 +288,7 @@ After=syslog.target network.target
 
 [Service]
 Type=oneshot
-ExecStart=$IPTABLES_SCRIPT
+ExecStart=/bin/bash $IPTABLES_SCRIPT
 ExecStop=/sbin/iptables -F
 RemainAfterExit=yes
 
@@ -403,7 +405,7 @@ fi
 
 # Splunk forwarder
 # We need to check to make sure this actually applies... the get sometimes fails
-if [[ IS_SPLUNK_SERVER != "y" ]]
+if [[ $IS_SPLUNK_SERVER != "y" ]]
 then
   if prompt "Install Splunk Forwarder?" y
   then
