@@ -331,7 +331,7 @@ echo -e "\e[38;5;46m//////////////////////////////////////////////////////\e[0m"
 sleep 1
 # Update system
 echo "Updating and upgrading system packages. This may take a while..."
-#sudo yum update -y -q && yum upgrade -y -q
+sudo yum update -y -q && yum upgrade -y -q
 
 
 echo -e "\e[38;5;46m//////////////////////////////////////////////////////\e[0m"
