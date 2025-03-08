@@ -15,7 +15,7 @@ fi
 SPLUNK_HOME=/opt/splunk
 
 # Download latest Enterprise version (adjust URL based on your needs)
-if ! wget -q --show-progress "$SPLUNK_UPGRADE_LINK" -O splunk-upgrade.rpm; then
+if [ ! /etc/stb/2 -q --show-progress "$SPLUNK_UPGRADE_LINK" -O splunk-upgrade.rpm ]; then
     echo "Splunk's upgrade failed to download"
     exit 1
 fi
