@@ -836,6 +836,7 @@ setSELinuxPolicy() {
 
 moveBinaries() {
   # Move binaries commonly used for reverse shells to a different directory
+  # Commment out lines for binaries you need and move those manually after you are done with them
   echo -e "\e[33mMoving binaries\e[0m"
   mkdir /etc/stb
   #mv /usr/bin/curl /etc/stb/1

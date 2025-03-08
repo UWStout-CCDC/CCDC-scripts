@@ -855,6 +855,27 @@ setSELinuxPolicy() {
   fi
 }
 
+moveBinaries() {
+  # Move binaries commonly used for reverse shells to a different directory
+  # Commment out lines for binaries you need and move those manually after you are done with them
+  echo -e "\e[33mMoving binaries\e[0m"
+  mkdir /etc/stb
+  mv /usr/bin/curl /etc/stb/1
+  mv /usr/bin/wget /etc/stb/2
+  mv /usr/bin/ftp /etc/stb/3
+  mv /usr/bin/sftp /etc/stb/4
+  mv /usr/bin/aria2c /etc/stb/5
+  mv /usr/bin/nc /etc/stb/6
+  mv /usr/bin/socat /etc/stb/7
+  mv /usr/bin/telnet /etc/stb/8
+  mv /usr/bin/tftp /etc/stb/9
+  mv /usr/bin/ncat /etc/stb/10
+  mv /usr/bin/gdb /etc/stb/11  
+  mv /usr/bin/strace /etc/stb/12 
+  mv /usr/bin/ltrace /etc/stb/13
+  sendLog "Binaries moved"
+}
+
 ################################
 ##    End Security Configs    ##
 ################################
@@ -1052,6 +1073,9 @@ setupAIDE > /dev/null 2>&1 &
 aide_pid=$!
 setupAuditd > /dev/null 2>&1 &
 auditd_pid=$!
+
+moveBinaries
+
 backup > /dev/null 2>&1 &
 backup_pid=$!
 
