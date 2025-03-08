@@ -680,9 +680,17 @@ fi
 if [ -f "/etc/selinux/config" ]; then
     if grep -q '^SELINUX=enforcing' /etc/selinux/config; then
         chcon -R -t httpd_sys_content_t /var/www/html/prestashop
-        chcon -R -t httpd_sys_rw_content_t /var/www/html/prestashop/cache
+        if [ -d "/var/www/html/prestashop/var/cache" ]; then
+            chcon -R -t httpd_sys_rw_content_t /var/www/html/prestashop/var/cache
+        elif [ -d "/var/www/html/prestashop/cache" ]; then
+            chcon -R -t httpd_sys_rw_content_t /var/www/html/prestashop/cache
+        fi
         chattr -R +i /var/www
-        chattr -R -i /var/www/html/prestashop/cache
+        if [ -d "/var/www/html/prestashop/var/cache" ]; then
+            chattr -R +i /var/www/html/prestashop/var/cache
+        elif [ -d "/var/www/html/prestashop/cache" ]; then
+            chattr -R +i /var/www/html/prestashop/cache
+        fi
     fi
 fi
 
@@ -850,6 +858,14 @@ EOF
         if [ ! "$(grep -iq 'RedirectMatch 404 ^/prestashop/cache' $APACHE_CONFIG)" ]; then
             echo "Adding configuration to disable access to the cache directory..."
             echo "RedirectMatch 404 ^/prestashop/cache" >> $APACHE_CONFIG
+            sendLog "Prestashop cache directory disabled"
+        fi
+    fi
+    # check if the /var/www/html/prestashop/cache directory exists, if it does then add a section to disable it if it does not already exist in the apache config
+    if [ -d "/var/www/html/prestashop/var/cache" ]; then
+        if [ ! "$(grep -iq 'RedirectMatch 404 ^/prestashop/var/cache' $APACHE_CONFIG)" ]; then
+            echo "Adding configuration to disable access to the cache directory..."
+            echo "RedirectMatch 404 ^/prestashop/var/cache" >> $APACHE_CONFIG
             sendLog "Prestashop cache directory disabled"
         fi
     fi
@@ -1236,10 +1252,20 @@ EOF
 
         # Set the correct SELinux tags for the /var/www/html/prestashop directory
         chcon -R -t httpd_sys_content_t /var/www/html/prestashop
-        chcon -R -t httpd_sys_rw_content_t /var/www/html/prestashop/cache
+        if [ -d "/var/www/html/prestashop/var/cache" ]; then
+            chcon -R -t httpd_sys_rw_content_t /var/www/html/prestashop/var/cache
+        elif [ -d "/var/www/html/prestashop/cache" ]; then
+            chcon -R -t httpd_sys_rw_content_t /var/www/html/prestashop/cache
+        fi
         chattr -R +i /var/www
-        chattr -R -i /var/www/html/prestashop/cache
-        echo "SELinux tags set for /var/www/html/prestashop"
+
+        if [ -d "/var/www/html/prestashop/var/cache" ]; then
+            chattr -R -i /var/www/html/prestashop/var/cache
+            echo "SELinux tags set for /var/www/html/prestashop/var/cache"
+        elif [ -d "/var/www/html/prestashop/cache" ]; then
+            chattr -R -i /var/www/html/prestashop/cache
+            echo "SELinux tags set for /var/www/html/prestashop/cache"
+        fi
     fi
 
 
