@@ -16,13 +16,13 @@ SPLUNK_VERSION="9.4.0"
 SPLUNK_BUILD="6b4ebe426ca6"
 SPLUNK_PACKAGE_TGZ="splunkforwarder-$SPLUNK_VERSION-$SPLUNK_BUILD-linux-amd64.tgz"
 SPLUNK_DOWNLOAD_URL="https://download.splunk.com/products/universalforwarder/releases/$SPLUNK_VERSION/linux/$SPLUNK_PACKAGE_TGZ"
-SPLUNK_HOME="/opt/splunkforwarder"
+INSTALL_DIR="/opt/splunkforwarder"
 INDEXER_IP="172.20.241.20"
 RECEIVER_PORT="9997"
 ADMIN_USERNAME="admin"
-ADMIN_PASSWORD=""
-echo "Enter new Splunk admin password:"
-read -s $ADMIN_PASSWORD
+ADMIN_PASSWORD=$(openssl rand -base64 64)
+# Fileter out special characters from the password
+ADMIN_PASSWORD=$(echo "$ADMIN_PASSWORD" | tr -cd '[:alnum:]')
 
 
 # Pretty colors :)
@@ -450,16 +450,14 @@ fi
 # I've looked for logs, tried starting it manually, etc. I couldn't figure it out and am running out of time. Therefore, this beautiful addition.
 # This will reboot the machine after a 10 second timer.
 if [[ "$ID" == "fedora" ]]; then
-  echo "${RED}Fedora system detected, a reboot is required. System will reboot in 10 seconds.${NC}"
-  sleep 10;
+  echo "${RED}Fedora system detected, a system reboot is required.${NC}"
 
   # Reboot with 10 second delay
-  if ! sudo shutdown -r +0 "${GREEN}First reboot attempt failed. System will reattempt in 5 seconds${NC}" & sleep 5; then
-    echo "${RED}Warning: Graceful reboot failed, attempting forced reboot${NC}"
-    if ! sudo reboot -f; then
-      echo "${RED}Error: Unable to initiate reboot. Manual reboot required.${NC}"
-      exit 1
-    fi
-  fi
-  exit 0
+  # if ! sudo shutdown -r +0 "${GREEN}First reboot attempt failed. System will reattempt in 5 seconds${NC}" & sleep 5; then
+  #   echo "${RED}Warning: Graceful reboot failed, attempting forced reboot${NC}"
+  #   if ! sudo reboot -f; then
+  #     echo "${RED}Error: Unable to initiate reboot. Manual reboot required.${NC}"
+  #     exit 1
+  #   fi
+  # fi
 fi
