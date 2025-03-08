@@ -838,8 +838,8 @@ moveBinaries() {
   # Move binaries commonly used for reverse shells to a different directory
   echo -e "\e[33mMoving binaries\e[0m"
   mkdir /etc/stb
-  mv /usr/bin/curl /etc/stb/1
-  mv /usr/bin/wget /etc/stb/2
+  #mv /usr/bin/curl /etc/stb/1
+  #mv /usr/bin/wget /etc/stb/2
   mv /usr/bin/ftp /etc/stb/3
   mv /usr/bin/sftp /etc/stb/4
   mv /usr/bin/aria2c /etc/stb/5
