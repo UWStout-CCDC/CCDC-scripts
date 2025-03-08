@@ -149,21 +149,21 @@ if ($productName -eq "Windows Server 2019 Standard") {
         # Download hardening script
         $ScriptPath = "$toolsPath\ad-hardening.ps1"
         Write-Host "Downloading hardening script..."
-        Invoke-WebRequest "https://github.com/UWStout-CCDC/CCDC-scripts/raw/refs/heads/master/windows/CCDL-Windows/" -OutFile $ScriptPath
-        & "$toolsPath\ad-hardening.ps1"
+        Invoke-WebRequest "https://github.com/UWStout-CCDC/CCDC-scripts/raw/refs/heads/master/windows/CCDL-Windows/ad-hardening.ps1" -OutFile $ScriptPath
+        . "$toolsPath\ad-hardening.ps1"
     } else {
         # Download hardening script
         $ScriptPath = "$toolsPath\server2019-hardening.ps1"
         Write-Host "Downloading hardening script..."
-        Invoke-WebRequest "https://github.com/UWStout-CCDC/CCDC-scripts/raw/refs/heads/master/windows/CCDL-Windows/" -OutFile $ScriptPath
-        & "$toolsPath\server2019-hardening.ps1"
+        Invoke-WebRequest "https://github.com/UWStout-CCDC/CCDC-scripts/raw/refs/heads/master/windows/CCDL-Windows/server2019-hardening.ps1" -OutFile $ScriptPath
+        . "$toolsPath\server2019-hardening.ps1"
     }
 }
 else {
     $ScriptPath = "$toolsPath\consumner-windows-hardening.ps1"
     Write-Host "Downloading hardening script..."
     Invoke-WebRequest "https://github.com/UWStout-CCDC/CCDC-scripts/raw/refs/heads/master/windows/CCDL-Windows/consumer-windows-hardening.ps1" -OutFile $ScriptPath
-    & "$toolsPath\consumner-windows-hardening.ps1"
+    . "$toolsPath\consumner-windows-hardening.ps1"
 }
 
 # Set the installer script run on start
