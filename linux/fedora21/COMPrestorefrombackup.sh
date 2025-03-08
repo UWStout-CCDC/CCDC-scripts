@@ -1,22 +1,38 @@
 #!/bin/bash
 # Interactive Restore Script
-# This script lets you choose which service to restore (Apache, Postfix,
-# Dovecot, Roundcube, or MariaDB) and from which backup location (/etc/ftb
-# or /etc/.tarkov). It then unzips the corresponding archive back into /.
+# This script lets you choose which backup to restore from the following options:
+#   - Apache (configuration and web files)
+#   - Postfix (configuration)
+#   - Dovecot (configuration)
+#   - Roundcubemail (configuration and web files)
+#   - MariaDB (data directory)
+#   - Network configurations (network settings)
+#   - User and authentication data (e.g. /etc/passwd, /etc/shadow, etc.)
+#   - /root/COMPtools (custom tools)
+#   - PHP configuration file (/etc/php.ini)
+#   - PHP configuration directory (/etc/php.d)
+#
+# It then restores the selected archive from one of the two backup locations
+# (/etc/ftb or /etc/.tarkov) into the root directory (/).
 #
 # WARNING: Restoring will overwrite existing files in the target directories.
 # Ensure you have current backups before proceeding.
 
 set -e
 
-# Prompt for service to restore
-echo "Select the service to restore:"
+# Prompt for backup to restore
+echo "Select the backup to restore:"
 echo "a) Apache"
 echo "b) Postfix"
 echo "c) Dovecot"
 echo "d) Roundcubemail"
 echo "e) MariaDB"
-read -p "Enter your choice (a-e): " service_choice
+echo "f) Network Configurations"
+echo "g) User and Authentication Data"
+echo "h) /root/COMPtools"
+echo "i) PHP Configuration File (/etc/php.ini)"
+echo "j) PHP Configuration Directory (/etc/php.d)"
+read -p "Enter your choice (a-j): " service_choice
 
 case "$service_choice" in
   a|A)
@@ -33,6 +49,21 @@ case "$service_choice" in
     ;;
   e|E)
     SERVICE="mariadb"
+    ;;
+  f|F)
+    SERVICE="network_configs"
+    ;;
+  g|G)
+    SERVICE="auth_data"
+    ;;
+  h|H)
+    SERVICE="COMPtools"
+    ;;
+  i|I)
+    SERVICE="php_ini"
+    ;;
+  j|J)
+    SERVICE="phpd"
     ;;
   *)
     echo "Invalid selection. Exiting."
