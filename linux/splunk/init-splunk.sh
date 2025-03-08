@@ -1243,4 +1243,4 @@ printf "Waiting for backup to complete... [$GREEN OK $NC]\n"
 # End the script logging
 reset
 
-echo "\e[32mSplunk setup complete. Reboot to apply changes and clear in-memory beacons.\e[0m"
+echo -e "\e[32mSplunk setup complete. Reboot to apply changes and clear in-memory beacons.\e[0m"
