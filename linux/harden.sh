@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# This script is intended as a automated setup for Splunk for the CCDC competition.
-# This makes a number of changes to the system, to do a baseline setup for the system both security and Splunk wise.
+# This script is intended as a automated hardening script for systems we may not have previous knowledge of in the CCDC environment.
+# This makes a number of changes to the system to do a baseline setup for the system
 # Some of the code was taken from our other scritps, other team's scripts, ai, and from this blog: https://highon.coffee/blog/security-harden-centos-7/#auditd---audit-daemon
 
-################################
-##    Splunk Specific Init    ##
-################################
+###############################
+##    Linux Agnostic Init    ##
+###############################
 
 if [[ $EUID -ne 0 ]]
 then
@@ -18,11 +18,8 @@ fi
 CCDC_DIR="/ccdc"
 CCDC_ETC="$CCDC_DIR/etc"
 SCRIPT_DIR="$CCDC_DIR/scripts"
-#BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master"
-BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/splunk-scripting" # For testing
-SPLUNK_HOME="/opt/splunk"
-admin_password="changeme"
-LOGFILE="$CCDC_DIR/logs/init-splunk.txt"
+BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master"
+adminUser=""
 
 # Color Variables
 RED='\033[0;31m'
@@ -35,9 +32,22 @@ GREEN='\033[0;32m'
 [ ! -d "$CCDC_ETC" ] && mkdir -p $CCDC_ETC
 [ ! -d "$SCRIPT_DIR" ] && mkdir -p $SCRIPT_DIR
 
-########################
-##  Helper Functions  ##
-########################
+# Detect OS
+if command -v yum &> /dev/null; then
+  PKG_MANAGER="yum"
+elif command -v apt-get &> /dev/null; then
+  PKG_MANAGER="apt-get"
+elif command -v dnf &> /dev/null; then
+  PKG_MANAGER="dnf"
+else
+  PKG_MANAGER="unknown"
+fi
+
+sendLog "Detected package manager: $PKG_MANAGER"
+
+#######################
+## Helper Functions  ##
+#######################
 
 # get <file>
 # prints the name of the file downloaded
@@ -46,6 +56,7 @@ get() {
   if [[ ! -f "$SCRIPT_DIR/$1" ]]
   then
     mkdir -p $(dirname "$SCRIPT_DIR/$1") 1>&2
+    BASE_URL="https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master"
     wget --no-check-certificate "$BASE_URL/$1" -O "$SCRIPT_DIR/$1" 1>&2
   fi
   echo "$SCRIPT_DIR/$1"
@@ -57,14 +68,6 @@ replace() {
   cp $1/$2 $CCDC_ETC/$2.old
   mkdir -p $(dirname $1/$2)
   cp $(get $3) $1/$2
-}
-
-# Quick function to check if a file exists, and monitor it
-monitor() {
-  if [ -f $1 ]
-  then
-    $SPLUNK_HOME/bin/splunk add monitor $1
-  fi
 }
 
 checkImmutable() {
@@ -80,19 +83,13 @@ checkImmutable() {
     fi
   fi
 
-  immutable=0
   # Check if the file is immutable and remove the immutable flag
   if [ -f $1 ] || [ -d $1 ];
   then
     if lsattr $1 | grep -q 'i'
     then
-      immutable=1
+      /tmp/chattr -R -i $1
     fi
-  fi
-
-  if [ $immutable -eq 1 ]; then
-    /tmp/chattr -R -i $1
-    sendLog "Removed immutable flag from $1"
   fi
 }
 
@@ -102,8 +99,6 @@ backup() {
     mkdir -p /ccdc/backups
   fi
   increment=$(date +%Y%m%d%H%M%S)
-  # Backup the /opt/splunk/etc configuration directory
-  tar -czvf /ccdc/backups/splunk-etc-$increment.tgz /opt/splunk/etc
   # Backup the /etc directory
   tar -czvf /ccdc/backups/system-etc-$increment.tgz /etc
 }
@@ -111,10 +106,8 @@ backup() {
 restore() {
   echo -e "\e[33mRestoring backup\e[0m"
   # Get the newest backups
-  newestSplunk=$(ls -t /ccdc/backups/splunk-etc-*.tgz | head -1 | sed 's/.*splunk-etc-\(.*\).tgz/\1/')
   newestSystem=$(ls -t /ccdc/backups/system-etc-*.tgz | head -1 | sed 's/.*system-etc-\(.*\).tgz/\1/')
-  # Restore the /opt/splunk/etc configuration directory
-  tar -xzvf /ccdc/backups/splunk-etc-$newestSplunk.tgz -C /opt/splunk
+  # Restore the newest /etc configuration directory
   tar -xzvf /ccdc/backups/system-etc-$newestSystem.tgz -C /
 }
 
@@ -141,26 +134,9 @@ sendError(){
   echo "$RED$(date +"%x %X") - ERROR: $1$NC" >> $LOGFILE
 }
 
-upgradeSplunk() {
-  echo -e "\e[33mUpgrading Splunk\e[0m"
-
-  # Check if the upgradeSplunk.sh script exists
-  if [ ! -f $SCRIPT_DIR/linux/splunk/upgradeSplunk.sh ]; then
-    get linux/splunk/upgradeSplunk.sh
-    chmod +x $SCRIPT_DIR/linux/splunk/upgradeSplunk.sh
-  fi
-
-  # Run the upgradeSplunk.sh script
-  $SCRIPT_DIR/linux/splunk/upgradeSplunk.sh
-}
-
 #######################
 ## End Helper Funcs  ##
 #######################
-
-####################################
-##  Start User/System Management  ##
-####################################
 
 changePasswords() {
   echo -e "\e[33mChanging passwords\e[0m"
@@ -187,25 +163,30 @@ changePasswords() {
 
     echo "root:$rootPass" | chpasswd
 
-    # Set sysadmin password
-    while true; do
-        echo "Enter new sysadmin password: "
-        stty -echo
-        read sysadminPass
-        stty echo
-        echo "Confirm sysadmin password: "
-        stty -echo
-        read confirmSysadminPass
-        stty echo
+    # If sysadmin exists set password
+    if id "sysadmin" &>/dev/null; then
+      echo "sysadmin user exists, setting password"
+      while true; do
+          echo "Enter new sysadmin password: "
+          stty -echo
+          read sysadminPass
+          stty echo
+          echo "Confirm sysadmin password: "
+          stty -echo
+          read confirmSysadminPass
+          stty echo
 
-        if [ "$sysadminPass" = "$confirmSysadminPass" ]; then
-            break
-        else
-            echo "Passwords do not match. Please try again."
-        fi
-    done
+          if [ "$sysadminPass" = "$confirmSysadminPass" ]; then
+              break
+          else
+              echo "Passwords do not match. Please try again."
+          fi
+      done
 
-    echo "sysadmin:$sysadminPass" | chpasswd
+      echo "sysadmin:$sysadminPass" | chpasswd
+    else
+      sendLog "sysadmin user does not exist, skipping!"
+    fi
   else 
     sendLog "Skipping password change"
   fi
@@ -216,7 +197,8 @@ createNewAdmin() {
   echo "Create new admin user? (y/n)"
   read createAdmin
   if [ "$createAdmin" == "y" ]; then
-    adminUser="splunkadmin"
+    echo "Enter new admin username: "
+    read $adminUser
     useradd $adminUser
 
     while true; do
@@ -243,59 +225,63 @@ createNewAdmin() {
   fi
 }
 
-webUIPassword() {
-  # Changing default Splunk Web UI admin password
-  # echo "Enter Splunk Web UI admin password:"
-  # read -s admin_password
-  echo "Enter new Splunk Web UI admin password:"
-  read -s password
-  $SPLUNK_HOME/bin/splunk edit user admin -auth admin:$admin_password -password $password
-}
-
-# CentOS is EOL so this likely won't ever be used anymore, uncomment if needed
-#function fixCentOSRepos() {
+fixCentOSRepos() {
   # Fix repos preemtively (if CentOS)
-  # get linux/splunk/CentOS-Base.repo
-  # echo -e "\e[33mFixing repos\e[0m"
-  # cd ~
-  # mv /etc/yum.repos.d/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo.bak
-  # cp $SCRIPT_DIR/linux/splunk/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo
-  # yum clean all
-  # rm -rf /var/cache/yum
-  # yum makecache
+  get linux/splunk/CentOS-Base.repo
+  echo -e "\e[33mFixing repos\e[0m"
+  cd ~
+  mv /etc/yum.repos.d/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo.bak
+  cp $SCRIPT_DIR/linux/splunk/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo
+  yum clean all
+  rm -rf /var/cache/yum
+  yum makecache
 
   # Update CA certs
-  # echo -e "\e[33mUpdating CA certificates\e[0m"
-  # yum update -y ca-certificates
-#}
-
-disableSketchyTokens() {
-  # Disabling sketchy auth tokens
-  # Move auth tokens to temp directory to disable them
-  echo -e "\e[33mDisabling sketchy auth tokens\e[0m"
-  if [ ! -d /tmp/sketchy_tokens ]; then
-    mkdir -p /tmp/sketchy_tokens
-  fi
-  if [ -f /root/.xauth* ]; then
-    mv /root/.xauth* /tmp/sketchy_tokens
-  fi
-  if [ -f /root/.splunk/authToken_splunk_8089 ]; then
-    mv /root/.splunk/authToken_splunk_8089 /tmp/sketchy_tokens
-  fi
+  echo -e "\e[33mUpdating CA certificates\e[0m"
+  yum update -y ca-certificates
 }
 
 updateSystem() {
   # Update the system
   echo -e "\e[33mUpdating system\e[0m"
-  yum update -y
-  yum autoremove -y
+  case "$PKG_MANAGER" in
+    yum)
+      yum update -y
+      ;;
+    apt-get)
+      apt-get update -y && apt-get upgrade -y
+      ;;
+    dnf)
+      dnf update -y
+      ;;
+    *)
+      sendError "Unsupported package manager: $PKG_MANAGER"
+      exit 1
+      ;;
+  esac
 }
 
 installTools() {
-  # Install tools (if not already)
+  # Install tools based on detected distro
   echo -e "\e[33mInstalling tools\e[0m"
-  yum install epel-release -y
-  yum install iptables iptables-services git aide net-tools audit audit-libs rkhunter clamav -y
+  case "$PKG_MANAGER" in
+    yum|dnf)
+      #Check for CentOS, will fix repos preemtively if it is
+      if [ -f /etc/centos-release ]; then
+        fixCentOSRepos
+      fi
+      $PKG_MANAGER install epel-release -y
+      $PKG_MANAGER install iptables iptables-services git aide net-tools audit audit-libs rkhunter clamav -y
+      ;;
+    apt-get)
+      apt-get update -y
+      apt-get install iptables git aide net-tools auditd rkhunter clamav -y
+      ;;
+    *)
+      sendError "Unsupported package manager: $PKG_MANAGER"
+      exit 1
+      ;;
+  esac
 
   # Install Lynis
   if [ ! -f /ccdc/lynis ]; then
@@ -309,27 +295,7 @@ installTools() {
       get linux/monitor/monitor.sh
       chmod +x /ccdc/scripts/linux/monitor/monitor.sh
   fi
-
-  if [ ! -f /ccdc/scripts/upgradeSplunk.sh ]; then
-      get linux/splunk/upgradeSplunk.sh
-      chmod +x /ccdc/scripts/linux/splunk/upgradeSplunk.sh
-  fi
 }
-
-# Dont want to use init.sh anymore, will use individual functions instead, avoids needing to download a dependency
-#init() {
-  # Init script
-  # Download init script
-  #get linux/init.sh
-  # Run init script
-  #echo -e "\e[33mRunning init script\e[0m"
-  #chmod +x $SCRIPT_DIR/linux/init.sh
-  #$SCRIPT_DIR/linux/init.sh
-#}
-
-##################################
-##  End User/System Management  ##
-##################################
 
 #################################
 ##   Start Security Configs    ##
@@ -433,15 +399,12 @@ iptables -t filter -A OUTPUT -p tcp --dport 8000 -j ACCEPT
 iptables -t filter -A OUTPUT -p tcp --dport 8089 -j ACCEPT
 iptables -t filter -A OUTPUT -p tcp --dport 9997 -j ACCEPT
 
-# Splunk Web UI
-iptables -t filter -A INPUT -p tcp --dport 8000 -j ACCEPT
+# SSH outbound
+iptables -A OUTPUT -p tcp --sport 22 -m conntrack --ctstate ESTABLISHED -j ACCEPT
 
-# Splunk Forwarder
-iptables -t filter -A INPUT -p tcp --dport 8089 -j ACCEPT
-iptables -t filter -A INPUT -p tcp --dport 9997 -j ACCEPT
-
-# Splunk Syslog (PA)
-iptables -t filter -A INPUT -p tcp --dport 514 -j ACCEPT
+# Log dropped packets
+iptables -A INPUT -j LOG --log-prefix "DROP-IN:" --log-level 4 --log-ip-options --log-tcp-options --log-tcp-sequence
+iptables -A OUTPUT -j LOG --log-prefix "DROP-OUT:" --log-level 4 --log-ip-options --log-tcp-options --log-tcp-sequence
 
 # Bad Flag Combinations
 # Prevent an attacker from sending flags for reconnaissance. 
@@ -451,11 +414,76 @@ iptables -A INPUT -p tcp -j BAD_FLAGS
 
 # Fragmented Packets
 iptables -A INPUT -f -j LOG --log-prefix "IT Fragmented "
-iptables -A INPUT -f -j DROP
+iptabes -A INPUT -f -j DROP
 
 # NOT SURE WHAT THIS DOES, THINGS BREAK WITHOUT IT
 iptables -I INPUT -m u32 --u32 "4 & 0x8000 = 0x8000" -j DROP
+
+######## OUTBOUND SERVICES ###############
 EOF
+
+if prompt "HTTP(S) Server?" n
+then
+  IS_HTTP_SERVER="y"
+  cat <<-EOF >> $IPTABLES_SCRIPT
+  # HTTP/HTTPS (apache)
+  iptables -t filter -A INPUT -p tcp --dport 80 -j ACCEPT
+  iptables -t filter -A INPUT -p tcp --dport 443 -j ACCEPT
+
+EOF
+  # TODO: add mod_sec and secure apache
+fi
+
+if prompt "DNS/NTP Server?" n
+then
+  IS_DNS_SERVER="y"
+  IS_NTP_SERVER="y"
+  cat <<-EOF >> $IPTABLES_SCRIPT
+  # DNS (bind)
+  iptables -t filter -A INPUT -p tcp --dport 53 -j ACCEPT
+  iptables -t filter -A INPUT -p udp --dport 53 -j ACCEPT
+
+  # NTP
+  iptables -t filter -A INPUT -p tcp --dport 123 -j ACCEPT
+  iptables -t filter -A INPUT -p udp --dport 123 -j ACCEPT
+
+EOF
+  # TODO: secure bind / named
+fi
+
+if prompt "MAIL Server?" n
+then
+  IS_MAIL_SERVER="y"
+  cat <<-EOF >> $IPTABLES_SCRIPT
+  # SMTP
+  iptables -t filter -A OUTPUT -p tcp --dport 25 -j ACCEPT
+  iptables -t filter -A INPUT -p tcp --dport 25 -j ACCEPT
+
+  # POP3
+  iptables -t filter -A OUTPUT -p tcp --dport 110 -j ACCEPT
+  iptables -t filter -A INPUT -p tcp --dport 110 -j ACCEPT
+
+  # IMAP
+  iptables -t filter -A OUTPUT -p tcp --dport 143 -j ACCEPT
+  iptables -t filter -A INPUT -p tcp --dport 143 -j ACCEPT
+
+EOF
+  # TODO: secure ?
+fi
+
+if prompt "Splunk Server?" n
+then
+  IS_SPLUNK_SERVER="y"
+  cat <<-EOF >> $IPTABLES_SCRIPT
+  # Splunk Web UI
+  iptables -t filter -A INPUT -p tcp --dport 8000 -j ACCEPT
+  # Splunk Forwarder
+  iptables -t filter -A INPUT -p tcp --dport 8089 -j ACCEPT
+  iptables -t filter -A INPUT -p tcp --dport 9997 -j ACCEPT
+  # Syslog (PA)
+  iptables -t filter -A INPUT -p tcp --dport 514 -j ACCEPT
+EOF
+fi
 
   # Set firewall rules
   chmod +x $IPTABLES_SCRIPT
@@ -497,12 +525,6 @@ EOF
 }
 
 securePermissions() {
-  # Secure Splunk configurations
-  echo -e "\e[33mSecuring Splunk configurations\e[0m"
-  chmod -R 700 "$SPLUNK_HOME/etc/system/local"
-  chmod -R 700 "$SPLUNK_HOME/etc/system/default"
-  chown -R splunkadmin:splunkadmin "$SPLUNK_HOME/etc"
-
   # Secure system permissions
   # Fix permissions (just in case)
   chown root:root /etc/group
@@ -638,7 +660,7 @@ check_for_malicious_bash() {
   # if they do, we need to check the contents of the trap or PROMPT_COMMAND and print them to a file, and remove them
 
   # Check if logs directory exists
-  if [ ! -d /ccdc/logs ]; then
+  if [ ! -d /ccdc ]; then
       mkdir -p /ccdc/logs
   fi
 
@@ -660,7 +682,7 @@ check_for_malicious_bash() {
 
           # remove the trap or PROMPT_COMMAND
           sed -i '/^[^#]*trap/d' "$FILE"
-          # sed -i '/^[^#]*PROMPT_COMMAND/d' "$FILE" #This sometimes breaks the shell, need to investigate further
+          # sed -i '/^[^#]*PROMPT_COMMAND/d' "$FILE" #This sometimes breaks the shell, need to further investigate
           sed -i '/^[^#]*watch/d' "$FILE"
 
           # print the contents of the trap or PROMPT_COMMAND to a file
@@ -682,7 +704,6 @@ check_for_malicious_bash() {
 
   # set PROMPT_COMMAND to '', and remove any traps
   export PROMPT_COMMAND=''
-  unset PROMPT_COMMAND # This is to ensure that the PROMPT_COMMAND is not set again
   TRAPS=$(trap -p | awk '{print $NF}')
   for TRAP in $TRAPS
   do
@@ -719,22 +740,22 @@ setupAIDE() {
 setDNS() {
   # Set DNS
   echo -e "\e[33mSetting DNS\e[0m"
-  INTERFACE=$(ip addr | grep -oP '^\d+: \Kens\S+' | sed -n 2p)
-  sed -i '/^dns=/c\dns=1.1.1.1;9.9.9.9;172.20.240.20' /etc/NetworkManager/system-connections/$INTERFACE.nmconnection # Replace the IPs as needed
-  systemctl restart NetworkManager
+  INTERFACE=$(ip addr | awk '/state UP/ {print $2}' | cut -d: -f1)
+  if command -v nmcli &> /dev/null; then
+    nmcli con mod "$INTERFACE" ipv4.dns "1.1.1.1 9.9.9.9" # Replace the IPs as needed
+    systemctl restart NetworkManager
+  elif command -v resolvconf &> /dev/null; then
+    echo "nameserver 1.1.1.1" | resolvconf -a "$INTERFACE"
+    echo "nameserver 9.9.9.9" | resolvconf -a "$INTERFACE"
+  else
+    echo -e "nameserver 1.1.1.1\nnameserver 9.9.9.9" > /etc/resolv.conf
+  fi
 }
 
 setLegalBanners() {
   replace /etc motd general/legal_banner.txt
   replace /etc issue general/legal_banner.txt
   replace /etc issue.net general/legal_banner.txt
-
-#   cat > "$SPLUNK_HOME/etc/system/local/global-banner.conf" << EOF
-# [BANNER_MESSAGE_SINGLETON]
-# global_banner.visible = true
-# global_banner.message = WARNING: NO UNAUTHORIZED ACCESS. Unauthorized users will be prosecuted and tried to the furthest extent of the law!
-# global_banner.background_color = red
-# EOF
 }
 
 setupAuditd() {
@@ -829,7 +850,7 @@ setSELinuxPolicy() {
   # Ensure SELinux is enabled and enforcing
   # Check if SELINUX is already set to enforcing
   echo -e "\e[33mSetting SELinux to enforcing\e[0m"
-  if ! grep SELINUX=enforcing /etc/selinux/config; then
+  if ! grep -q SELINUX=enforcing /etc/selinux/config; then
     sed -i 's/SELINUX=disabled/SELINUX=enforcing/g' /etc/selinux/config
   fi
 }
@@ -839,8 +860,8 @@ moveBinaries() {
   # Commment out lines for binaries you need and move those manually after you are done with them
   echo -e "\e[33mMoving binaries\e[0m"
   mkdir /etc/stb
-  #mv /usr/bin/curl /etc/stb/1
-  #mv /usr/bin/wget /etc/stb/2
+  mv /usr/bin/curl /etc/stb/1
+  mv /usr/bin/wget /etc/stb/2
   mv /usr/bin/ftp /etc/stb/3
   mv /usr/bin/sftp /etc/stb/4
   mv /usr/bin/aria2c /etc/stb/5
@@ -858,133 +879,6 @@ moveBinaries() {
 ################################
 ##    End Security Configs    ##
 ################################
-
-################################
-##    Start Splunk Configs    ##
-################################
-
-configureSplunk() {
-  # Disable vulnerable Splunk apps
-  echo -e "\e[33mDisabling vulnerable Splunk apps\e[0m"
-  if $SPLUNK_HOME/bin/splunk list app | grep -q splunk_secure_gateway; then
-    $SPLUNK_HOME/bin/splunk disable app splunk_secure_gateway -auth admin:$admin_password
-    sendLog "Splunk Secure Gateway disabled"
-  fi
-  if $SPLUNK_HOME/bin/splunk list app | grep -q splunk_archiver; then
-    $SPLUNK_HOME/bin/splunk disable app splunk_archiver -auth admin:$admin_password
-    sendLog "Splunk Archiver disabled"
-  fi
-
-  # Fix Splunk XML parsing RCE vulnerability
-  echo -e "\e[33mFixing Splunk XML parsing RCE vulnerability\e[0m"
-  cd /opt/splunk/etc/system/local
-  if [ ! -f web.conf ]; then
-    touch web.conf
-  fi
-
-  if ! grep "enableSearchJobXslt = false" web.conf; then
-    echo -e "[settings]\nenableSearchJobXslt = false" >> web.conf
-    sendLog "Splunk XML parsing RCE vulnerability fixed"
-  fi
-  cd ~
-
-#   # Enable Splunk reciever
-  echo -e "\e[33mEnabling Splunk receivers\e[0m"
-  $SPLUNK_HOME/bin/splunk enable listen 9997 -auth admin:$password
-  $SPLUNK_HOME/bin/splunk enable listen 514 -auth admin:$password
-
-  cat <<-EOF > "$SPLUNK_HOME/etc/system/local/inputs.conf"
-#TCP input for Splunk forwarders (port 9997 & 514)
-[tcp://9997]
-index = main
-sourcetype = tcp:9997
-connection_host = dns
-disabled = false
-
-[tcp://514]
-sourcetype = pan:firewall
-no_appending_timestamp = true
-index = pan_logs
-EOF
-  sendLog "Splunk receivers enabled"
-
-  #Add the index for Palo logs
-  $SPLUNK_HOME/bin/splunk add index pan_logs
-
-  # Install Palo Alto Networks apps
-  echo -e "\e[33mInstalling Palo Alto Networks apps\e[0m"
-
-  # Check if the Palo Alto Splunk app exists, if not, clone it
-  if [ ! -d "$SPLUNK_HOME/etc/apps/SplunkforPaloAltoNetworks" ]; then
-    git clone https://github.com/PaloAltoNetworks/SplunkforPaloAltoNetworks.git SplunkforPaloAltoNetworks
-    mv SplunkforPaloAltoNetworks "$SPLUNK_HOME/etc/apps/"
-    sendLog "Palo Alto Splunk app installed"
-  fi
-
-  # Check if the Palo Alto Splunk add-on exists, if not, clone it
-  if [ ! -d "$SPLUNK_HOME/etc/apps/Splunk_TA_paloalto" ]; then
-    git clone https://github.com/PaloAltoNetworks/Splunk_TA_paloalto.git Splunk_TA_paloalto
-    mv Splunk_TA_paloalto "$SPLUNK_HOME/etc/apps/"
-    sendLog "Palo Alto Splunk add-on installed"
-  fi
-
-  echo -e "\e[33mDisabling distributed search\e[0m"
-
-  if [ ! -f $SPLUNK_HOME/etc/system/local/distsearch.conf ]; then
-    touch $SPLUNK_HOME/etc/system/local/distsearch.conf
-  fi
-
-  if ! grep "disabled = true" $SPLUNK_HOME/etc/system/local/distsearch.conf; then
-    echo "[distributedSearch]" > $SPLUNK_HOME/etc/system/local/distsearch.conf
-    echo "disabled = true" >> $SPLUNK_HOME/etc/system/local/distsearch.conf
-    sendLog "Distributed search disabled"
-  fi
-
-  echo -e "\e[33mAdding log files to monitor\e[0m"
-  # Add files to log
-  # Log files
-  monitor /var/log/syslog
-  monitor /var/log/messages
-  # SSH
-  monitor /var/log/auth.log
-  monitor /var/log/secure
-  # HTTP
-  monitor /var/log/httpd/
-  # MySQL
-  monitor /var/log/mysql.log
-  monitor /var/log/mysqld.log
-  # TODO: add more files
-  sendLog "Log files added to monitor"
-
-  # Restart Splunk
-  echo -e "\e[33mRestarting Splunk\e[0m"
-  $SPLUNK_HOME/bin/splunk restart
-  sendLog "Splunk restarted"
-
-  sendLog "Splunk configured"
-}
-
-################################
-##     End Splunk Configs     ##
-################################
-
-##############################
-##  Finish System Configs   ##
-##############################
-
-installGUI() {
-  # Install GUI
-  echo -e "\e[33mInstalling GUI\e[0m"
-  gui_installed=true
-  yum groupinstall "Server with GUI" -y || echo "\e[31mFailed to install GUI\e[0m" && gui_installed=false
-  if $gui_installed
-  then
-    yum install firefox -y
-    systemctl set-default graphical.target
-    systemctl isolate graphical.target
-    sendLog "GUI installed"
-  fi
-}
 
 bulkRemoveServices() {
   ## These are done after the gui is installed as the gui sometimes reinstalls some of these services
@@ -1094,22 +988,6 @@ bulkDisableServices() {
   systemctl disable sshd
 }
 
-setupIPv6() {
-  # Check if changes were already made to the network config file
-  if grep -q "IPV6INIT=yes" /etc/sysconfig/network-scripts/ifcfg-*;
-  then
-    echo "Network config file already has IPv6 settings"
-  else
-    echo "Setting up IPv6..."
-    # get the interface name
-    INTERFACE=$(ip a | grep "2: " | awk '{print $2}' | cut -d: -f1)
-    echo "IPV6INIT=yes" >> /etc/sysconfig/network-scripts/ifcfg-$INTERFACE
-    echo "IPV6ADDR=fd00:3::60/64" >> /etc/sysconfig/network-scripts/ifcfg-$INTERFACE
-    echo "IPV6_DEFAULTGW=fd00:3::1" >> /etc/sysconfig/network-scripts/ifcfg-$INTERFACE
-    systemctl restart NetworkManager
-  fi
-}
-
 disableRootSSH() {
   # Disable root SSH
   echo -e "\e[33mDisabling root SSH\e[0m"
@@ -1146,17 +1024,9 @@ if [[ "$1" == "restore" ]]; then
   exit 0
 fi
 
-if [[ "$1" == "check" ]]; then
+if [[ "$1" == "check"]]; then
   echo -e "\e[33mChecking $2 for immutability!\e[0m"
   checkImmutable $2
-  exit 0
-fi
-
-# Check for the update argument and update the system
-if [[ "$1" == "upgrade" ]]; then
-  echo -e "\e[33mStarting Splunk Upgrade!\e[0m"
-  upgradeSplunk
-  echo -e "\e[32mSplunk Upgrade complete!\e[0m"
   exit 0
 fi
 
@@ -1165,25 +1035,21 @@ fi
 #######################
 
 # Start script error logging
-exec 2> /ccdc/init-splunk.log
+exec 2> /ccdc/harden.log
 
 # Start the scripts for these to take care of the low hanging persistent right off the rip
 cronjail &
 check_for_malicious_bash &
 
-# Check if the splunk directory is immutable, red team really likes to do this
-checkImmutable $SPLUNK_HOME &
-
 wait
 
 changePasswords # Should have already changed the passwords for root and sysadmin before running this so that you can skip this section
-webUIPassword
 createNewAdmin
 installTools
 firewallSetup
 lockUnusedAccounts
+backup # Backup here so that we have a baseline before we start making changes
 restrictUserCreation
-backup # Backup here so that we have a decent baseline before we start making tons of changes
 disableRootSSH
 stopSSH
 cronAndAtSecurity
@@ -1197,10 +1063,7 @@ disableCoreDumps
 secureSysctl
 secureGrub
 setSELinuxPolicy
-disableSketchyTokens
-configureSplunk
 updateSystem
-installGUI
 bulkRemoveServices
 bulkDisableServices
 
@@ -1210,38 +1073,33 @@ setupAIDE > /dev/null 2>&1 &
 aide_pid=$!
 setupAuditd > /dev/null 2>&1 &
 auditd_pid=$!
-setupIPv6 > /dev/null 2>&1 &
-ipv6_pid=$!
 
-# Move binaries after all changes to avoid issues. After restarting system, if the red team was using any of these binaries for scripts, they won't work anymore
-# Still might be other persistence though
-# These changes will be backed up in the final backup
 moveBinaries
 
-backup > /dev/null 2>&1 & # Backup again to save all our changes with our final baseline and hope to god that there isn't a ton of red team persistence saved in the backup
+backup > /dev/null 2>&1 &
 backup_pid=$!
 
 #output the services that we are still waiting on, and when they complete then put an ok message next to the service
 while [ -e /proc/$clamav_pid ] || [ -e /proc/$aide_pid ] || [ -e /proc/$auditd_pid ] || [ -e /proc/$ipv6_pid ] || [ -e /proc/$backup_pid ]; do
-  clear
-  printf "Waiting for the final services to initialize...\n\n"
-  printf "Waiting for ClamAV to initialize... $(if [ ! -e /proc/$clamav_pid ]; then printf "[$GREEN OK $NC]\n"; else printf "[$RED WAITING $NC]\n"; fi)\n"
-  printf "Waiting for AIDE to initialize... $(if [ ! -e /proc/$aide_pid ]; then printf "[$GREEN OK $NC]\n"; else printf "[$RED WAITING $NC]\n"; fi)\n"
-  printf "Waiting for Auditd to initialize... $(if [ ! -e /proc/$auditd_pid ]; then printf "[$GREEN OK $NC]\n"; else printf "[$RED WAITING $NC]\n"; fi)\n"
-  printf "Waiting for netconfig script to complete... $(if [ ! -e /proc/$ipv6_pid ]; then printf "[$GREEN OK $NC]\n"; else printf "[$RED WAITING $NC]\n"; fi)\n"
-  printf "Waiting for backup to complete... $(if [ ! -e /proc/$backup_pid ]; then printf "[$GREEN OK $NC]\n"; else printf "[$RED WAITING $NC]\n"; fi)\n"
-  sleep 5
+    clear
+    printf "Waiting for the final services to initialize...\n\n"
+    printf "Waiting for ClamAV to initialize... $(if [ ! -e /proc/$clamav_pid ]; then printf "[$GREEN OK $NC]\n"; else printf "[$RED WAITING $NC]\n"; fi)\n"
+    printf "Waiting for AIDE to initialize... $(if [ ! -e /proc/$aide_pid ]; then printf "[$GREEN OK $NC]\n"; else printf "[$RED WAITING $NC]\n"; fi)\n"
+    printf "Waiting for Auditd to initialize... $(if [ ! -e /proc/$auditd_pid ]; then printf "[$GREEN OK $NC]\n"; else printf "[$RED WAITING $NC]\n"; fi)\n"
+    printf "Waiting for backup to complete... $(if [ ! -e /proc/$backup_pid ]; then printf "[$GREEN OK $NC]\n"; else printf "[$RED WAITING $NC]\n"; fi)\n"
+    sleep 5
+    # remove the last 6 lines
 done
+
 
 clear
 printf "Waiting for the final services to initialize...\n\n"
 printf "Waiting for ClamAV to initialize... [$GREEN OK $NC]\n"
 printf "Waiting for AIDE to initialize... [$GREEN OK $NC]\n"
 printf "Waiting for Auditd to initialize... [$GREEN OK $NC]\n"
-printf "Waiting for netconfig script to complete... [$GREEN OK $NC]\n"
 printf "Waiting for backup to complete... [$GREEN OK $NC]\n"
 
 # End the script logging
-reset
+exec 2>&1
 
-echo -e "\e[32mSplunk setup complete. Reboot to apply changes and clear in-memory beacons.\e[0m"
+echo -e "\e[32mHardening complete. Reboot to apply changes and clear in-memory beacons.\e[0m"

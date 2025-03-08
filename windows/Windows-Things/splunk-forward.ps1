@@ -1,32 +1,80 @@
-# Install and configure Splunk forwarder
+# Splunk forwarder script adapted from https://github.com/SEMO-Cyber/CyberDefenseTeamPrep/blob/main/Splunk/ and modified to better suit our use case
 
-#For more on what the script is doing check here: 
-#https://docs.splunk.com/Documentation/Forwarder/9.1.1/Forwarder/InstallaWindowsuniversalforwarderfromaninstaller
+# Define variables
+$SPLUNK_VERSION = "9.4.1"
+$SPLUNK_BUILD = "e3bdab203ac8"
+$SPLUNK_MSI = "splunkforwarder-${SPLUNK_VERSION}-${SPLUNK_BUILD}-windows-x64.msi"
+$SPLUNK_DOWNLOAD_URL = "https://download.splunk.com/products/universalforwarder/releases/${SPLUNK_VERSION}/windows/${SPLUNK_MSI}"
+$INSTALL_DIR = "C:\Program Files\SplunkUniversalForwarder\"
+$INDEXER_IP = "172.20.241.20"
+$RECEIVER_PORT = "9997"
+# $DEPLOYMENT_PORT = "8089" # Uncomment if using a deployment server
 
-#NOTE: Process is still partially manual but easier than editing the file now
+# Get system hostname
+$hostname = hostname
 
-#TODO:
-# - Add script to run on initial setup script
-# - Finish automations once IP is known
-# - Add files to monitor as soon as known
+# Create the installation directory if it doesn't exist
+if (!(Test-Path -Path $INSTALL_DIR)) {
+    New-Item -ItemType Directory -Path $INSTALL_DIR
+    Write-Host "Created installation directory: $INSTALL_DIR"
+}
 
-$url = "https://download.splunk.com/products/universalforwarder/releases/9.4.0/windows/splunkforwarder-9.4.0-6b4ebe426ca6-windows-x64.msi"
+# Download Splunk Universal Forwarder MSI using BITS
+Write-Host "Downloading Splunk Universal Forwarder MSI using BITS..."
+Start-BitsTransfer -Source $SPLUNK_DOWNLOAD_URL -Destination $SPLUNK_MSI
 
-Invoke-WebRequest -Uri $url -OutFile splunkforwarder-9.4.0-6b4ebe426ca6-windows-x64.msi
+# Install Splunk Universal Forwarder
+Write-Host "Installing Splunk Universal Forwarder..."
+Start-Process -FilePath "msiexec.exe" -ArgumentList "/i $SPLUNK_MSI AGREETOLICENSE=Yes RECEIVING_INDEXER=${INDEXER_IP}:${RECEIVER_PORT} /quiet" -Wait
+#Start-Process -FilePath "msiexec.exe" -ArgumentList "/i $SPLUNK_MSI AGREETOLICENSE=Yes RECEIVING_INDEXER=${INDEXER_IP}:${RECEIVER_PORT} DEPLOYMENT_SERVER=${INDEXER_IP}:${DEPLOYMENT_PORT} /quiet" -Wait # Uncomment if using a deployment server
 
-Write-Host "If forwarder installed does not install, download forwarder from web browser at this site: $url"
-Write-Host "If installer does download, ignore the above."
+# Configure inputs.conf for monitoring
+$inputsConfPath = "$INSTALL_DIR\etc\system\local\inputs.conf"
+Write-Host "Configuring inputs.conf for monitoring..."
+@"
+[default]
+host = $hostname
 
-# $username = Read-Host -Prompt 'Enter username for new user to run Splunk Forwarder as'
-$password = Read-Host -Prompt 'Enter a new password for Splunk forwarder: '
-$server = 172.20.241.20 # Change as needed
-$forwardPort = 9997
-$deploymentPort = 8089
+[WinEventLog://Security]
+disabled = 0
+index = main
 
-$recieve = $server + ":" + $forwardPort
-$deployment = $server + ":" + $deploymentPort
+[WinEventLog://Application]
+disabled = 0
+index = main
 
-#Used for testing inputs
-#Write-Host "$username, $password, $server, $recievePort, $deploymentPort, $recieve, $deployment"
+[WinEventLog://System]
+disabled = 0
+index = main
 
-msiexec.exe /i splunkforwarder-9.4.0-6b4ebe426ca6-windows-x64.msi  AGREETOLICENSE=yes SPLUNKPASSWORD=$password RECEIVING_INDEXER=$recieve DEPLOYMENT_SERVER=$deployment WINEVENTLOG_APP_ENABLE=1 WINEVENTLOG_SEC_ENABLE=1 WINEVENTLOG_SYS_ENABLE=1 ENABLEADMON=1 /quiet
+[WinEventLog://DNS Server]
+disabled = 0
+index = main
+
+[WinEventLog://Directory Service]
+disabled = 0
+index = main
+
+[WinEventLog://Windows Powershell]
+disabled = 0
+index = main
+"@ | Out-File -FilePath $inputsConfPath -Encoding ASCII
+
+# Disable KVStore if necessary
+$serverConfPath = "$INSTALL_DIR\etc\system\local\server.conf"
+Write-Host "Setting custom hostname for the logs..."
+@"
+[general]
+serverName = $hostname
+hostnameOption = shortname
+"@ | Out-File -FilePath $serverConfPath -Encoding ASCII
+
+# Start Splunk Universal Forwarder service
+Write-Host "Starting Splunk Universal Forwarder service..."
+Start-Process -FilePath "$INSTALL_DIR\bin\splunk.exe" -ArgumentList "start" -Wait
+
+# Set Splunk Universal Forwarder to start on boot
+Write-Host "Setting Splunk Universal Forwarder to start on boot..."
+Start-Process -FilePath "$INSTALL_DIR\bin\splunk.exe" -ArgumentList "enable boot-start" -Wait
+
+Write-Host "Splunk Universal Forwarder installation and configuration complete!"
