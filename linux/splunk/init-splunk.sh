@@ -145,9 +145,9 @@ upgradeSplunk() {
   echo -e "\e[33mUpgrading Splunk\e[0m"
 
   # Check if the upgradeSplunk.sh script exists
-  if [ ! -f /ccdc/scripts/upgradeSplunk.sh ]; then
+  if [ ! -f $SCRIPT_DIR/linux/splunk/upgradeSplunk.sh ]; then
     get linux/splunk/upgradeSplunk.sh
-    chmod +x /ccdc/scripts/upgradeSplunk.sh
+    chmod +x $SCRIPT_DIR/linux/splunk/upgradeSplunk.sh
   fi
 
   # Run the upgradeSplunk.sh script
