@@ -451,7 +451,7 @@ iptables -A INPUT -p tcp -j BAD_FLAGS
 
 # Fragmented Packets
 iptables -A INPUT -f -j LOG --log-prefix "IT Fragmented "
-iptabes -A INPUT -f -j DROP
+iptables -A INPUT -f -j DROP
 
 # NOT SURE WHAT THIS DOES, THINGS BREAK WITHOUT IT
 iptables -I INPUT -m u32 --u32 "4 & 0x8000 = 0x8000" -j DROP
