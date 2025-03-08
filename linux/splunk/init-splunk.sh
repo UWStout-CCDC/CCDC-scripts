@@ -1148,7 +1148,7 @@ fi
 
 if [[ "$1" == "check" ]]; then
   echo -e "\e[33mChecking $2 for immutability!\e[0m"
-  checkImmutability $2
+  checkImmutable $2
   exit 0
 fi
 
