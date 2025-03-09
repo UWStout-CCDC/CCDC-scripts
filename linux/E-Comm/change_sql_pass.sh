@@ -22,16 +22,24 @@ else
     MYSQL_COMMAND="mysql -u $MYSQL_ROOT_USER -p$MYSQL_ROOT_PASS"
 fi
 
-# Read the current PrestaShop database name from the configuration file located in /var/www/html/prestashop/config/settings.inc.php
-# it will look like this define('_DB_NAME_', 'prestashop');
+# Read the current PrestaShop database name from the configuration file, there are two possible locations, and they have different formats
+# The database name can be found in the configuration file located in /var/www/html/prestashop/config/settings.inc.php, or in /var/www/html/prestashop/app/config/parameters.php
+# The database name will look like this define('_DB_NAME_', 'prestashop'); or 'database_name' => 'prestashop',
 # Extract the database name from the define statement
+if [ -f "$PRESTASHOP_DIR/config/settings.inc.php" ]; then
+    PHP_FILE="$PRESTASHOP_DIR/config/settings.inc.php"
+    CURRENT_DB_NAME=$(grep -oP "define\('_DB_NAME_', '\K[^']+" "$PHP_FILE")
+elif [ -f "$PRESTASHOP_DIR/app/config/parameters.php" ]; then
+    PHP_FILE="$PRESTASHOP_DIR/app/config/parameters.php"
+    CURRENT_DB_NAME=$(grep -oP "'database_name' => '\K[^']+" "$PHP_FILE")
+else
+    echo "PrestaShop configuration file not found."
+    exit 1
+fi
 
-PHP_FILE="$PRESTASHOP_DIR/config/settings.inc.php"
-CURRENT_DB_NAME=$(grep -oP "define\('_DB_NAME_', '\K[^']+" "$PHP_FILE")
-
-# If no database name is found in settings.inc.php, ask the user for the database name
+# If no database name is found in the configuration file, ask the user for the database name
 if [ -z "$CURRENT_DB_NAME" ]; then
-    echo "No database name found in settings.inc.php."
+    echo "No database name found in the configuration file."
     read -p "Please enter the PrestaShop database name: " CURRENT_DB_NAME
 fi
 
@@ -58,9 +66,14 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# update the PrestaShop configuration file with the new database user and password
+# Update the PrestaShop configuration file with the new database user and password
 echo "Updating PrestaShop configuration file with the new database user and password..."
-sed -i "s/define('_DB_USER_', '.*');/define('_DB_USER_', '$NEW_USER');/" "$PHP_FILE"
-sed -i "s/define('_DB_PASSWD_', '.*');/define('_DB_PASSWD_', '$NEW_PASS');/" "$PHP_FILE"
+if [ -f "$PRESTASHOP_DIR/config/settings.inc.php" ]; then
+    sed -i "s/define('_DB_USER_', '.*');/define('_DB_USER_', '$NEW_USER');/" "$PHP_FILE"
+    sed -i "s/define('_DB_PASSWD_', '.*');/define('_DB_PASSWD_', '$NEW_PASS');/" "$PHP_FILE"
+elif [ -f "$PRESTASHOP_DIR/app/config/parameters.php" ]; then
+    sed -i "s/'database_user' => '.*',/'database_user' => '$NEW_USER',/" "$PHP_FILE"
+    sed -i "s/'database_password' => '.*',/'database_password' => '$NEW_PASS',/" "$PHP_FILE"
+fi
 
 echo "PrestaShop database user updated successfully."
