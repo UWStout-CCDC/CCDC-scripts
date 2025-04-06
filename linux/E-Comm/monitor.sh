@@ -49,17 +49,42 @@ if [ ! -d /ccdc/tmp ]; then
 fi
 
 # Install the monitor scripts
-wget $BASE_URL/linux/E-Comm/monitor/bashrc.sh -O /ccdc/scripts/monitor/bashrc.sh
-wget $BASE_URL/linux/E-Comm/monitor/binaries.sh -O /ccdc/scripts/monitor/binaries.sh
-wget $BASE_URL/linux/E-Comm/monitor/connections.sh -O /ccdc/scripts/monitor/connections.sh
-wget $BASE_URL/linux/E-Comm/monitor/cronjobs.sh -O /ccdc/scripts/monitor/cronjobs.sh
-wget $BASE_URL/linux/E-Comm/monitor/file_changes.sh -O /ccdc/scripts/monitor/file_changes.sh
-wget $BASE_URL/linux/E-Comm/monitor/http_logs.sh -O /ccdc/scripts/monitor/http_logs.sh
-wget $BASE_URL/linux/E-Comm/monitor/logins.sh -O /ccdc/scripts/monitor/logins.sh
-wget $BASE_URL/linux/E-Comm/monitor/processes.sh -O /ccdc/scripts/monitor/processes.sh
-
-
-
+if [ ! -f /ccdc/scripts/monitor/bashrc.sh ]; then
+  wget $BASE_URL/linux/E-Comm/monitor/bashrc.sh -O /ccdc/scripts/monitor/bashrc.sh
+fi
+if [ ! -f /ccdc/scripts/monitor/binaries.sh ]; then
+  wget $BASE_URL/linux/E-Comm/monitor/binaries.sh -O /ccdc/scripts/monitor/binaries.sh
+fi
+if [ ! -f /ccdc/scripts/monitor/connections.sh ]; then
+  wget $BASE_URL/linux/E-Comm/monitor/connections.sh -O /ccdc/scripts/monitor/connections.sh
+fi
+if [ ! -f /ccdc/scripts/monitor/cronjobs.sh ]; then
+  wget $BASE_URL/linux/E-Comm/monitor/cronjobs.sh -O /ccdc/scripts/monitor/cronjobs.sh
+fi
+if [ ! -f /ccdc/scripts/monitor/file_changes.sh ]; then
+  wget $BASE_URL/linux/E-Comm/monitor/file_changes.sh -O /ccdc/scripts/monitor/file_changes.sh
+fi
+if [ ! -f /ccdc/scripts/monitor/http_logs.sh ]; then
+  wget $BASE_URL/linux/E-Comm/monitor/http_logs.sh -O /ccdc/scripts/monitor/http_logs.sh
+fi
+if [ ! -f /ccdc/scripts/monitor/logins.sh ]; then
+  wget $BASE_URL/linux/E-Comm/monitor/logins.sh -O /ccdc/scripts/monitor/logins.sh
+fi
+if [ ! -f /ccdc/scripts/monitor/processes.sh ]; then
+  wget $BASE_URL/linux/E-Comm/monitor/processes.sh -O /ccdc/scripts/monitor/processes.sh
+fi
+if [ ! -f /ccdc/scripts/monitor/monitor_bash_files.sh ]; then
+  wget $BASE_URL/linux/E-Comm/monitor/monitor_bash_files.sh -O /ccdc/scripts/monitor/monitor_bash_files.sh
+fi
+if [ ! -f /ccdc/scripts/monitor/monitor_services.sh ]; then
+  wget $BASE_URL/linux/E-Comm/monitor/monitor_services.sh -O /ccdc/scripts/monitor/monitor_services.sh
+fi
+if [ ! -f /ccdc/scripts/monitor/monitor_http.sh ]; then
+  wget $BASE_URL/linux/E-Comm/monitor/monitor_http.sh -O /ccdc/scripts/monitor/monitor_http.sh
+fi
+if [ ! -f /ccdc/scripts/monitor/service-check.sh ]; then
+  wget $BASE_URL/linux/E-Comm/monitor/service-check.sh -O /ccdc/scripts/monitor/service-check.sh
+fi
 
 # Create a new tmux session
 tmux new-session -d -s monitor
@@ -72,6 +97,11 @@ tmux new-window -t monitor:4 -n "file_changes" "bash /ccdc/scripts/monitor/file_
 tmux new-window -t monitor:5 -n "http_logs" "bash /ccdc/scripts/monitor/http_logs.sh"
 tmux new-window -t monitor:6 -n "logins" "bash /ccdc/scripts/monitor/logins.sh"
 tmux new-window -t monitor:7 -n "processes" "bash /ccdc/scripts/monitor/processes.sh"
+tmux new-window -t monitor:8 -n "monitor_bash_files" "bash /ccdc/scripts/monitor/monitor_bash_files.sh"
+tmux new-window -t monitor:9 -n "active_services" "bash /ccdc/scripts/monitor/monitor_services.sh"
+tmux new-window -t monitor:10 -n "Non SE Logs" "bash /ccdc/scripts/monitor/monitor_http.sh"
+tmux new-window -t monitor:11 -n "service-check" "bash /ccdc/scripts/monitor/service-check.sh"
+
 
 # attach to the tmux session
 tmux attach -t monitor

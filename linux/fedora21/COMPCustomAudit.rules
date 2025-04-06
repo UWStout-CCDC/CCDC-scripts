@@ -1,0 +1,1109 @@
+#
+#  __  __ _ _              __  __             _              _____       _           
+# |  \/  (_) |            |  \/  |           (_)            |  __ \     | |          
+# | \  / |_| |_ _ __ ___  | \  / | __ _ _ __  _  __ _  ___  | |__) |   _| | ___  ___ 
+# | |\/| | | __| '__/ _ \ | |\/| |/ _` | '_ \| |/ _` |/ __| |  _  / | | | |/ _ \/ __|
+# | |  | | | |_| | |  __/ | |  | | (_| | | | | | (_| | (__  | | \ \ |_| | |  __/\__ \
+# |_|  |_|_|\__|_|  \___| |_|  |_|\__,_|_| |_|_|\__,_|\___| |_|  \_\__,_|_|\___||___/
+#                                                                                  
+#                                                                                   
+#             
+
+# PLACE INTO
+# /etc/audit/audit.rules
+
+
+# Created  : 02/22/2025
+
+# The tactics Execution, Persistence, Privilege Escalation, Defense Evasion, Discovery, Exfiltration, Impact, and Command and Control and their techniques are all monitored with this ruleset.
+
+# Based on rules published here:
+#   https://attack.mitre.org/tactics/enterprise/
+
+# Remove any existing rules
+-D
+
+# Buffer Size
+## Feel free to increase this if the machine panic's
+-b 8192
+
+# Failure Mode
+## Possible values: 0 (silent), 1 (printk, print a failure message), 2 (panic, halt the system)
+-f 1
+
+# Ignore errors
+## e.g. caused by users or files not found in the local environment
+-i
+# NOTES: when auid is set to >=1000 that means it is monitoring for all non root users.
+# If you dont have root users you need to change it to auid=0
+
+
+#//////////////////////////////////////////////////////////////////////////////////////////////////////
+# TA0002 EXECUTION
+#//////////////////////////////////////////////////////////////////////////////////////////////////////
+
+#///////////////////////////////////////////////////
+# T1059 - Command and Scripting Interpreter Execution
+#///////////////////////////////////////////////////
+
+# Monitor execution of tmux
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/tmux -F key=TA0002_T1059_tmux
+-a always,exit -F arch=b64 -S execve -F path=/usr/local/bin/tmux -F key=TA0002_T1059_tmux
+
+# Monitor execution of screen
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/screen -F key=TA0002_T1059_screen
+-a always,exit -F arch=b64 -S execve -F path=/usr/local/bin/screen -F key=TA0002_T1059_screen
+
+# Monitor shell execution
+-a always,exit -F arch=b64 -S execve -F path=/bin/sh -F key=TA0002_T1059_shell
+-a always,exit -F arch=b64 -S execve -F path=/bin/bash -F key=TA0002_T1059_shell
+-a always,exit -F arch=b64 -S execve -F path=/bin/zsh -F key=TA0002_T1059_shell
+-w /bin/ash -p x -k TA0002_T1059_shell
+-w /bin/csh -p x -k TA0002_T1059_shell
+-w /bin/fish -p x -k TA0002_T1059_shell
+-w /bin/tcsh -p x -k TA0002_T1059_shell
+-w /bin/tclsh -p x -k TA0002_T1059_shell
+-w /bin/xonsh -p x -k TA0002_T1059_shell
+-w /usr/local/bin/xonsh -p x -k TA0002_T1059_shell
+-w /bin/open -p x -k TA0002_T1059_shell
+-w /bin/rbash -p x -k TA0002_T1059_shell
+
+# https://gtfobins.github.io/gtfobins/wish/
+-w /bin/wish -p x -k TA0002_T1059_shell
+-w /usr/bin/wish -p x -k TA0002_T1059_shell
+
+# https://gtfobins.github.io/gtfobins/yash/
+-w /bin/yash -p x -k TA0002_T1059_shell
+-w /usr/bin/yash -p x -k TA0002_T1059_shell
+
+# Monitor scripting languages
+# WILL ONLY TRACK INSTALLATION OR MODIFICATION OF THE BINARY
+# BREAK THESE IN YOUR SCRIPT SO THAT THEY CANT USE THEM ANYWAYS
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/python3 -F key=TA0002_T1059_python3
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/python -F key=TA0002_T1059_python
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/node -F key=TA0002_T1059_javascript
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/lua -F key=TA0002_T1059_lua
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/ruby -F key=TA0002_T1059_ruby
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/perl -F key=TA0002_T1059_perl
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/node -F key=TA0002_T1059_nodejs
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/fish -F key=TA0002_T1059_fish
+# PIP(3) (Python installs)
+-w /usr/bin/pip -p x -k TA0002_T1059_python3
+-w /usr/local/bin/pip -p x -k TA0002_T1059_python3
+-w /usr/bin/pip3 -p x -k TA0002_T1059_python3
+-w /usr/local/bin/pip3 -p x -k TA0002_T1059_python3
+-w /usr/bin/pipx -p x -k TA0002_T1059_python3
+-w /usr/local/bin/pipx -p x -k TA0002_T1059_python3
+
+# npm
+## T1072 third party software
+## https://www.npmjs.com
+## https://docs.npmjs.com/cli/v6/commands/npm-audit
+-w /usr/bin/npm -p x -k TA0002_T1059_npm
+
+# Comprehensive Perl Archive Network (CPAN) (CPAN installs)
+## T1072 third party software
+## https://www.cpan.org
+-w /usr/bin/cpan -p x -k TA0002_T1059_cpan
+
+# Ruby (RubyGems installs)
+## T1072 third party software
+## https://rubygems.org
+-w /usr/bin/gem -p x -k TA0002_T1059_ruby
+
+# LuaRocks (Lua installs)
+## T1072 third party software
+## https://luarocks.org
+-w /usr/bin/luarocks -p x -k TA0002_T1059_lua
+
+# Pacman (Arch Linux)
+## https://wiki.archlinux.org/title/Pacman
+## T1072 third party software
+-w /etc/pacman.conf -p x -k TA0002_T1059_pacman
+-w /etc/pacman.d -p x -k TA0002_T1059_pacman
+
+# Package installer
+# RPM (Redhat/CentOS)
+-w /usr/bin/rpm -p x -k software_mgmt
+-w /usr/bin/yum -p x -k software_mgmt
+
+#///////////////////////////////////////////////////
+# T1053 - Scheduled Task/Job Executionn
+#///////////////////////////////////////////////////
+
+# Monitor 'at' command execution
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/at -F key=TA0002_T1053_at
+
+# Monitor cron job modifications
+-w /etc/cron.d/ -p wa -k TA0002_T1053_cron
+-w /etc/cron.daily/ -p wa -k TA0002_T1053_cron
+-w /etc/cron.hourly/ -p wa -k TA0002_T1053_cron
+-w /etc/cron.weekly/ -p wa -k TA0002_T1053_cron
+-w /etc/cron.monthly/ -p wa -k TA0002_T1053_cron
+-w /etc/crontab -p wa -k TA0002_T1053_cron
+
+# Monitor systemd timer changes
+-w /etc/systemd/system/ -p wa -k TA0002_T1053_systemd
+-w /usr/lib/systemd/system/ -p wa -k TA0002_T1053_systemd
+-w /var/spool/cron/ -p wa -k TA0002_T1053_cron
+
+#///////////////////////////////////////////////////
+# T1609 - Container Administration Commands
+#///////////////////////////////////////////////////
+
+# Monitor Docker commands
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/docker -F key=TA0002_T1609_docker
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/dockerd -F key=TA0002_T1609_docker
+-a always,exit -F arch=b64 -S execve -F path=/usr/local/bin/docker -F key=TA0002_T1609_docker
+
+# Monitor Kubernetes commands
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/kubectl -F key=TA0002_T1609_kubernetes
+-a always,exit -F arch=b64 -S execve -F path=/usr/local/bin/kubectl -F key=TA0002_T1609_kubernetes
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/kubeadm -F key=TA0002_T1609_kubernetes
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/kubelet -F key=TA0002_T1609_kubernetes
+
+#///////////////////////////////////////////////////
+# T1204  - User Execution
+#///////////////////////////////////////////////////
+
+# Monitor all file creations and deletions system-wide
+# -w / -p wa -k TA0002_T1072_file_ops
+
+# Monitor all syscalls related to file creation and deletion
+# -a always,exit -F arch=b64 -S open,openat,creat,unlink,unlinkat,rename,renameat -F key=TA0002_T1072_file_ops
+
+#///////////////////////////////////////////////////
+# T1559  - Inter-Process Communication
+#///////////////////////////////////////////////////
+
+## msgctl
+#-a always,exit -S ipc -F a0=14 -k T1559_Inter-Process_Communication
+## msgget
+#-a always,exit -S ipc -F a0=13 -k T1559_Inter-Process_Communication
+## Use these lines on x86_64, ia64 instead
+-a always,exit -F arch=b64 -S msgctl -k T1559_Inter-Process_Communication
+-a always,exit -F arch=b64 -S msgget -k T1559_Inter-Process_Communication
+
+## semctl
+#-a always,exit -S ipc -F a0=3 -k TA0002_T1559_Inter-Process
+## semget
+#-a always,exit -S ipc -F a0=2 -k TA0002_T1559_Inter-Process
+## semop
+#-a always,exit -S ipc -F a0=1 -k TA0002_T1559_Inter-Process
+## semtimedop
+#-a always,exit -S ipc -F a0=4 -k TA0002_T1559_Inter-Process
+## Use these lines on x86_64, ia64 instead
+-a always,exit -F arch=b64 -S semctl -k TA0002_T1559_Inter-Process
+-a always,exit -F arch=b64 -S semget -k TA0002_T1559_Inter-Process
+-a always,exit -F arch=b64 -S semop -k TA0002_T1559_Inter-Process
+-a always,exit -F arch=b64 -S semtimedop -k TA0002_T1559_Inter-Process
+
+## shmctl
+#-a always,exit -S ipc -F a0=24 -k TA0002_T1559_Inter-Process
+## shmget
+#-a always,exit -S ipc -F a0=23 -k TA0002_T1559_Inter-Process
+## Use these lines on x86_64, ia64 instead
+-a always,exit -F arch=b64 -S shmctl -k TA0002_T1559_Inter-Process
+-a always,exit -F arch=b64 -S shmget -k TA0002_T1559_Inter-Process
+
+
+#///////////////////////////////////////////////////
+# T1072  - Software Deployement Tools
+#///////////////////////////////////////////////////
+
+# Ansible Monitoring
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/ansible -F key=TA0002_T1072_Ansible
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/ansible-playbook -F key=TA0002_T1072_Ansible
+-w /etc/ansible/ -p wa -k TA0002_T1072_Ansible
+# -w /etc/ansible/ansible.cfg -p wa -k TA0002_T1072_Ansible
+# -w /etc/ansible/hosts -p wa -k TA0002_T1072_Ansible
+# -w /etc/ansible/group_vars/ -p wa -k TA0002_T1072_Ansible
+# -w /etc/ansible/host_vars/ -p wa -k TA0002_T1072_Ansible
+
+# Puppet Monitoring
+# -a always,exit -F arch=b64 -S execve -F path=/opt/puppetlabs/bin/puppet -F key=TA0002_T1072_Puppet
+-w /etc/puppetlabs/ -p wa -k TA0002_T1072_Puppet
+# -w /etc/puppetlabs/puppet/puppet.conf -p wa -k TA0002_T1072_Puppet
+# -w /etc/puppetlabs/code/ -p wa -k TA0002_T1072_Puppet
+-w /var/lib/puppet/ -p wa -k TA0002_T1072_Puppet
+
+# Chef Monitoring
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/chef-client -F key=TA0002_T1072_Chef
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/chef-solo -F key=TA0002_T1072_Chef
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/chef-apply -F key=TA0002_T1072_Chef
+-w /etc/chef/ -p wa -k TA0002_T1072_Chef
+# -w /etc/chef/client.rb -p wa -k TA0002_T1072_Chef
+-w /var/chef/ -p wa -k TA0002_T1072_Chef
+
+# SaltStack Monitoring
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/salt -F key=TA0002_T1072_SaltStack
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/salt-call -F key=TA0002_T1072_SaltStack
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/salt-master -F key=TA0002_T1072_SaltStack
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/salt-minion -F key=TA0002_T1072_SaltStack
+-w /etc/salt/ -p wa -k TA0002_T1072_SaltStack
+# -w /etc/salt/master -p wa -k TA0002_T1072_SaltStack
+# -w /etc/salt/minion -p wa -k TA0002_T1072_SaltStack
+-w /srv/salt/ -p wa -k TA0002_T1072_SaltStack
+
+# Terraform (Infrastructure as Code)
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/terraform -F key=TA0002_T1072_Terraform
+-a always,exit -F arch=b64 -S execve -F path=/usr/local/bin/terraform -F key=TA0002_T1072_Terraform
+-w /var/lib/terraform/ -p wa -k TA0002_T1072_Terraform
+
+
+#//////////////////////////////////////////////////////////////////////////////////////////////////////
+# TA0003 PERSISTENCE
+#//////////////////////////////////////////////////////////////////////////////////////////////////////
+
+#///////////////////////////////////////////////////
+# T1098 - Account Manipulation
+#///////////////////////////////////////////////////
+
+# Monitor changes to user and group accounts
+-w /etc/passwd -p wa -k TA0003_T1098_AccountManipulation
+-w /etc/shadow -p wa -k TA0003_T1098_AccountManipulation
+-w /etc/group -p wa -k TA0003_T1098_AccountManipulation
+
+#///////////////////////////////////////////////////
+# T1547 - Boot or Logon Autostart Execution
+#///////////////////////////////////////////////////
+
+# Monitor execution of startup services and scripts
+-w /etc/rc.d/ -p wa -k TA0003_T1547_BootLogonAutostart
+-w /etc/init.d/ -p wa -k TA0003_T1547_BootLogonAutostart
+-w /etc/systemd/system/ -p wa -k TA0003_T1547_BootLogonAutostart
+
+#///////////////////////////////////////////////////
+# T1037 - Boot or Logon Initialization Scripts
+#///////////////////////////////////////////////////
+
+# Monitor execution of login scripts
+-w /etc/profile.d/ -p wa -k TA0003_T1037_BootLogonInitScripts
+-w /etc/profile -p wa -k TA0003_T1037_BootLogonInitScripts
+# -w ~/.bashrc -p wa -k TA0003_T1037_BootLogonInitScripts
+# -w ~/.bash_profile -p wa -k TA0003_T1037_BootLogonInitScripts
+
+#///////////////////////////////////////////////////
+# T1543 - Create or Modify System Process
+#///////////////////////////////////////////////////
+
+# Monitor creation and modification of system processes
+-w /etc/systemd/system/ -p wa -k TA0003_T1543_ModifySystemProcess
+-w /usr/lib/systemd/system/ -p wa -k TA0003_T1543_ModifySystemProcess
+
+#///////////////////////////////////////////////////
+# T1546 - Event Triggered Execution
+#///////////////////////////////////////////////////
+
+# Monitor modifications to execution trigger points
+-w /etc/bash.bashrc -p wa -k TA0003_T1546_EventTriggeredExecution
+# -w ~/.bashrc -p wa -k TA0003_T1546_EventTriggeredExecution
+-w /etc/profile -p wa -k TA0003_T1546_EventTriggeredExecution
+-w /etc/udev/rules.d/ -p wa -k TA0003_T1546_EventTriggeredExecution
+
+#///////////////////////////////////////////////////
+# T1053 - Scheduled Task/Job
+#///////////////////////////////////////////////////
+
+# Monitor modifications to scheduled tasks and timers
+-w /etc/crontab -p wa -k TA0003_T1053_ScheduledTask
+-w /etc/cron.d/ -p wa -k TA0003_T1053_ScheduledTask
+-w /etc/cron.daily/ -p wa -k TA0003_T1053_ScheduledTask
+-w /etc/cron.weekly/ -p wa -k TA0003_T1053_ScheduledTask
+-w /etc/cron.hourly/ -p wa -k TA0003_T1053_ScheduledTask
+-w /etc/cron.monthly/ -p wa -k TA0003_T1053_ScheduledTask
+
+#///////////////////////////////////////////////////
+# T1133 - External Remote Services
+#///////////////////////////////////////////////////
+
+# Monitor modifications to remote access services
+-w /etc/ssh/sshd_config -p wa -k TA0003_T1133_ExternalRemoteServices
+-w /etc/openvpn/ -p wa -k TA0003_T1133_ExternalRemoteServices
+
+#///////////////////////////////////////////////////
+# T1574 - Hijack Execution Flow
+#///////////////////////////////////////////////////
+
+# Monitor execution flow hijacking attempts
+-w /etc/ld.so.preload -p wa -k TA0003_T1574_HijackExecutionFlow
+-w /etc/environment -p wa -k TA0003_T1574_HijackExecutionFlow
+-w /etc/ld.so.conf -p wa -k TA0003_T1574_HijackExecutionFlow
+# -a always,exit -F env=LD_PRELOAD -F key=TA0003_T1574_HijackExecutionFlow
+#-a always,exit -F arch=b64 -S execve -F env=LD_PRELOAD -k TA0003_T1574_HijackExecutionFlow
+-a always,exit -F arch=b64 -S openat -F dir=/lib64 -F perm=x -k TA0003_T1574_HijackExecutionFlow
+
+
+#///////////////////////////////////////////////////
+# T1525 - Implant Internal Image
+#///////////////////////////////////////////////////
+
+# Monitor modification of internal container images
+-w /var/lib/containers/ -p wa -k TA0003_T1525_ImplantInternalImage
+
+#///////////////////////////////////////////////////
+# T1205 - Traffic Signaling
+#///////////////////////////////////////////////////
+
+# Monitor modifications to port knocking configurations
+-w /etc/knockd.conf -p wa -k TA0003_T1205_TrafficSignaling
+
+#///////////////////////////////////////////////////
+# T1078 - Valid Accounts
+#///////////////////////////////////////////////////
+
+# Monitor changes to local accounts
+-w /etc/passwd -p wa -k TA0003_T1078_ValidAccounts
+-w /etc/shadow -p wa -k TA0003_T1078_ValidAccounts
+-w /etc/group -p wa -k TA0003_T1078_ValidAccounts
+
+#///////////////////////////////////////////////////
+# T1542 - Pre-OS Boot
+#///////////////////////////////////////////////////
+
+# Monitor changes to EFI firmware variables
+# -w /sys/firmware/efi/efivars/ -p wa -k TA0003_T1542_PreOSBoot
+
+#///////////////////////////////////////////////////
+# T1653 - Power Settings
+#///////////////////////////////////////////////////
+
+# Monitor modifications to power management settings
+-w /etc/systemd/sleep.conf -p wa -k TA0003_T1653_PowerSettings
+-w /etc/systemd/logind.conf -p wa -k TA0003_T1653_PowerSettings
+
+#///////////////////////////////////////////////////
+# T1137 - Office Application Startup
+#///////////////////////////////////////////////////
+
+# Monitor modifications to office startup settings
+# -w ~/.config/libreoffice/ -p wa -k TA0003_T1137_OfficeApplicationStartup
+
+#///////////////////////////////////////////////////
+# T1505 - Server Software Component
+#///////////////////////////////////////////////////
+
+# Monitor modifications to server-side web components
+-w /var/www/html/ -p wa -k TA0003_T1505_ServerSoftwareComponent
+-w /etc/httpd/ -p wa -k TA0003_T1505_ServerSoftwareComponent
+
+#///////////////////////////////////////////////////
+# T1543 - Container Service
+#///////////////////////////////////////////////////
+
+# Monitor changes to container services
+-w /etc/containers/ -p wa -k TA0003_T1543_ContainerService
+-w /etc/docker/ -p wa -k TA0003_T1543_ContainerService
+
+
+#///////////////////////////////////////////////////
+# T1556 - Modify Authentication Process
+#///////////////////////////////////////////////////
+
+-a always,exit -F arch=b64 -S creat -S open -S openat -S open_by_handle_at -S truncate -S ftruncate -F exit=-EACCES -F auid>=1000 -F auid!=-1 -k TA0003_T1556_file_access
+-a always,exit -F arch=b64 -S creat -S open -S openat -S open_by_handle_at -S truncate -S ftruncate -F exit=-EPERM -F auid>=1000 -F auid!=-1 -k TA0003_T1556_file_access
+# Unsuccessful Creation
+-a always,exit -F arch=b64 -S mkdir,creat,link,symlink,mknod,mknodat,linkat,symlinkat -F exit=-EACCES -k TA0003_T1556_file_creation
+-a always,exit -F arch=b64 -S mkdir,link,symlink,mkdirat -F exit=-EPERM -k TA0003_T1556_file_creation
+
+### Unsuccessful Modification
+-a always,exit -F arch=b64 -S rename -S renameat -S truncate -S chmod -S setxattr -S lsetxattr -S removexattr -S lremovexattr -F exit=-EACCES -k TA0003_T1556_file_modification
+-a always,exit -F arch=b64 -S rename -S renameat -S truncate -S chmod -S setxattr -S lsetxattr -S removexattr -S lremovexattr -F exit=-EPERM -k TA0003_T1556_file_modification
+
+# Monitor modifications to authentication modules
+-w /etc/pam.d/ -p wa -k TA0003_T1556_ModifyAuthenticationProcess
+
+
+#//////////////////////////////////////////////////////////////////////////////////////////////////////
+# TA0004 PRIVILEGE ESCALATION
+#//////////////////////////////////////////////////////////////////////////////////////////////////////
+
+#///////////////////////////////////////////////////
+# T1548 - Abuse Elevation Control Mechanism
+#///////////////////////////////////////////////////
+
+# THIS ONE CAN BE NOISY
+# Monitor execution of privileged commands via sudo
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/sudo -F key=TA0004_T1548_sudo
+
+# Monitor modifications to sudoers file
+-w /etc/sudoers -p wa -k TA0004_T1548_sudoers
+-w /etc/sudoers.d/ -p wa -k TA0004_T1548_sudoers
+
+# Monitor setuid and setgid file executions
+# -a always,exit -F arch=b64 -S execve -F key=TA0004_T1548_setuid
+-w /usr/bin/su -p wa -k TA0004_T1548_su
+
+#///////////////////////////////////////////////////
+# T1055 - Process Injection
+#///////////////////////////////////////////////////
+
+# Monitor ptrace usage for process manipulation
+-a always,exit -F arch=b64 -S ptrace -F key=TA0004_T1055_ptrace
+
+# Monitor VDSO hijacking attempts
+-w /proc/self/maps -p wa -k TA0004_T1055_vdso
+-w /proc/self/mem -p wa -k TA0004_T1055_vdso
+
+# General code injection
+-a always,exit -F arch=b64 -S ptrace -F a0=0x4 -k TA0004_T1055_injection
+-a always,exit -F arch=b64 -S ptrace -F a0=0x5 -k TA0004_T1055_injection
+-a always,exit -F arch=b64 -S ptrace -F a0=0x6 -k TA0004_T1055_injection
+-a always,exit -F arch=b64 -S ptrace -k TA0004_T1055_injection
+
+#///////////////////////////////////////////////////
+# T1078 - Valid Accounts
+#///////////////////////////////////////////////////
+
+# dbus-send invocation
+# may indicate privilege escalation CVE-2021-3560
+-w /usr/bin/dbus-send -p x -k TA0004_T1078_dbus_send
+-w /usr/bin/gdbus -p x -k TA0004_T1078_gdubs_call
+
+# setfiles
+# -a always,exit -F path=/usr/bin/setfiles -F perm=x -F auid>=500 -F auid!=4294967295 -k -F TA0004_T1078_Valid_Accounts
+# -a always,exit -F path=/usr/sbin/setfiles -F perm=x -F auid>=500 -F auid!=4294967295 -k -F TA0004_T1078_Valid_Accounts
+
+# dbus
+-a always,exit -F path=/lib64/dbus-1/dbus-daemon-launch-helper -F perm=x -F auid>=500 -F auid!=4294967295 -k TA0004_T1078_Valid_Accounts
+-a always,exit -F path=/usr/lib64/dbus-1/dbus-daemon-launch-helper -F perm=x -F auid>=500 -F auid!=4294967295 -k TA0004_T1078_Valid_Accounts
+
+# pkexec invocation
+# may indicate privilege escalation CVE-2021-4034
+-w /usr/bin/pkexec -p x -k TA0004_T1078_pkexec
+
+# Monitor creation or modification of local user accounts
+-w /etc/passwd -p wa -k TA0004_T1078_local_accounts
+-w /etc/shadow -p wa -k TA0004_T1078_local_accounts
+-w /etc/group -p wa -k TA0004_T1078_local_accounts
+
+#///////////////////////////////////////////////////
+# T1037 - Boot or Logon Initialization Scripts
+#///////////////////////////////////////////////////
+
+# Monitor modifications to RC startup scripts
+-w /etc/rc.local -p wa -k TA0004_T1037_rc_scripts
+-w /etc/rc.d/ -p wa -k TA0004_T1037_rc_scripts
+
+#///////////////////////////////////////////////////
+# T1543 - Create or Modify System Process
+#///////////////////////////////////////////////////
+
+# Monitor systemd service modifications
+-w /etc/systemd/system/ -p wa -k TA0004_T1543_systemd
+-w /usr/lib/systemd/system/ -p wa -k TA0004_T1543_systemd
+
+# Monitor container service modifications
+-w /etc/containers/ -p wa -k TA0004_T1543_containers
+-w /etc/docker/ -p wa -k TA0004_T1543_containers
+
+#///////////////////////////////////////////////////
+# T1546 - Event Triggered Execution
+#///////////////////////////////////////////////////
+
+# Monitor modifications to shell startup files
+-w /root/.bashrc -p wa -k TA0004_T1546_shell_config
+-w /root/.bash_profile -p wa -k TA0004_T1546_shell_config
+-w /etc/bash.bashrc -p wa -k TA0004_T1546_shell_config
+-w /etc/profile -p wa -k TA0004_T1546_shell_config
+
+# Monitor trap command usage
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/trap -F key=TA0004_T1546_trap
+#-a always,exit -F arch=b64 -S trap -k key=TA0004_T1546_trap
+
+# Monitor modifications to udev rules
+-w /etc/udev/rules.d/ -p wa -k TA0004_T1546_udev
+
+#///////////////////////////////////////////////////
+# T1136 - Create Account
+#///////////////////////////////////////////////////
+
+# Monitor creation of new local user accounts
+-w /etc/passwd -p wa -k TA0004_T1136_local_account
+-w /etc/shadow -p wa -k TA0004_T1136_local_account
+-w /etc/group -p wa -k TA0004_T1136_local_account
+
+#//////////////////////////////////////////////////////////////////////////////////////////////////////
+# TA0005 DEFENSE EVASION
+#//////////////////////////////////////////////////////////////////////////////////////////////////////
+
+#///////////////////////////////////////////////////
+# T1548 - Abuse Elevation Control Mechanism
+#///////////////////////////////////////////////////
+
+# Monitor execution of privileged commands via sudo
+ -a always,exit -F arch=b64 -S execve -F path=/usr/bin/sudo -F key=TA0005_T1548_sudo
+
+# Monitor modifications to sudoers file
+ -w /etc/sudoers -p wa -k TA0005_T1548_sudoers
+ -w /etc/sudoers.d/ -p wa -k TA0005_T1548_sudoers
+
+# Monitor execution of setuid/setgid binaries
+# -a always,exit -F arch=b64 -S execve -F key=TA0005_T1548_setuid
+
+#///////////////////////////////////////////////////
+# T1036 - Masquerading
+#///////////////////////////////////////////////////
+
+# Monitor renaming of system utilities
+-w /bin/ -p wa -k TA0005_T1036_masquerading
+-w /usr/bin/ -p wa -k TA0005_T1036_masquerading
+-w /sbin/ -p wa -k TA0005_T1036_masquerading
+-w /usr/sbin/ -p wa -k TA0005_T1036_masquerading
+-a always,exit -F dir=/dev/shm -F perm=x -F key=TA0005_T1036_masquerading
+
+
+
+#///////////////////////////////////////////////////
+# T1562 - Impair Defenses
+#///////////////////////////////////////////////////
+
+# Monitor usage of `chattr` (used to make files immutable)
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/chattr -F key=TA0005_T1562_immutable_control
+-a always,exit -F arch=b32 -S execve -F path=/usr/bin/chattr -F key=TA0005_T1562_immutable_control
+
+# Monitor usage of `lsattr` (used to check immutable attributes)
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/lsattr -F key=TA0005_T1562_immutable_control
+-a always,exit -F arch=b32 -S execve -F path=/usr/bin/lsattr -F key=TA0005_T1562_immutable_control
+
+# Monitor file permission modifications with `chmod`
+-a always,exit -F arch=b64 -S execve -F path=/bin/chmod -F key=TA0005_T1562_permissions
+-a always,exit -F arch=b32 -S execve -F path=/bin/chmod -F key=TA0005_T1562_permissions
+
+# Monitor file ownership changes with `chown`
+-a always,exit -F arch=b64 -S execve -F path=/bin/chown -F key=TA0005_T1562_ownership
+-a always,exit -F arch=b32 -S execve -F path=/bin/chown -F key=TA0005_T1562_ownership
+
+# Monitor file attributes changes with `setfacl` and `getfacl`
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/setfacl -F key=TA0005_T1562_acl
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/getfacl -F key=TA0005_T1562_acl
+-a always,exit -F arch=b32 -S execve -F path=/usr/bin/setfacl -F key=TA0005_T1562_acl
+-a always,exit -F arch=b32 -S execve -F path=/usr/bin/getfacl -F key=TA0005_T1562_acl
+
+# Monitor extended attributes modification with `attr`
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/attr -F key=TA0005_T1562_xattr
+-a always,exit -F arch=b32 -S execve -F path=/usr/bin/attr -F key=TA0005_T1562_xattr
+
+# Monitor disabling of Linux audit system
+-w /etc/audit/auditd.conf -p wa -k TA0005_T1562_disable_audit
+-w /etc/audit/rules.d/ -p wa -k TA0005_T1562_disable_audit
+
+# NOISY CANT DO MUCH ABOUT THIS
+# Monitor clearing of bash history
+# -w /.bash_history -p wa -k TA0005_T1562_bash_history
+
+# THESE DONT WORK FIX THEM
+# Monitor firewall modifications
+-w /etc/firewalld/ -p wa -k TA0005_T1562_firewalld
+-w /etc/iptables/ -p wa -k TA0005_T1562_iptables
+-w /etc/nftables.conf -p wa -k TA0005_T1562_nftables
+-a always,exit -F arch=b64 -S execve -F path=/usr/sbin/firewalld -F key=TA0005_T1562_firewalld
+-a always,exit -F arch=b64 -S execve -F path=/usr/sbin/iptables -F key=TA0005_T1562_iptables
+-a always,exit -F arch=b64 -S execve -F path=/usr/sbin/nft -F key=TA0005_T1562_nftables
+
+
+#///////////////////////////////////////////////////
+# T1070 - Indicator Removal
+#///////////////////////////////////////////////////
+
+# File Deletion
+-a always,exit -F arch=b64 -S rmdir -S unlink -S unlinkat -S rename -S renameat -F auid!=-1 -k TA0005_T1070_delete
+-w /bin/rm -p x -k monitor_rm
+-a always,exit -F arch=b64 -S execve -F path=/bin/rm -F key=monitor_rm_exec
+
+# Monitor TMP files
+-w /tmp -p wa -k TA0005_T1070_clear_logs
+
+# Monitor log clearing activities
+-w /var/log/wtmp -p wa -k TA0005_T1070_clear_logs
+-w /var/log/btmp -p wa -k TA0005_T1070_clear_logs
+-w /var/log/messages -p wa -k TA0005_T1070_clear_logs
+-w /var/log/syslog -p wa -k TA0005_T1070_clear_logs
+-w /var/log/auth.log -p wa -k TA0005_T1070_clear_logs
+
+# CAN BE NOISY
+# Monitor file deletion activity
+# -a always,exit -F arch=b64 -S unlink,unlinkat,rename,renameat -F key=TA0005_T1070_file_deletion
+
+
+# Monitor timestamp modifications (Timestomping)
+# -a always,exit -F arch=b64 -S utime,utimes,futimesat,futimens -F key=TA0005_T1070_timestomp
+-w /sbin/debugfs -p x -k TA0005_T1070_timestompDEBUGFS
+-a always,exit -F arch=b64 -S utime -S utimensat -k TA0005_T1070_timestomp
+
+
+
+#///////////////////////////////////////////////////
+# T1027 - Obfuscated Files or Information
+#///////////////////////////////////////////////////
+
+# Monitor execution of packed binaries
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/upx -F key=TA0005_T1027_packing
+
+# Monitor compiling of source code on target machine
+-w /usr/bin/gcc -p x -k TA0005_T1027_compile_after_delivery
+-w /usr/bin/make -p x -k TA0005_T1027_compile_after_delivery
+-w /usr/bin/clang -p x -k TA0005_T1027_compile_after_delivery
+
+#///////////////////////////////////////////////////
+# T1202 - Indirect Command Execution
+#///////////////////////////////////////////////////
+
+# Monitor indirect execution methods
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/eval -F key=TA0005_T1202_indirect_execution
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/exec -F key=TA0005_T1202_indirect_execution
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/alias -F key=TA0005_T1202_indirect_execution
+
+#///////////////////////////////////////////////////
+# T1553 - Subvert Trust Controls
+#///////////////////////////////////////////////////
+
+# Monitor installation of root CA certificates
+-w /etc/pki/ -p wa -k TA0005_T1553_root_cert
+-w /usr/share/ca-certificates/ -p wa -k TA0005_T1553_root_cert
+
+#///////////////////////////////////////////////////
+# T1006 - Direct Volume Access
+#///////////////////////////////////////////////////
+
+# Monitor direct access to block devices
+#-w /dev/sda -p wa -k TA0005_T1006_volume_access
+#-w /dev/sda1 -p wa -k TA0005_T1006_volume_access
+#-w /dev/sda2 -p wa -k TA0005_T1006_volume_access
+#-w /dev/nvram -p wa -k TA0005_T1006_volume_access
+#-w /dev -p wa -k TA0005_T1006_volume_access
+
+#///////////////////////////////////////////////////
+# T1207 - Rogue Domain Controller
+#///////////////////////////////////////////////////
+
+# Monitor suspicious Samba/Winbind configurations (if system is domain-joined)
+-w /etc/samba/smb.conf -p wa -k TA0005_T1207_rogue_domain_controller
+-w /var/lib/samba/ -p wa -k TA0005_T1207_rogue_domain_controller
+
+
+#//////////////////////////////////////////////////////////////////////////////////////////////////////
+# TA0007 DISCOVERY
+#//////////////////////////////////////////////////////////////////////////////////////////////////////
+
+#///////////////////////////////////////////////////
+# T1087 - Account Discovery
+#///////////////////////////////////////////////////
+
+# CONSIDER TURNING SOME OF THESE OFF IF YOU USE THEM TO HUNT
+# Monitor user account enumeration
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/who -F key=TA0007_T1087_account_discovery
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/whoami -F key=TA0007_T1087_account_discovery
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/w -F key=TA0007_T1087_account_discovery
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/id -F key=TA0007_T1087_account_discovery
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/getent -F key=TA0007_T1087_account_discovery
+
+# Monitor access to /etc/passwd
+# -w /etc/passwd -p r -k TA0007_T1087_account_discovery
+
+#///////////////////////////////////////////////////
+# T1010 - Application Window Discovery
+#///////////////////////////////////////////////////
+
+# Monitor execution of window enumeration commands
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/xwininfo -F key=TA0007_T1010_window_discovery
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/wmctrl -F key=TA0007_T1010_window_discovery
+
+#///////////////////////////////////////////////////
+# T1217 - Browser Information Discovery
+#///////////////////////////////////////////////////
+
+# Monitor access to browser history and configuration files
+-w /.mozilla/ -p r -k TA0007_T1217_browser_discovery
+-w /.config/ -p r -k TA0007_T1217_browser_discovery
+
+#///////////////////////////////////////////////////
+# T1526 - Cloud Service Discovery
+#///////////////////////////////////////////////////
+
+# Monitor access to cloud metadata services
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/curl -F key=TA0007_T1526_cloud_discovery
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/wget -F key=TA0007_T1526_cloud_discovery
+
+#///////////////////////////////////////////////////
+# T1518 - Software Discovery
+#///////////////////////////////////////////////////
+
+# Monitor execution of system enumeration commands
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/ps -F key=TA0007_T1518_software_discovery
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/dpkg -F key=TA0007_T1518_software_discovery
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/rpm -F key=TA0007_T1518_software_discovery
+
+#///////////////////////////////////////////////////
+# T1082 - System Information Discovery
+#///////////////////////////////////////////////////
+
+# Monitor execution of system information commands
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/uname -F key=TA0007_T1082_system_info
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/lsb_release -F key=TA0007_T1082_system_info
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/hostname -F key=TA0007_T1082_system_info
+
+#///////////////////////////////////////////////////
+# T1614 - System Location Discovery
+#///////////////////////////////////////////////////
+
+# Monitor execution of locale and timezone commands
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/locale -F key=TA0007_T1614_location_discovery
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/timedatectl -F key=TA0007_T1614_location_discovery
+
+#///////////////////////////////////////////////////
+# T1016 - System Network Configuration Discovery
+#///////////////////////////////////////////////////
+
+# THESE DONT WORK FIX THEM
+# Monitor execution of network configuration commands
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/ifconfig -F key=TA0007_T1016_network_config
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/ip -F key=TA0007_T1016_network_config
+
+#///////////////////////////////////////////////////
+# T1049 - System Network Connections Discovery
+#///////////////////////////////////////////////////
+
+# CONSIDER TURNING THESE OFF IF YOU USE THEM TO HUNT
+# Monitor execution of network connection enumeration commands
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/netstat -F key=TA0007_T1049_network_connections
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/ss -F key=TA0007_T1049_network_connections
+
+#///////////////////////////////////////////////////
+# T1135 - Network Share Discovery
+#///////////////////////////////////////////////////
+
+# Monitor execution of network share enumeration commands
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/mount -F key=TA0007_T1135_network_shares
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/df -F key=TA0007_T1135_network_shares
+
+#///////////////////////////////////////////////////
+# T1069 - Permission Groups Discovery
+#///////////////////////////////////////////////////
+
+# Monitor execution of user group enumeration commands
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/groups -F key=TA0007_T1069_groups
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/id -F key=TA0007_T1069_groups
+
+#///////////////////////////////////////////////////
+# T1201 - Password Policy Discovery
+#///////////////////////////////////////////////////
+
+# Monitor access to login policy files
+-w /etc/login.defs -p r -k TA0007_T1201_password_policy
+-w /etc/security/pwquality.conf -p r -k TA0007_T1201_password_policy
+
+#///////////////////////////////////////////////////
+# T1057 - Process Discovery
+#///////////////////////////////////////////////////
+
+# TOP AND PS ARE NOISY WHEN RAN ALSO CONSIDER TURNING OFF FOR HUNT
+# Monitor execution of process enumeration commands
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/ps -F key=TA0007_T1057_process_discovery
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/top -F key=TA0007_T1057_process_discovery
+
+#///////////////////////////////////////////////////
+# T1083 - File and Directory Discovery
+#///////////////////////////////////////////////////
+
+# OBVIOUSLY NOISY CONSIDER TURNING OFF FOR HUNT
+# Monitor execution of file and directory enumeration commands
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/ls -F key=TA0007_T1083_file_discovery
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/find -F key=TA0007_T1083_file_discovery
+
+#///////////////////////////////////////////////////
+# T1552 - Unsecured Credentials
+#///////////////////////////////////////////////////
+
+# NOT MUCH TO DO ABOUT THIS COME BACK TO IT
+# Monitor access to common credential storage locations
+# -w /home/ -p r -k TA0007_T1552_unsecured_creds
+# -w /etc/passwd -p r -k TA0007_T1552_unsecured_creds
+# -w /etc/shadow -p r -k TA0007_T1552_unsecured_creds
+
+#///////////////////////////////////////////////////
+# T1590 - Gather Victim Network Information
+#///////////////////////////////////////////////////
+
+# Monitor execution of network scanning commands
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/nmap -F key=TA0007_T1590_network_info
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/traceroute -F key=TA0007_T1590_network_info
+
+#///////////////////////////////////////////////////
+# T1595 - Active Scanning
+#///////////////////////////////////////////////////
+
+# LYNIS IS RAN LEGITIMATELY SO CONSIDER TURNING OFF
+# Monitor execution of vulnerability scanning tools
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/nikto -F key=TA0007_T1595_vuln_scanning
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/lynis -F key=TA0007_T1595_vuln_scanning
+
+#///////////////////////////////////////////////////
+# T1007 - System Service Discovery
+#///////////////////////////////////////////////////
+
+# Monitor usage of systemctl
+-a always,exit -F arch=b64 -S execve -F path=/bin/systemctl -F key=TA0007_T1007_service_discovery
+
+#//////////////////////////////////////////////////////////////////////////////////////////////////////
+# TA0011 COMMAND AND CONTROL
+#//////////////////////////////////////////////////////////////////////////////////////////////////////
+
+#///////////////////////////////////////////////////
+# T1071 - Application Layer Protocol
+#///////////////////////////////////////////////////
+
+# Monitor execution of web-based protocols
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/curl -F key=TA0011_T1071_web_protocols
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/wget -F key=TA0011_T1071_web_protocols
+
+# Monitor usage of FTP, SCP, and SFTP for possible C2 communication
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/ftp -F key=TA0011_T1071_ftp
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/scp -F key=TA0011_T1071_ftp
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/sftp -F key=TA0011_T1071_ftp
+
+# Monitor DNS tunneling attempts
+-w /etc/resolv.conf -p wa -k TA0011_T1071_dns
+
+#///////////////////////////////////////////////////
+# T1092 - Communication Through Removable Media
+#///////////////////////////////////////////////////
+
+# Monitor mounting of USB or external storage devices
+-w /media/ -p wa -k TA0011_T1092_usb_mount
+-w /mnt/ -p wa -k TA0011_T1092_usb_mount
+
+#///////////////////////////////////////////////////
+# T1132 - Data Encoding
+#///////////////////////////////////////////////////
+
+# Monitor base64 encoding to detect possible data obfuscation
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/base64 -F key=TA0011_T1132_encoding
+
+# Monitor custom encoding tools (xxd, hexdump)
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/xxd -F key=TA0011_T1132_encoding
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/hexdump -F key=TA0011_T1132_encoding
+
+#///////////////////////////////////////////////////
+# T1001 - Data Obfuscation
+#///////////////////////////////////////////////////
+
+# Monitor use of steganography tools
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/stegsolve -F key=TA0011_T1001_steganography
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/outguess -F key=TA0011_T1001_steganography
+
+# Monitor protocol impersonation attempts
+-w /etc/services -p wa -k TA0011_T1001_protocol_impersonation
+
+#///////////////////////////////////////////////////
+# T1568 - Dynamic Resolution
+#///////////////////////////////////////////////////
+
+# Monitor suspicious modifications to DNS configuration
+-w /etc/hosts -p wa -k TA0011_T1568_dns_manipulation
+-w /etc/nsswitch.conf -p wa -k TA0011_T1568_dns_manipulation
+
+#///////////////////////////////////////////////////
+# T1573 - Encrypted Channel
+#///////////////////////////////////////////////////
+
+# Monitor creation of encrypted connections
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/openssl -F key=TA0011_T1573_encryption
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/gnutls-cli -F key=TA0011_T1573_encryption
+
+#///////////////////////////////////////////////////
+# T1008 - Fallback Channels
+#///////////////////////////////////////////////////
+
+# Monitor establishment of backup network connections
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/tor -F key=TA0011_T1008_fallback_channels
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/i2p -F key=TA0011_T1008_fallback_channels
+
+#///////////////////////////////////////////////////
+# T1105 - Ingress Tool Transfer
+#///////////////////////////////////////////////////
+
+# Monitor downloading of potential malicious tools
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/curl -F key=TA0011_T1105_ingress_transfer
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/wget -F key=TA0011_T1105_ingress_transfer
+
+#///////////////////////////////////////////////////
+# T1095 - Non-Application Layer Protocol
+#///////////////////////////////////////////////////
+
+# FIX THESE
+# Monitor use of raw sockets and custom network protocols
+# -a always,exit -F arch=b64 -S socket -F key=TA0011_T1095_non_app_layer
+# -a always,exit -F arch=b64 -S setsockopt -F key=TA0011_T1095_non_app_layer
+# -a always,exit -F arch=b64 -S socket -F a0=2  -k TA0011_T1095_network_socket
+# -a always,exit -F arch=b64 -S socket -F a0=10 -k TA0011_T1095_network_socket
+
+#///////////////////////////////////////////////////
+# T1571 - Non-Standard Port
+#///////////////////////////////////////////////////
+
+# NEED TO DO MORE ABOUT THIS
+# Monitor network traffic on non-standard ports
+#-w /etc/ssh/sshd_config -p wa -k TA0011_T1571_non_standard_ports
+
+#///////////////////////////////////////////////////
+# T1572 - Protocol Tunneling
+#///////////////////////////////////////////////////
+
+# Monitor SSH tunneling attempts
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/ssh -F key=TA0011_T1572_tunneling
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/autossh -F key=TA0011_T1572_tunneling
+
+#///////////////////////////////////////////////////
+# T1090 - Proxy
+#///////////////////////////////////////////////////
+
+# Monitor use of proxy tools
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/proxychains -F key=TA0011_T1090_proxy
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/socat -F key=TA0011_T1090_proxy
+
+# Monitor external proxy configurations
+-w /etc/proxychains.conf -p wa -k TA0011_T1090_proxy_config
+
+#///////////////////////////////////////////////////
+# T1219 - Remote Access Software
+#///////////////////////////////////////////////////
+
+# Monitor execution of remote access tools
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/teamviewer -F key=TA0011_T1219_remote_access
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/anydesk -F key=TA0011_T1219_remote_access
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/xrdp -F key=TA0011_T1219_remote_access
+
+#///////////////////////////////////////////////////
+# T1205 - Traffic Signaling
+#///////////////////////////////////////////////////
+
+# Monitor port knocking attempts
+-w /etc/knockd.conf -p wa -k TA0011_T1205_port_knocking
+-w /etc/default/knockd.conf -p wa -k TA0011_T1205_port_knocking
+
+#///////////////////////////////////////////////////
+# T1102 - Web Service
+#///////////////////////////////////////////////////
+
+# Monitor outbound communication with cloud storage and web-based C2
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/dropbox -F key=TA0011_T1102_web_service
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/mega-cmd -F key=TA0011_T1102_web_service
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/onedrive -F key=TA0011_T1102_web_service
+
+#///////////////////////////////////////////////////
+# Typically Abused Tools for C2
+#///////////////////////////////////////////////////
+
+-w /bin/nc -p x -k TA0011_C2
+-w /bin/netcat -p x -k TA0011_C2
+-w /usr/bin/ncat -p x -k TA0011_C2
+
+#//////////////////////////////////////////////////////////////////////////////////////////////////////
+# TA0010 EXFILTRATION
+#//////////////////////////////////////////////////////////////////////////////////////////////////////
+
+# Data compression
+-w /usr/bin/zip -p x -k TA0010_Data_Compressed
+-w /usr/bin/gzip -p x -k TA0010_Data_Compressed
+-w /usr/bin/tar -p x -k TA0010_Data_Compressed
+-w /usr/bin/bzip2 -p x -k TA0010_Data_Compressed
+-w /usr/bin/lzip -p x -k TA0010_Data_Compressed
+-w /usr/local/bin/lzip -p x -k TA0010_Data_Compressed
+
+-w /usr/bin/lz4 -p x -k TA0010_Data_Compressed
+-w /usr/local/bin/lz4 -p x -k TA0010_Data_Compressed
+
+-w /usr/bin/lzop -p x -k TA0010_Data_Compressed
+-w /usr/local/bin/lzop -p x -k TA0010_Data_Compressed
+
+-w /usr/bin/plzip -p x -k TA0010_Data_Compressed
+-w /usr/local/bin/plzip -p x -k TA0010_Data_Compressed
+
+-w /usr/bin/pbzip2 -p x -k TA0010_Data_Compressed
+-w /usr/local/bin/pbzip2 -p x -k TA0010_Data_Compressed
+
+-w /usr/bin/lbzip2 -p x -k TA0010_Data_Compressed
+-w /usr/local/bin/lbzip2 -p x -k TA0010_Data_Compressed
+
+-w /usr/bin/pixz -p x -k TA0010_Data_Compressed
+-w /usr/local/bin/pixz -p x -k TA0010_Data_Compressed
+
+-w /usr/bin/pigz -p x -k TA0010_Data_Compressed
+-w /usr/local/bin/pigz -p x -k TA0010_Data_Compressed
+-w /usr/bin/unpigz -p x -k TA0010_Data_Compressed
+-w /usr/local/bin/unpigz -p x -k TA0010_Data_Compressed
+
+-w /usr/bin/zstd -p x -k TA0010_Data_Compressed
+-w /usr/local/bin/zstd -p x -k TA0010_Data_Compressed
+
+# gzexe
+-a always,exit -F arch=b32 -F path=/usr/bin/gzexe -F perm=x -F key=TA0010_Data_Compressed
+-a always,exit -F arch=b64 -F path=/usr/bin/gzexe -F perm=x -F key=TA0010_Data_Compressed
+
+-a always,exit -F arch=b32 -F path=/usr/sbin/gzexe -F perm=x -F key=TA0010_Data_Compressed
+-a always,exit -F arch=b64 -F path=/usr/sbin/gzexe -F perm=x -F key=TA0010_Data_Compressed
+
+# Anonymous file creation
+-a always,exit -F arch=b64 -S memfd_create -F key=TA0010_Anonymous_File_Creation
+
+#//////////////////////////////////////////////////////////////////////////////////////////////////////
+# TA0040 IMPACT
+#//////////////////////////////////////////////////////////////////////////////////////////////////////
+
+#///////////////////////////////////////////////////
+# T1529 - Power Off / Reboot / Shutdown
+#///////////////////////////////////////////////////
+
+# Power state
+-w /sbin/shutdown -p x -k TA0040_T1529_power
+-w /sbin/poweroff -p x -k TA0040_T1529_power
+-w /sbin/reboot -p x -k TA0040_T1529_power
+-w /sbin/halt -p x -k TA0040_T1529_power
+
+#///////////////////////////////////////////////////
+# T1489 - Service Stop
+#///////////////////////////////////////////////////
+
+# Monitor direct systemctl stop commands
+# -a always,exit -F arch=b64 -S execve -F path=/bin/systemctl -F a0=stop -k TA0040_T1489_service_stop
+
+# Monitor direct service stop commands
+# -a always,exit -F arch=b64 -S execve -F path=/usr/sbin/service -F a0=stop -k TA0040_T1489_service_stop
+
+# Monitor stopping services using init scripts
+# -a always,exit -F arch=b64 -S execve -F path=/etc/init.d/ -F a0=stop -k TA0040_T1489_service_stop
+
+# Monitor attempts to kill essential system services
+-a always,exit -F arch=b64 -S kill -F a1=9 -k TA0040_T1489_service_stop
+
+# Monitor disabling of services via systemctl
+-a always,exit -F arch=b64 -S execve -F path=/bin/systemctl -k TA0040_T1489_service_disable
+
+# Monitor removal of service unit files
+-w /etc/systemd/system/ -p wa -k TA0040_T1489_service_disable
+-w /usr/lib/systemd/system/ -p wa -k TA0040_T1489_service_disable
+
+# Monitor changes to services within NetworkManager (network disruptions)
+-w /etc/NetworkManager/system-connections/ -p wa -k TA0040_T1489_service_config
+
+# Monitor removal of critical services
+-w /etc/systemd/system/ -p wa -k TA0040_T1489_service_removal
+-w /usr/lib/systemd/system/ -p wa -k TA0040_T1489_service_removal
+
+# Monitor shutdown and reboot attempts (Red Teams may try this to cover tracks)
+-a always,exit -F arch=b64 -S reboot -k TA0040_T1489_service_shutdown
+-a always,exit -F arch=b32 -S reboot -k TA0040_T1489_service_shutdown
+# -a always,exit -F arch=b64 -S shutdown -k TA0040_T1489_service_shutdown
+# -a always,exit -F arch=b32 -S shutdown -k TA0040_T1489_service_shutdown
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,11 @@
+sudo bash ./mirrorServers.sh
+sudo bash ./accountSecurity
+sudo bash ./createBackups.sh
+sudo bash ./chrootBind9.sh
+sudo bash ./createMonitor.sh
+sudo bash ./getScanners.sh
+sudo bash ./chrootBind9.sh
+sudo bash ./kernelIsHard.sh
+sudo bash ./chrootBind9.sh
+sudo bash ./modifyConfs.sh
+sudo bash ./unneededServices.sh
