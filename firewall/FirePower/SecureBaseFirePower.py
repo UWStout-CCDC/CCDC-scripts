@@ -26,6 +26,7 @@ with open("FPConfig.txt", "w") as command_file:
 configure ssh-access-list 172.20.242.0/24
 configure https-access-list 172.20.242.0/24
 configure password
+system lockdown-sensor
 """
   command_file.write(commands)
   print("File is written to FPConfig.txt")
