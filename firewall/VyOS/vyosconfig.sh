@@ -1,33 +1,4 @@
-#!/usr/bin/env python3
-#
-# SecureBaseScript.py 
-# Copyright (C) 2026 doshowipospf
-#
-# Distributed under terms of the MIT license.
-#      _                _                           _
-#     | |              | |                         (_)                                _____
-#   __| |  ___    _____| |       ___  ___       __  _  _____    ___    _____ ____    /  ___\
-#  / _` | / _ \  /   _/| |___   / _ \ \  \  _  /  /| | | __ \  / _ \  /  __/|  _ \  _| |_    
-# | (_| || |_| | \  \  |  __ \ | |_| | |  \/ \/  | | | | |_| || |_| | \  \  | |_| |[_   _]
-#  \__,_| \___/ |____/ |_,| |_| \___/   \___/\__/  |_| | ___/  \___/ |____/ | ___/   | |
-#                                                      | |                  | |      |_|
-#                                                      |_|                  |_|
 
-# Version 1.0.0
-
-# Recomended to use curl to get script on VyOS
-# Script should be ran prior to competition and added to github
-# Documentation on VyOS Firewall: https://docs.vyos.io/en/latest/configuration/firewall/ipv4.html
-
-ethWAN = input("Please enter the WAN Interface (ex.eth0): ")
-ethWAN = str(ethWAN)
-ethLAN1 = input("Please enter the LAN Interface 1 (ex.eth1): ")
-ethLAN1 = str(ethLAN1)
-ethLAN2 = input("Please enter the LAN Interface 2 (ex.eth2): ")
-ethLAN2 = str(ethLAN2)
-
-with open("vyosconfig.sh", "w") as command_file:
-  commands="""
 #!/bin/vbash
 if [ "$(id -g -n)" != 'vyattacfg' ] ; then
   exec sg vyattacfg -c "/bin/vbash $(readlink -f $0) $@"
@@ -92,12 +63,8 @@ set firewall name EGRESS rule 50 destination port '53'
 set firewall name EGRESS rule 60 action 'accept'
 set firewall name EGRESS rule 60 protocol 'udp'
 set firewall name EGRESS rule 60 destination port '123'
-set interfaces ethernet """+ethWAN+""" firewall in name 'INGRESS'
-set interfaces ethernet """+ethLAN1+""" firewall out name 'EGRESS'
-set interfaces ethernet """+ethLAN2+""" firewall out name 'EGRESS'
+set interfaces ethernet eth0 firewall in name 'INGRESS'
+set interfaces ethernet eth1 firewall out name 'EGRESS'
+set interfaces ethernet eth2 firewall out name 'EGRESS'
 commit
 save
-"""
-  command_file.write(commands)
-  print("File is written to vyosconfig.sh")
-  print("Issue 'curl -Lo tinyurl.com/notmadeyet' on VyOS Router\nThen run the script with 'sg vyattacfg -c ./vyosconfig.sh'")
