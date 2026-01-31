@@ -27,11 +27,11 @@ ethLAN2 = input("Please enter the LAN Interface 2 (ex.eth2): ")
 ethLAN2 = str(ethLAN2)
 
 with open("vyosconfig.sh", "w") as command_file:
-  commands="""
-#!/bin/vbash
+  commands=textwrap.dedent("""#!/bin/vbash
 if [ "$(id -g -n)" != 'vyattacfg' ] ; then
   exec sg vyattacfg -c "/bin/vbash $(readlink -f $0) $@"
 fi
+source /opt/vyatta/etc/functions/script-template
 configure
 # Delete services for SSH and Telnet
 delete service ssh
@@ -97,7 +97,7 @@ set interfaces ethernet """+ethLAN1+""" firewall out name 'EGRESS'
 set interfaces ethernet """+ethLAN2+""" firewall out name 'EGRESS'
 commit
 save
-"""
+""").lstrip()
   command_file.write(commands)
   print("File is written to vyosconfig.sh")
-  print("Issue 'curl -Lo tinyurl.com/notmadeyet' on VyOS Router\nThen run the script with 'sg vyattacfg -c ./vyosconfig.sh'")
+  print("Issue 'curl -Lo vyosconfig.sh https://tinyurl.com/vyosconfig' on VyOS Router\nThen run the script with 'sg vyattacfg -c ./vyosconfig.sh'")
