@@ -7,72 +7,66 @@ configure
 # Delete services for SSH and Telnet
 delete service ssh
 delete service telnet
-
-# Create firewall rules for WAN to LAN traffic
-set firewall ipv4 name WAN-TO-LAN default-action drop
-set firewall ipv4 name WAN-TO-LAN description 'WAN to LAN traffic'
+# Create Ingress firewall rules (IPv4)
+set firewall ipv4 name INGRESS default-action drop
+set firewall ipv4 name INGRESS description 'Ingress policy'
 # Allow established/related
-set firewall ipv4 name WAN-TO-LAN rule 10 action accept
-set firewall ipv4 name WAN-TO-LAN rule 10 state established
-set firewall ipv4 name WAN-TO-LAN rule 10 state related
-
-# Create firewall rules for LAN to WAN traffic
-set firewall ipv4 name LAN-TO-WAN default-action accept
-set firewall ipv4 name LAN-TO-WAN description 'LAN to WAN traffic'
-# Allow all LAN to WAN for now
-set firewall ipv4 name LAN-TO-WAN rule 10 action accept
-
-# Create firewall rules for WAN LOCAL (traffic to router itself)
-set firewall ipv4 name WAN-LOCAL default-action drop
-set firewall ipv4 name WAN-LOCAL description 'WAN to Router'
-# Allow established/related
-set firewall ipv4 name WAN-LOCAL rule 10 action accept
-set firewall ipv4 name WAN-LOCAL rule 10 state established
-set firewall ipv4 name WAN-LOCAL rule 10 state related
+set firewall ipv4 name INGRESS rule 10 action accept
+set firewall ipv4 name INGRESS rule 10 state established
+set firewall ipv4 name INGRESS rule 10 state related
 # ICMP
-set firewall ipv4 name WAN-LOCAL rule 20 action accept
-set firewall ipv4 name WAN-LOCAL rule 20 protocol icmp
+set firewall ipv4 name INGRESS rule 20 action accept
+set firewall ipv4 name INGRESS rule 20 protocol icmp
 # HTTP - Ecom
-set firewall ipv4 name WAN-LOCAL rule 30 action accept
-set firewall ipv4 name WAN-LOCAL rule 30 protocol tcp
-set firewall ipv4 name WAN-LOCAL rule 30 destination port 80
+set firewall ipv4 name INGRESS rule 30 action accept
+set firewall ipv4 name INGRESS rule 30 protocol tcp
+set firewall ipv4 name INGRESS rule 30 destination port 80
 # HTTPS - Ecom
-set firewall ipv4 name WAN-LOCAL rule 40 action accept
-set firewall ipv4 name WAN-LOCAL rule 40 protocol tcp
-set firewall ipv4 name WAN-LOCAL rule 40 destination port 443
+set firewall ipv4 name INGRESS rule 40 action accept
+set firewall ipv4 name INGRESS rule 40 protocol tcp
+set firewall ipv4 name INGRESS rule 40 destination port 443
 # POP3 - WebMail
-set firewall ipv4 name WAN-LOCAL rule 50 action accept
-set firewall ipv4 name WAN-LOCAL rule 50 protocol tcp
-set firewall ipv4 name WAN-LOCAL rule 50 destination port 110
+set firewall ipv4 name INGRESS rule 50 action accept
+set firewall ipv4 name INGRESS rule 50 protocol tcp
+set firewall ipv4 name INGRESS rule 50 destination port 110
 # SMTP - WebMail
-set firewall ipv4 name WAN-LOCAL rule 60 action accept
-set firewall ipv4 name WAN-LOCAL rule 60 protocol tcp
-set firewall ipv4 name WAN-LOCAL rule 60 destination port 25
+set firewall ipv4 name INGRESS rule 60 action accept
+set firewall ipv4 name INGRESS rule 60 protocol tcp
+set firewall ipv4 name INGRESS rule 60 destination port 25
 # DNS - AD/DNS
-set firewall ipv4 name WAN-LOCAL rule 70 action accept
-set firewall ipv4 name WAN-LOCAL rule 70 protocol tcp_udp
-set firewall ipv4 name WAN-LOCAL rule 70 destination port 53
-
-# Create firewall rules for LAN LOCAL (LAN to router itself)
-set firewall ipv4 name LAN-LOCAL default-action accept
-set firewall ipv4 name LAN-LOCAL description 'LAN to Router'
-
-# Define zones
-set firewall zone WAN default-action drop
-set firewall zone WAN interface eth0
-set firewall zone WAN from LAN firewall ipv4 name LAN-TO-WAN
-
-set firewall zone LAN default-action drop
-set firewall zone LAN interface eth1
-set firewall zone LAN interface eth2
-set firewall zone LAN from WAN firewall ipv4 name WAN-TO-LAN
-
-# Local zone (router itself)
-set firewall zone LOCAL default-action drop
-set firewall zone LOCAL local-zone
-set firewall zone LOCAL from WAN firewall ipv4 name WAN-LOCAL
-set firewall zone LOCAL from LAN firewall ipv4 name LAN-LOCAL
-
+set firewall ipv4 name INGRESS rule 70 action accept
+set firewall ipv4 name INGRESS rule 70 protocol tcp_udp
+set firewall ipv4 name INGRESS rule 70 destination port 53
+# Create Egress Rules
+set firewall ipv4 name EGRESS default-action drop
+set firewall ipv4 name EGRESS description 'Egress policy'
+# Allow established/related
+set firewall ipv4 name EGRESS rule 10 action accept
+set firewall ipv4 name EGRESS rule 10 state established
+set firewall ipv4 name EGRESS rule 10 state related
+# ICMP
+set firewall ipv4 name EGRESS rule 20 action accept
+set firewall ipv4 name EGRESS rule 20 protocol icmp
+# HTTP
+set firewall ipv4 name EGRESS rule 30 action accept
+set firewall ipv4 name EGRESS rule 30 protocol tcp
+set firewall ipv4 name EGRESS rule 30 destination port 80
+# HTTPS
+set firewall ipv4 name EGRESS rule 40 action accept
+set firewall ipv4 name EGRESS rule 40 protocol tcp
+set firewall ipv4 name EGRESS rule 40 destination port 443
+# DNS
+set firewall ipv4 name EGRESS rule 50 action accept
+set firewall ipv4 name EGRESS rule 50 protocol tcp_udp
+set firewall ipv4 name EGRESS rule 50 destination port 53
+# NTP
+set firewall ipv4 name EGRESS rule 60 action accept
+set firewall ipv4 name EGRESS rule 60 protocol udp
+set firewall ipv4 name EGRESS rule 60 destination port 123
+# Apply firewall to interfaces
+# set firewall interface eth0 in name INGRESS
+# set firewall interface eth1 out name EGRESS
+# set firewall interface eth2 out name EGRESS
 commit
 save
 exit
