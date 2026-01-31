@@ -19,6 +19,8 @@
 # Script should be ran prior to competition and added to github
 # Documentation on VyOS Firewall: https://docs.vyos.io/en/latest/configuration/firewall/ipv4.html
 
+import textwrap
+
 ethWAN = input("Please enter the WAN Interface (ex.eth0): ")
 ethWAN = str(ethWAN)
 ethLAN1 = input("Please enter the LAN Interface 1 (ex.eth1): ")
