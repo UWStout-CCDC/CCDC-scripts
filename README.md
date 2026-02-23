@@ -11,6 +11,9 @@ and files for easy download from VMs, via `curl` or similar untility.
 
 - `linux`: Files for Linux Boxes
 - `general`: Files for all Boxes, e.g. banners
+- `firewall`: Files for Firewall Usage
+- `templates`: Word templates for injects and incident response
+- `windows`: Files for Windows Boxes
 
 ## Curl
 
@@ -25,4 +28,4 @@ or email me to become a contributor.
 
 ## TODO
 
-- Update Policy Banner
+- Cleanup Old Repo Scripts
