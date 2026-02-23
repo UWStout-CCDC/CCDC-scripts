@@ -51,14 +51,16 @@ for user in $(getent passwd | awk -F: '$3 >= 1000 {print $1}'); do
         echo "Modifying permissions for user: $user"
 
         # Set home directory permissions to read-only
-        chmod -R 755 /home/"$user"
+        ######### CHANGED 1/10
+        #chmod -R 755 /home/"$user"
         
         # Remove sudo/wheel access
         gpasswd -d "$user" wheel 2>/dev/null
         gpasswd -d "$user" sudo 2>/dev/null
 
+        ############ CHANGED 1/10
         # Set user shell to /bin/false to prevent login if needed
-        usermod -s /bin/false "$user"
+        usermod -s /sbin/nologin "$user"
     fi
 done
 
@@ -745,3 +747,4 @@ echo " "
 echo -e "\e[45mSCRIPT HAS FINISHED RUNNING... REBOOTING..\e[0m"
 sleep 3
 sudo reboot
+
