@@ -13,7 +13,7 @@
 #                                                      | |                  | |      |_|
 #                                                      |_|                  |_|
 
-# Version 2.0.0 - VyOS 1.4.x Compatible
+# Version 2.1.0 - VyOS 1.4.x Compatible
 
 # Recomended to use curl to get script on VyOS
 # Script should be ran prior to competition and added to github
@@ -36,6 +36,8 @@ configure
 # Delete services for SSH and Telnet
 delete service ssh
 delete service telnet
+# Add System Banner
+set system login banner pre-login '\n\nUNAUTHORIZED ACCESS TO THIS DEVICE IS PROHIBITED\n\nYou must have explicit, authorized permission to access or configure this device.\nUnauthorized attempts and actions to access or use this system may result in civil\nand/or criminal penalties.\n\nAll activities performed on this device are logged and monitored.\n\n'
 # Create Ingress firewall rules (IPv4)
 set firewall ipv4 name INGRESS default-action drop
 set firewall ipv4 name INGRESS description 'Ingress policy'
@@ -93,9 +95,19 @@ set firewall ipv4 name EGRESS rule 60 action accept
 set firewall ipv4 name EGRESS rule 60 protocol udp
 set firewall ipv4 name EGRESS rule 60 destination port 123
 # Apply firewall to interfaces
-# set firewall interface {ethWAN} in name INGRESS
-# set firewall interface {ethLAN1} out name EGRESS
-# set firewall interface {ethLAN2} out name EGRESS
+# Forward filter: jump to INGRESS for traffic coming in on the WAN Port
+set firewall ipv4 forward filter default-action accept
+set firewall ipv4 forward filter rule 5 action jump
+set firewall ipv4 forward filter rule 5 inbound-interface name {ethWAN}
+set firewall ipv4 forward filter rule 5 jump-target INGRESS
+# Forward filter: jump to EGRESS
+set firewall ipv4 forward filter rule 10 action jump
+set firewall ipv4 forward filter rule 10 outbound-interface name {ethLAN1}
+set firewall ipv4 forward filter rule 10 jump-target EGRESS
+# Forward filter: jump to EGRESS
+set firewall ipv4 forward filter rule 15 action jump
+set firewall ipv4 forward filter rule 15 outbound-interface name {ethLAN2}
+set firewall ipv4 forward filter rule 15 jump-target EGRESS
 commit
 save
 exit
