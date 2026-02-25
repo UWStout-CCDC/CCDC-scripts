@@ -4,7 +4,7 @@ UW-Stout CCDC team repository.
 
 Created by Matthew Pomes. Maintained by the UW-Stout CCDC team.
 
-Most files are stored in our Google Folder. This repos is only used for storing scripts
+Most files are stored in our Google Folder. This repo is only used for storing scripts
 and files for easy download from VMs, via `curl` or similar untility.
 
 ## Directory structure
