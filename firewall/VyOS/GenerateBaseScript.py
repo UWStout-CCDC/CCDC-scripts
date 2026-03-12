@@ -68,6 +68,18 @@ set firewall ipv4 name INGRESS rule 60 destination port 25
 set firewall ipv4 name INGRESS rule 70 action accept
 set firewall ipv4 name INGRESS rule 70 protocol tcp_udp
 set firewall ipv4 name INGRESS rule 70 destination port 53
+# FTP
+set firewall ipv4 name INGRESS rule 80 action accept
+set firewall ipv4 name INGRESS rule 80 protocol tcp_udp
+set firewall ipv4 name INGRESS rule 80 destination port 21
+# TFTP
+set firewall ipv4 name INGRESS rule 90 action accept
+set firewall ipv4 name INGRESS rule 90 protocol udp
+set firewall ipv4 name INGRESS rule 90 destination port 69
+# SPLUNK
+set firewall ipv4 name INGRESS rule 100 action accept
+set firewall ipv4 name INGRESS rule 100 protocol udp
+set firewall ipv4 name INGRESS rule 100 destination port 8000
 # Create Egress Rules
 set firewall ipv4 name EGRESS default-action drop
 set firewall ipv4 name EGRESS description 'Egress policy'
