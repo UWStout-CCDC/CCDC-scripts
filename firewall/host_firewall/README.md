@@ -1,7 +1,7 @@
 # nftbuild
 A Go-based Binary for rapidly deploying hardened `nftables` firewall configurations on Linux systems. It auto-detects your distro, installs `nftables` if needed, generates a role-appropriate ruleset, and does some other cool stuff.
 
-**Version:** v1.2.1
+**Version:** v1.3.2
 **Author:** doshowipospf
 
 ---
@@ -41,6 +41,7 @@ nftbuild -sys <system> [options]
 | Flag | Description |
 |---|---|
 | `-w` | Adds Wazuh Server SIEM rules — inbound 9200/1514/514, outbound 1514/9200/55000 |
+| `-ntp` | Allows NTP Server rules Ingress without setting -sys dnsntp |
 | `-z` | Zero Trust mode — use if you are paranoid of persistence (disable by rerunning binary without z flag)|
 | `-ssh` | Allows outbound SSH connections |
 | `-h` | Displays the help menu |
