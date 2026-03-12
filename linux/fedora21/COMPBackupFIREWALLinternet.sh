@@ -52,6 +52,14 @@ sudo iptables -t filter -A OUTPUT -p tcp --dport 443 -j ACCEPT
 #sudo iptables -t filter -A OUTPUT -p tcp --dport 25 -j ACCEPT
 sudo iptables -t filter -A INPUT -p tcp --dport 25 -j ACCEPT
 
+# LDAP / LDAPS (mail server auth queries)
+sudo iptables -t filter -A OUTPUT -p tcp --dport 389 -j ACCEPT
+sudo iptables -t filter -A OUTPUT -p udp --dport 389 -j ACCEPT
+sudo iptables -t filter -A OUTPUT -p tcp --dport 636 -j ACCEPT
+# AD GLOBAL CATALOG
+#iptables -A OUTPUT -p tcp --dport 3268 -j ACCEPT
+#iptables -A OUTPUT -p tcp --dport 3269 -j ACCEPT
+
 # POP3
 #sudo iptables -t filter -A OUTPUT -p tcp --dport 110 -j ACCEPT
 sudo iptables -t filter -A INPUT -p tcp --dport 110 -j ACCEPT
