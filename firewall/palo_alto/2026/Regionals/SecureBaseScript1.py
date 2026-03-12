@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 #
 # SecureBaseScript.py 
-# Copyright (C) 2025 doshowipospf
+# Copyright (C) 2026 doshowipospf
 #
 # Distributed under terms of the MIT license.
 #      _                _                           _
