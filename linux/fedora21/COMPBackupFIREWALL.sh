@@ -52,6 +52,9 @@ sudo iptables -t filter -A OUTPUT -o lo -j ACCEPT
 sudo iptables -t filter -A OUTPUT -p tcp --dport 389 -j ACCEPT
 sudo iptables -t filter -A OUTPUT -p udp --dport 389 -j ACCEPT
 sudo iptables -t filter -A OUTPUT -p tcp --dport 636 -j ACCEPT
+# AD GLOBAL CATALOG
+# iptables -A OUTPUT -p tcp --dport 3268 -j ACCEPT
+# iptables -A OUTPUT -p tcp --dport 3269 -j ACCEPT
 
 # SMTP
 #sudo iptables -t filter -A OUTPUT -p tcp --dport 25 -j ACCEPT
