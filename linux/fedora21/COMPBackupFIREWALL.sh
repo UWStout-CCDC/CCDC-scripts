@@ -48,6 +48,11 @@ sudo iptables -t filter -A OUTPUT -o lo -j ACCEPT
 #sudo iptables -t filter -A OUTPUT -p tcp --dport 8089 -j ACCEPT
 #sudo iptables -t filter -A OUTPUT -p tcp --dport 9997 -j ACCEPT
 
+# LDAP / LDAPS (mail server auth queries)
+sudo iptables -t filter -A OUTPUT -p tcp --dport 389 -j ACCEPT
+sudo iptables -t filter -A OUTPUT -p udp --dport 389 -j ACCEPT
+sudo iptables -t filter -A OUTPUT -p tcp --dport 636 -j ACCEPT
+
 # SMTP
 #sudo iptables -t filter -A OUTPUT -p tcp --dport 25 -j ACCEPT
 sudo iptables -t filter -A INPUT -p tcp --dport 25 -j ACCEPT
