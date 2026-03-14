@@ -1,0 +1,23 @@
+services:
+  init:
+    image: alpine:latest
+    command: sh -c 'addgroup -S splunk && adduser -S splunk -G splunk -u 41812 && chown -R splunk /opt/splunk'
+    volumes:
+      - ./etc:/opt/splunk
+    user: root
+
+  splunk:
+    image: splunk/splunk:10.0.2
+    platform: linux/amd64
+    hostname: splunk
+    environment:
+      - SPLUNK_START_ARGS=--accept-license
+      - SPLUNK_GENERAL_TERMS=--accept-sgt-current-at-splunk-com
+      - SPLUNK_PASSWORD=REDACTED
+    ports:
+      - 8000:8000
+      - 9997:9997
+    depends_on:
+      - init
+    volumes:
+      - ./etc:/opt/splunk/etc
