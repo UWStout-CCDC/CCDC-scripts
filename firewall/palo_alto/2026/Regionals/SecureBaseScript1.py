@@ -44,7 +44,7 @@ permitted_ip = str(permitted_ip)
 # Set Static IP for Ubuntu Workstation
 # Permit only the Ubuntu Workstation IP and the Palo Alto IP
 
-print("[*] Okay so lowkey we don't know the zone for each service. You gotta look at it. Maybe they're all external :D.")
+print("[*] Okay so lowkey we don't know the zone for each service. You gotta look at it. Maybe they're all Internal :D.")
 print()
 splunk_zone = input("Please enter Splunks's zone name : ")
 splunk_zone = str(splunk_zone)
@@ -57,6 +57,9 @@ mail_zone = str(mail_zone)
 
 work_zone = input("Please enter Workstation's zone name : ")
 work_zone = str(work_zone)
+
+ext_zone = input("Please enter the \"External\" zone name : ")
+ext_zone = str(ext_zone)
 
 with open("PAConfig.txt", "w") as command_file:
   commands="""
@@ -76,7 +79,7 @@ set network profiles zone-protection-profile Default flood icmp enable yes
 set network profiles zone-protection-profile Default flood udp enable yes
 set network profiles zone-protection-profile Default flood other-ip enable yes
 set network profiles zone-protection-profile Default flood icmpv6 enable yes
-set zone External network zone-protection-profile Default
+set zone """+ext_zone+""" network zone-protection-profile Default
 set zone Internal network zone-protection-profile Default
 set network profiles interface-management-profile none
 set network interface ethernet ethernet1/3 layer3 interface-management-profile none
@@ -108,10 +111,10 @@ delete rulebase security
 set rulebase security rules AllowICMP action allow from any to any source any destination any
 set rulebase security rules AllowICMP application ping service application-default
 set rulebase security rules AllowICMP application icmp service application-default
-set rulebase security rules AllowNTP action allow from """+work_zone+""" to External source any destination any
-set rulebase security rules AllowNTP action allow from """+splunk_zone+""" to External source any destination any
-set rulebase security rules AllowNTP action allow from """+ecomm_zone+""" to External source any destination any
-set rulebase security rules AllowNTP action allow from """+mail_zone+""" to External source any destination any
+set rulebase security rules AllowNTP action allow from """+work_zone+""" to """+ext_zone+""" source any destination any
+set rulebase security rules AllowNTP action allow from """+splunk_zone+""" to """+ext_zone+""" source any destination any
+set rulebase security rules AllowNTP action allow from """+ecomm_zone+""" to """+ext_zone+""" source any destination any
+set rulebase security rules AllowNTP action allow from """+mail_zone+""" to """+ext_zone+""" source any destination any
 set rulebase security rules AllowNTP application ntp service application-default
 
 # Granular Web Control:
@@ -120,13 +123,13 @@ set rulebase security rules AllowNTP application ntp service application-default
 
 ## Splunk
 # ======================= Granular Web Control ======================= 
-set rulebase security rules SplunkAllowInternet action allow from """+splunk_zone+""" to External source SplunkPriv destination any profile-setting profiles spyware strict virus default vulnerability default
+set rulebase security rules SplunkAllowInternet action allow from """+splunk_zone+""" to """+ext_zone+""" source SplunkPriv destination any profile-setting profiles spyware strict virus default vulnerability default
 set rulebase security rules SplunkAllowInternet application any service service-http
 set rulebase security rules SplunkAllowInternet application any service service-https
-set rulebase security rules SplunkAllowDNSOutbound action allow from """+splunk_zone+""" to External source SplunkPriv destination any
+set rulebase security rules SplunkAllowDNSOutbound action allow from """+splunk_zone+""" to """+ext_zone+""" source SplunkPriv destination any
 set rulebase security rules SplunkAllowDNSOutbound application dns service application-default
 # ======================= Scoring ======================= 
-set rulebase security rules AllowScoringSplunk action allow from External to """+splunk_zone+""" source any destination SplunkPub
+set rulebase security rules AllowScoringSplunk action allow from """+ext_zone+""" to """+splunk_zone+""" source any destination SplunkPub
 set rulebase security rules AllowScoringSplunk application any service SplunkScoring
 # ======================= Log Forwarding ======================= 
 set rulebase security rules SplunkIntrazone action allow from """+ecomm_zone+""" to """+splunk_zone+""" source SplunkPriv destination any
@@ -136,13 +139,13 @@ set rulebase security rules SplunkIntrazone application any service Splunk
 
 ## Ecomm
 # ======================= Granular Web Control ======================= 
-set rulebase security rules EcommAllowInternet action allow from """+ecomm_zone+""" to External source EcommPriv destination any profile-setting profiles spyware strict virus default vulnerability default
+set rulebase security rules EcommAllowInternet action allow from """+ecomm_zone+""" to """+ext_zone+""" source EcommPriv destination any profile-setting profiles spyware strict virus default vulnerability default
 set rulebase security rules EcommAllowInternet application any service service-http
 set rulebase security rules EcommAllowInternet application any service service-https
-set rulebase security rules EcommAllowDNSOutbound action allow from """+ecomm_zone+""" to External source EcommPriv destination any
+set rulebase security rules EcommAllowDNSOutbound action allow from """+ecomm_zone+""" to """+ext_zone+""" source EcommPriv destination any
 set rulebase security rules EcommAllowDNSOutbound application dns service application-default
 # ======================= Scoring Access ======================= 
-set rulebase security rules AllowHTTPSInbound action allow from External to """+ecomm_zone+""" source any destination EcommPub
+set rulebase security rules AllowHTTPSInbound action allow from """+ext_zone+""" to """+ecomm_zone+""" source any destination EcommPub
 set rulebase security rules AllowHTTPSInbound application any service service-https
 set rulebase security rules AllowHTTPSInbound application any service service-http
 # ======================= GUI Access ======================= 
@@ -152,19 +155,19 @@ set rulebase security rules EcommWebIntrazone application any service service-ht
 
 ## Mail
 # ======================= Granular Web Control ======================= 
-set rulebase security rules MailAllowInternet action allow from """+mail_zone+""" to External source FedoraMailPriv destination any profile-setting profiles spyware strict virus default vulnerability default
+set rulebase security rules MailAllowInternet action allow from """+mail_zone+""" to """+ext_zone+""" source FedoraMailPriv destination any profile-setting profiles spyware strict virus default vulnerability default
 set rulebase security rules MailAllowInternet application any service service-http
 set rulebase security rules MailAllowInternet application any service service-https
-set rulebase security rules MailAllowDNSOutbound action allow from """+mail_zone+""" to External source FedoraMailPriv destination any
+set rulebase security rules MailAllowDNSOutbound action allow from """+mail_zone+""" to """+ext_zone+""" source FedoraMailPriv destination any
 set rulebase security rules MailAllowDNSOutbound application dns service application-default
 # ======================= Scoring ======================= 
-set rulebase security rules AllowMailInbound action allow from External to """+mail_zone+""" source any destination FedoraMailPub
+set rulebase security rules AllowMailInbound action allow from """+ext_zone+""" to """+mail_zone+""" source any destination FedoraMailPub
 set rulebase security rules AllowMailInbound application pop3 service application-default
 set rulebase security rules AllowMailInbound application smtp service application-default
 set rulebase security rules AllowMailInbound application imap service application-default
 # ======================= I love Deer! ======================= 
-set rulebase security rules AllowMailLDAPandDNS action allow from External to """+mail_zone+""" source any destination any
-set rulebase security rules AllowMailLDAPandDNS action allow from """+mail_zone+""" to External source any destination any
+set rulebase security rules AllowMailLDAPandDNS action allow from """+ext_zone+""" to """+mail_zone+""" source any destination any
+set rulebase security rules AllowMailLDAPandDNS action allow from """+mail_zone+""" to """+ext_zone+""" source any destination any
 set rulebase security rules AllowMailLDAPandDNS application ldap service application-default
 set rulebase security rules AllowMailLDAPandDNS application dns service application-default
 set rulebase security rules AllowMailLDAPandDNS application dns service ADWindowsPub
@@ -172,16 +175,16 @@ set rulebase security rules AllowMailLDAPandDNS application ldap service ADWindo
 
 
 # Deny all
-set rulebase security rules DENYOUTBOUND action deny from """+work_zone+""" to External source any destination any
-set rulebase security rules DENYOUTBOUND action deny from """+splunk_zone+""" to External source any destination any
-set rulebase security rules DENYOUTBOUND action deny from """+ecomm_zone+""" to External source any destination any
-set rulebase security rules DENYOUTBOUND action deny from """+mail_zone+""" to External source any destination any
+set rulebase security rules DENYOUTBOUND action deny from """+work_zone+""" to """+ext_zone+""" source any destination any
+set rulebase security rules DENYOUTBOUND action deny from """+splunk_zone+""" to """+ext_zone+""" source any destination any
+set rulebase security rules DENYOUTBOUND action deny from """+ecomm_zone+""" to """+ext_zone+""" source any destination any
+set rulebase security rules DENYOUTBOUND action deny from """+mail_zone+""" to """+ext_zone+""" source any destination any
 set rulebase security rules DENYOUTBOUND application any service any
 
-set rulebase security rules DENYINBOUND action deny from External to """+work_zone+""" source any destination any
-set rulebase security rules DENYINBOUND action deny from External to """+splunk_zone+""" source any destination any
-set rulebase security rules DENYINBOUND action deny from External to """+ecomm_zone+""" source any destination any
-set rulebase security rules DENYINBOUND action deny from External to """+mail_zone+""" source any destination any
+set rulebase security rules DENYINBOUND action deny from """+ext_zone+""" to """+work_zone+""" source any destination any
+set rulebase security rules DENYINBOUND action deny from """+ext_zone+""" to """+splunk_zone+""" source any destination any
+set rulebase security rules DENYINBOUND action deny from """+ext_zone+""" to """+ecomm_zone+""" source any destination any
+set rulebase security rules DENYINBOUND action deny from """+ext_zone+""" to """+mail_zone+""" source any destination any
 set rulebase security rules DENYINBOUND application any service any
 
 delete rulebase dos
@@ -257,4 +260,4 @@ print("Copy and paste the output of the script.")
 # 2/10/25 updated script to work with Pan OS 11, also verified sec rules/NAT.-doshowipospf
 # 2/18/25 Added Dos Protection and Services for Splunk, DebianDNS, ADWindowsPub, UbuntuWeb, FedoraMail-doshowipospf
 # 3/13/26 Removed IP subnet blocking and Debian DNS references. - Fletcher Meyer
-# 3/14/26 Dynamic zone selection, slime zone, validated new script. - Fletcher Meyer
+# 3/14/26 Dynamic zone selection, validated new script. - Fletcher Meyer
