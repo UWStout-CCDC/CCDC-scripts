@@ -57,7 +57,7 @@ sudo iptables -t filter -A OUTPUT -p tcp --dport 636 -j ACCEPT
 # iptables -A OUTPUT -p tcp --dport 3269 -j ACCEPT
 
 # SMTP
-#sudo iptables -t filter -A OUTPUT -p tcp --dport 25 -j ACCEPT
+sudo iptables -t filter -A OUTPUT -p tcp --dport 25 -j ACCEPT
 sudo iptables -t filter -A INPUT -p tcp --dport 25 -j ACCEPT
 
 # POP3
