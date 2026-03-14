@@ -13,10 +13,10 @@ Write-Host "| | /| / / / __ \/ __  / __ \ | /| / / ___/  / /   / / _ \/ __ `/ __
 Write-Host "| |/ |/ / / / / / /_/ / /_/ / |/ |/ (__  )  / /___/ /  __/ /_/ / / / /  __/ /    "
 Write-Host "|__/|__/_/_/ /_/\__,_/\____/|__/|__/____/   \____/_/\___/\__,_/_/ /_/\___/_/  "
 
-$site = "UWStout-CCDC/windows" # Change when changing repo
-Create-Item -Path "C:\CCDC" -ItemType Directory
-Create-Item -Path "C:\CCDC\tools-Windows" -ItemType Directory
-
+$site = "UWStout-CCDC/CCDC-scripts" # Change when changing repo
+New-Item -Path "C:\CCDC" -ItemType Directory
+New-Item -Path "C:\CCDC\tools-Windows" -ItemType Directory
+$ccdcPath = "C:\CCDC"
 ## Clear persistence and document it ##
 
 # Registry persistence
@@ -94,36 +94,6 @@ try {
 }
 
 
-# Rotate Kerberos account password
-try {
-    $count = 0;
-    while ($count -lt 3) {
-        Write-Host "Rotating Kerberos account password..."
-        $letterNumberArray = @('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '1', '2', '3', '4', '5', '6', '7', '8','9','0', '!', '@', '#', '$', '%', '^', '&', '*')
-        for(($counter=0); $counter -lt 20; $counter++)
-        {
-        $randomCharacter = get-random -InputObject $letterNumberArray
-        $password = $randomString + $randomCharacter
-        }
-
-        $krbtgt = Get-LocalUser -Name "krbtgt"
-        Set-LocalUser -Name $krbtgt -Password $password
-    }
-    
-    Write-Host "--------------------------------------------------------------------------------"
-    Write-Host "Kerberos account password rotated successfully."
-    Write-Host "--------------------------------------------------------------------------------"
-} catch {
-    Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-    Write-Host "An error occurred while rotating Kerberos password: $_"
-    Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-}
-
-# Create directories
-$ccdcPath = "C:\CCDC"
-mkdir $ccdcPath 
-mkdir "$ccdcPath\DNS"
-
 # Download the GPO script
 # We will uncomment this section once we find working GPOs
 # $scriptPath = "$toolsPath\GPOs.ps1"
@@ -143,8 +113,8 @@ Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Na
 
 # Download the update script
 $path = "$ccdcPath\Win-Update.ps1"
-Write-Host "Downloading install script..."
-Invoke-WebRequest "https://github.com/$site/raw/refs/heads/main/Win-Update.ps1" -OutFile $path
+Write-Host "Downloading update script..."
+Invoke-WebRequest "https://github.com/$site/raw/refs/heads/main/update-windows.ps1" -OutFile $path
 
 # Check if PSWindowsUpdate is installed, if not, install it
 if (-not (Get-Module -ListAvailable -Name PSWindowsUpdate)) {
@@ -153,11 +123,6 @@ if (-not (Get-Module -ListAvailable -Name PSWindowsUpdate)) {
 }
 
 Import-Module -Name PSWindowsUpdate
-
-# Print out all DNS zones
-Get-DNSServerZone
-# Ask the user for the DNS zone
-$zone = Read-Host "Enter the DNS zone used by the scoring engine"
 
 # Initialize the global jobs array
 $global:jobs = @()
@@ -266,9 +231,11 @@ Start-LoggedJob -JobName "Configure Windows Firewall" -ScriptBlock {
         New-NetFirewallRule -DisplayName "Secure LDAP IN" -Direction Inbound -Action Allow -Program "C:\Windows\System32\lsass.exe" -Enabled True -Profile Any -LocalPort 636 -Protocol TCP
         New-NetFirewallRule -DisplayName "Secure LDAP Global Catalog IN" -Direction Inbound -Action Allow -Program "C:\Windows\System32\lsass.exe" -Enabled True -Profile Any -LocalPort 3269 -Protocol TCP
         New-NetFirewallRule -DisplayName "RPC IN" -Direction Inbound -Action Allow -Program "C:\Windows\System32\lsass.exe" -Enabled True -Profile Any -LocalPort RPC -Protocol TCP
-        New-NetFirewallRule -DisplayName "RPC-EPMAP IN" -Direction Inbound -Action Allow -Program "C:\Windows\System32\svchost.exe" -Enabled True -Profile Any -LocalPort RPC-EPMap -Protocol TCP
+        #New-NetFirewallRule -DisplayName "RPC-EPMAP IN" -Direction Inbound -Action Allow -Program "C:\Windows\System32\svchost.exe" -Enabled True -Profile Any -LocalPort RPC-EPMap -Protocol TCP
         New-NetFirewallRule -DisplayName "DHCP UDP IN" -Direction Inbound -Action Allow -Program "C:\Windows\System32\svchost.exe" -Enabled True -Profile Any -LocalPort 67,68 -Protocol UDP
         New-NetFirewallRule -DisplayName "RPC for DNS IN" -Direction Inbound -Action Allow -Program "C:\Windows\System32\dns.exe" -Enabled True -Profile Any -LocalPort RPC -Protocol TCP
+        New-NetFirewallRule -DisplayName "HTTPS IN" -Direction Inbound -Action Allow -Enabled True -Profile Any -LocalPort 443 -Protocol TCP
+        New-NetFirewallRule -DisplayName "HTTP IN" -Direction Inbound -Action Allow -Enabled True -Profile Any -LocalPort 80 -Protocol TCP
         New-NetFirewallRule -DisplayName "FTP Service (Inbound)" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 21 -Description "Allows FTP control traffic."
         New-NetFirewallRule -DisplayName "FTP Passive Data (Inbound)" -Direction Inbound -Action Allow -Protocol TCP -LocalPort $passivePortRange -Description "Allows FTP passive data traffic."
 
@@ -284,6 +251,8 @@ Start-LoggedJob -JobName "Configure Windows Firewall" -ScriptBlock {
         New-NetFirewallRule -DisplayName "DNS UDP OUT" -Direction Outbound -Action Allow -Program "C:\Windows\System32\dns.exe" -Enabled True -Profile Any -Protocol UDP
         New-NetFirewallRule -DisplayName "DNS OUT" -Direction Outbound -Action Allow -Enabled True -Profile Any -RemotePort 53 -Protocol UDP
         New-NetFirewallRule -DisplayName "DHCP" -Direction Outbound -Action Allow -Program "C:\Windows\System32\svchost.exe" -Enabled True -Profile Any -LocalPort 68 -RemotePort 67 -Protocol UDP
+        New-NetFirewallRule -DisplayName "HTTPS OUT" -Direction Outbound -Action Allow -Enabled True -Profile Any -RemotePort 443 -Protocol TCP
+        New-NetFirewallRule -DisplayName "HTTP OUT" -Direction Outbound -Action Allow -Enabled True -Profile Any -RemotePort 80 -Protocol TCP
         New-NetFirewallRule -DisplayName "FTP Service (Outbound)" -Direction Outbound -Action Allow -Protocol TCP -LocalPort 21
         New-NetFirewallRule -DisplayName "FTP Passive Data (Outbound)" -Direction Outbound -Action Allow -Protocol TCP -LocalPort $passivePortRange
 
@@ -326,7 +295,7 @@ Start-LoggedJob -JobName "Set Account Lockout Policies" -ScriptBlock {
     }
 }
 
-# Enable audit policies for key events like login, account management, file system changes, and registry changes
+#Enable audit policies for key events like login, account management, file system changes, and registry changes
 Start-LoggedJob -JobName "Enable Audit Policies" -ScriptBlock {
     try {
         AuditPol.exe /set /subcategory:"Logon" /success:enable /failure:enable
@@ -358,100 +327,44 @@ Start-LoggedJob -JobName "Remove Unnecessary Network Shares" -ScriptBlock {
     }
 }
 
-
-# Install Windows updates
-Start-LoggedJob -JobName "Install Windows Updates" -ScriptBlock {
-    try {
-        Set-Service -Name wuauserv -StartupType Automatic
-        Write-Host "Installing Windows updates..."
-        Start-Sleep -Seconds 60
-
-        $maxRetries = 3
-        $retryCount = 0
-        $success = $false
-
-        while (-not $success -and $retryCount -lt $maxRetries) {
-            try {
-                Install-WindowsUpdate -AcceptAll -Install
-                Write-Host "--------------------------------------------------------------------------------"
-                Write-Host "Windows updates installed."
-                Write-Host "--------------------------------------------------------------------------------"
-                $success = $true
-            } catch {
-                $retryCount++
-                Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-                Write-Host "An error occurred while installing Windows updates: $_"
-                Write-Host "Retrying... ($retryCount/$maxRetries)"
-                Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-                Start-Sleep -Seconds 60
-            }
-        }
-
-        if (-not $success) {
-            Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-            Write-Host "Failed to install Windows updates after $maxRetries attempts."
-            Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        }
-    } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        Write-Host "An unexpected error occurred: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-    }
-}
-
-# Secure and backup DNS to ccdc folder NOTE TO SELF: figure out how to restore
-Start-LoggedJob -JobName "Secure and Backup DNS" -ScriptBlock {
-    try {
-        dnscmd.exe /Config /SocketPoolSize 10000
-        dnscmd.exe /Config /CacheLockingPercent 100
-        dnscmd.exe /ZoneExport $zone "$ccdcPath\DNS\$zone.dns"
-        Write-Host "--------------------------------------------------------------------------------"
-        Write-Host "DNS secured and backed up."
-        Write-Host "--------------------------------------------------------------------------------"
-    } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        Write-Host "An error occurred while securing and backing up DNS: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-    }
-}
-
 # Lockdown the CCDC folder
-Start-LoggedJob -JobName "Lockdown CCDC Folder" -ScriptBlock {
-    try {
-        $ccdcPath = "C:\CCDC"
-        $acl = Get-Acl $ccdcPath
-        $acl.SetAccessRuleProtection($true, $false)
-        
+#Start-LoggedJob -JobName "Lockdown CCDC Folder" -ScriptBlock {
+#    try {
+#        $ccdcPath = "C:\CCDC"
+#        $acl = Get-Acl $ccdcPath
+#        $acl.SetAccessRuleProtection($true, $false)
+#        
         # Remove existing access rules
-        $acl.Access | ForEach-Object { $acl.RemoveAccessRule($_) }
+#        $acl.Access | ForEach-Object { $acl.RemoveAccessRule($_) }
         
         # Add full control for necessary system accounts
-        $adminUser = [System.Security.Principal.NTAccount]"Administrator"
-        $systemUser = [System.Security.Principal.NTAccount]"SYSTEM"
-        $trustedInstaller = [System.Security.Principal.NTAccount]"NT SERVICE\TrustedInstaller"
-        $currentUser = [System.Security.Principal.NTAccount]::new([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)
+#       $adminUser = [System.Security.Principal.NTAccount]"Administrator"
+#        $systemUser = [System.Security.Principal.NTAccount]"SYSTEM"
+#        $trustedInstaller = [System.Security.Principal.NTAccount]"NT SERVICE\TrustedInstaller"
+#        $currentUser = [System.Security.Principal.NTAccount]::new([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)
         
-        $adminRule = New-Object System.Security.AccessControl.FileSystemAccessRule($adminUser, "FullControl", "Allow")
-        $systemRule = New-Object System.Security.AccessControl.FileSystemAccessRule($systemUser, "FullControl", "Allow")
-        $trustedInstallerRule = New-Object System.Security.AccessControl.FileSystemAccessRule($trustedInstaller, "FullControl", "Allow")
-        $currentUserRule = New-Object System.Security.AccessControl.FileSystemAccessRule($currentUser, "FullControl", "Allow")
+#        $adminRule = New-Object System.Security.AccessControl.FileSystemAccessRule($adminUser, "FullControl", "Allow")
+#        $systemRule = New-Object System.Security.AccessControl.FileSystemAccessRule($systemUser, "FullControl", "Allow")
+#        $trustedInstallerRule = New-Object System.Security.AccessControl.FileSystemAccessRule($trustedInstaller, "FullControl", "Allow")
+#        $currentUserRule = New-Object System.Security.AccessControl.FileSystemAccessRule($currentUser, "FullControl", "Allow")
         
-        $acl.AddAccessRule($adminRule)
-        $acl.AddAccessRule($systemRule)
-        $acl.AddAccessRule($trustedInstallerRule)
-        $acl.AddAccessRule($currentUserRule)
+#        $acl.AddAccessRule($adminRule)
+#        $acl.AddAccessRule($systemRule)
+#        $acl.AddAccessRule($trustedInstallerRule)
+#        $acl.AddAccessRule($currentUserRule)
         
         # Apply the modified ACL to the CCDC folder
-        Set-Acl -Path $ccdcPath -AclObject $acl
-        Write-Host "--------------------------------------------------------------------------------"
-        Write-Host "CCDC folder lockdown complete."
-        Write-Host "--------------------------------------------------------------------------------"
-    } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        Write-Host "An error occurred while locking down the CCDC folder: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-    }
-}
+#       Set-Acl -Path $ccdcPath -AclObject $acl
+#        Write-Host "--------------------------------------------------------------------------------"
+#        Write-Host "CCDC folder lockdown complete."
+#        Write-Host "--------------------------------------------------------------------------------"
+#    }
+#    catch {
+#        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#        Write-Host "An error occurred while locking down the CCDC folder: $_"
+#        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+#    }
+#}
 
 # Block credential dumping
 Start-LoggedJob -JobName "Block Credential Dumping" -ScriptBlock {
@@ -563,18 +476,13 @@ Start-LoggedJob -JobName "Disable PowerShell Remoting" -ScriptBlock {
         # Disable PSRemoting
         Disable-PSRemoting -Force
 
-        # Stop and disable the WinRM service
-        Stop-Service -Name WinRM -Force
-        Set-Service -Name WinRM -StartupType Disabled
-
-        # Delete the listener that accepts requests on any IP address
+         # Delete the listener that accepts requests on any IP address
         winrm delete winrm/config/Listener?Address=*+Transport=HTTP
         winrm delete winrm/config/Listener?Address=*+Transport=HTTPS
 
-        # Disable the firewall exceptions for WS-Management communications
-        Set-NetFirewallRule -Name "WINRM-HTTP-In-TCP" -Enabled False
-        Set-NetFirewallRule -Name "WINRM-HTTPS-In-TCP" -Enabled False
-
+        # Stop and disable the WinRM service
+        Stop-Service -Name WinRM -Force
+        Set-Service -Name WinRM -StartupType Disabled
         # Restore the value of the LocalAccountTokenFilterPolicy to 0
         $regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
         Set-ItemProperty -Path $regPath -Name "LocalAccountTokenFilterPolicy" -Value 0
@@ -652,23 +560,9 @@ Start-LoggedJob -JobName "Patch Mimikatz" -ScriptBlock {
 ## Make sure the only SMB allowed is SMBv2 (we hate SMBv1)
 Start-LoggedJob -JobName "Upgrade SMB" -ScriptBlock {
     try {
-        $smbv1Enabled = (Get-SmbServerConfiguration).EnableSMB1Protocol
-        $smbv2Enabled = (Get-SmbServerConfiguration).EnableSMB2Protocol
-        $restart = $false
+        Set-SmbServerConfiguration -EnableSMB1Protocol $false -Force
+        Set-SmbServerConfiguration -EnableSMB2Protocol $true -Force
 
-        if ($smbv1Enabled -eq $true) {
-            Set-SmbServerConfiguration -EnableSMB1Protocol $false -Force
-            $restart = $true
-        }
-
-        if ($smbv2Enabled -eq $false) {
-            Set-SmbServerConfiguration -EnableSMB2Protocol $true -Force
-            $restart = $true
-        }
-
-        if ($restart -eq $true) {
-            Write-Host "Please consider restarting the machine for changes to take effect."
-        }
         Write-Host "--------------------------------------------------------------------------------"
         Write-Host "SMB upgraded."
         Write-Host "--------------------------------------------------------------------------------"
@@ -677,6 +571,20 @@ Start-LoggedJob -JobName "Upgrade SMB" -ScriptBlock {
         Write-Host "An error occurred while upgrading SMB: $_"
         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
     }
+}
+
+Start-LoggedJob -JobName "IIS Hardening" -ScriptBlock {
+    
+    try {
+        Import-Module WebAdministration  
+        Uninstall-WindowsFeature -Name Telnet-Client
+        Uninstall-WindowsFeature -Name Web-DAV-Publishing
+        Set-WebConfigurationProperty -Filter system.webserver/directorybrowse -PSPath IIS:\ -Name Enabled -Value False
+        #Set-ItemProperty "IIS:\\Sites\\$siteName" -Name logFile -Value @{logTargetW3C="File,ETW"} (NOT SURE IS WORKING DONT UNCOMMENT)
+    } catch {
+        
+    }
+
 }
 
 # Monitor jobs

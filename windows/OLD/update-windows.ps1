@@ -1,8 +1,3 @@
-# Set execution policy Unrestricted
-Write-Host "Setting execution policy Unrestricted"
-Set-ExecutionPolicy -Scope LocalMachine -ExecutionPolicy Unrestricted -Force
-
-    # Install Windows updates
 try {
         Set-Service -Name wuauserv -StartupType Automatic
         Write-Host "Installing Windows updates..."
@@ -39,6 +34,3 @@ try {
         Write-Host "An unexpected error occurred: $_"
         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
     }
-# Set execution policy back to Restricted
-Write-Host "Setting execution policy back to Restricted..."
-Set-ExecutionPolicy -Scope LocalMachine -ExecutionPolicy Restricted -Force
