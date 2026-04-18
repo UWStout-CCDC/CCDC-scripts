@@ -13,7 +13,7 @@
 #                                                      | |                  | |      |_|
 #                                                      |_|                  |_|
 
-# Version 2.1.0 - VyOS 1.4.x Compatible
+# Version 2.2.0 - VyOS 1.4.x Compatible
 
 # Recomended to use curl to get script on VyOS
 # Script should be ran prior to competition and added to github
@@ -106,6 +106,27 @@ set firewall ipv4 name EGRESS rule 50 destination port 53
 set firewall ipv4 name EGRESS rule 60 action accept
 set firewall ipv4 name EGRESS rule 60 protocol udp
 set firewall ipv4 name EGRESS rule 60 destination port 123
+# Create Local Output Rules (Block VyOS traffic)
+set firewall ipv4 name LOCAL-OUT default-action drop
+set firewall ipv4 name LOCAL-OUT description 'Traffic originating from the router'
+# Allow established/related
+set firewall ipv4 name LOCAL-OUT rule 10 action accept
+set firewall ipv4 name LOCAL-OUT rule 10 state established
+set firewall ipv4 name LOCAL-OUT rule 10 state related
+# Allow ICMP
+set firewall ipv4 name LOCAL-OUT rule 20 action accept
+set firewall ipv4 name LOCAL-OUT rule 20 protocol icmp
+# Allow OSPF
+set firewall ipv4 name LOCAL-OUT rule 30 action accept
+set firewall ipv4 name LOCAL-OUT rule 30 protocol ospf
+# Allow NTP out (UDP 123)
+set firewall ipv4 name LOCAL-OUT rule 40 action accept
+set firewall ipv4 name LOCAL-OUT rule 40 protocol udp
+set firewall ipv4 name LOCAL-OUT rule 40 destination port 123
+# Optional: Allow DNS out (uncomment if VyOS needs to resolve domains)
+# set firewall ipv4 name LOCAL-OUT rule 50 action accept
+# set firewall ipv4 name LOCAL-OUT rule 50 protocol tcp_udp
+# set firewall ipv4 name LOCAL-OUT rule 50 destination port 53
 # Apply firewall to interfaces
 # Forward filter: jump to INGRESS for traffic coming in on the WAN Port
 set firewall ipv4 forward filter default-action accept
@@ -120,6 +141,10 @@ set firewall ipv4 forward filter rule 10 jump-target EGRESS
 set firewall ipv4 forward filter rule 15 action jump
 set firewall ipv4 forward filter rule 15 outbound-interface name {ethLAN2}
 set firewall ipv4 forward filter rule 15 jump-target EGRESS
+# Output filter: jump to LOCAL-OUT
+set firewall ipv4 output filter default-action accept
+set firewall ipv4 output filter rule 10 action jump
+set firewall ipv4 output filter rule 10 jump-target LOCAL-OUT
 commit
 save
 exit
