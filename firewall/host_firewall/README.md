@@ -1,7 +1,7 @@
 # nftbuild
 A Go-based Binary for rapidly deploying hardened `nftables` firewall configurations on Linux systems. It auto-detects your distro, installs `nftables` if needed, generates a role-appropriate ruleset, and does some other cool stuff.
 
-**Version:** v1.3.2
+**Version:** v1.3.3
 **Author:** doshowipospf
 
 ---
