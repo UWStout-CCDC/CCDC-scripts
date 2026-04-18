@@ -34,9 +34,7 @@ function Write-Log {
     }
 }
 
-Write-Log "========================================" "INFO"
 Write-Log "Windows Hardening Script Started" "INFO"
-Write-Log "========================================" "INFO"
 Write-Log "Log file: $LogPath" "INFO"
 
 # Confirm execution
@@ -60,12 +58,8 @@ try {
     Write-Log "Failed to create restore point: $($_.Exception.Message)" "WARNING"
 }
 
-# ============================================
 # REGISTRY HARDENING
-# ============================================
-Write-Log "`n========================================" "INFO"
 Write-Log "REGISTRY HARDENING" "INFO"
-Write-Log "========================================" "INFO"
 
 function Set-RegistryValue {
     param(
