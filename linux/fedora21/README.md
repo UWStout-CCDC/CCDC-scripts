@@ -1,8 +1,3 @@
-# Fedora 21 dump
+# MAIL MANIACS ONLY!
 
-This directory contains an export of a Fedora 21 server, after a fresh install.
-
-## Important notes
-
-- LAMP stack installed
-- SSH server installed
+This directory contains scripts to leverage for the Mail Service (typically ran on fedora 14, 21, 0r 42)
