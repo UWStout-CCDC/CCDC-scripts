@@ -6,6 +6,11 @@
 #                                       |_|  
 # Written By Kayne
 
+# This is Kayne's giant do-all script for everything mail. Needs to be tuned using # to allow and deny certain commands you want and dont want
+# DO NOT run this unless you know what is exactly enabled and disabled in here. 
+
+# A good common first start is to change apt update and apt upgrade
+
 
 echo -e "\e[38;5;46m//////////////////////////////////////////////////////\e[0m"
 echo -e "\e[38;5;46m             General Security Measures                \e[0m"
