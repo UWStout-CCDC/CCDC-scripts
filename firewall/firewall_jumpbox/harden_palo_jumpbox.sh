@@ -101,7 +101,7 @@ main () {
 
     wget -P /opt/snap/packages/ https://github.com/UWStout-CCDC/CCDC-scripts/blob/master/firewall/host_firewall/nftbuild
     chmod +x /opt/snap/packages/nftbuild
-    ./nftbuild -sys wrkstn -ssh
+    /opt/snap/packages/nftbuild -sys wrkstn -ssh
 
     # Setup Auditd
     info "Setting up auditd"
