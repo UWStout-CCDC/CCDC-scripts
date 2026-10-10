@@ -80,8 +80,6 @@ install_fail2ban() {
 
     case "$PKG_MGR" in
         apt)
-            log_info "Updating apt cache…"
-            apt-get update -qq
             log_info "Installing fail2ban…"
             DEBIAN_FRONTEND=noninteractive apt-get install -y fail2ban
             ;;
