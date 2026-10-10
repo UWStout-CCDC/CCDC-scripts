@@ -99,7 +99,7 @@ main () {
         acl \
         apparmor apparmor-utils
 
-    wget -P /opt/snap/packages/ https://github.com/UWStout-CCDC/CCDC-scripts/blob/master/firewall/host_firewall/nftbuild
+    wget -P /opt/snap/packages/ https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master/firewall/host_firewall/nftbuild
     chmod +x /opt/snap/packages/nftbuild
     /opt/snap/packages/nftbuild -sys wrkstn -ssh
 
