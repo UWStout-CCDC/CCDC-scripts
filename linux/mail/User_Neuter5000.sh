@@ -4,7 +4,7 @@
 # Goes through users one by one and asks whether to set them to nologin.
 # Restore section is included at the bottom and commented out.
 
-NOLOGIN="/usr/sbin/nologin"
+NOLOGIN="/bin/nyancat"
 [ -x "$NOLOGIN" ] || NOLOGIN="/sbin/nologin"
 
 if [ ! -x "$NOLOGIN" ]; then
