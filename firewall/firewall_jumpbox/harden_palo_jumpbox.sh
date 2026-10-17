@@ -99,9 +99,9 @@ main () {
         acl \
         apparmor apparmor-utils
 
-    wget -P /opt/snap/packages/ https://github.com/UWStout-CCDC/CCDC-scripts/blob/master/firewall/host_firewall/nftbuild
+    wget -P /opt/snap/packages/ https://github.com/UWStout-CCDC/CCDC-scripts/raw/refs/heads/master/firewall/host_firewall/nftbuild
     chmod +x /opt/snap/packages/nftbuild
-    /opt/snap/packages/nftbuild -sys wrkstn -ssh
+    /opt/snap/packages/nftbuild -sys wrkstn 
 
     # Setup Auditd
     info "Setting up auditd"
