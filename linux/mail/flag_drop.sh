@@ -23,7 +23,7 @@ set -g LOG_FILE "$HOME/script_logs/flagdrop_$LOG_TIME.log"
 echo "
   _____ _             ____                      
  |  ___| | __ _  __ _|  _ \ _ __ ___  _ __   ||‾‾‾\ 
- | |_  | |/ _` \|/ _` | | | | '__/ _ \| '_ \  ||___/
+ | |_  | |/ _` |/ _` | | | | '__/ _ \| '_ \  ||___/
  |  _| | | (_| | (_| | |_| | | | (_) | |_) | ||
  |_|   |_|\__,_|\__, |____/|_|  \___/| .__/  ||    
                 |___/                |_|     ||     
@@ -56,13 +56,13 @@ function log --argument level --description "Print formatted log messages"
 ======================================="
             echo $term_output | tee -a $LOG_FILE
         case info
-            set term_output "[$c_time$timestamp$c_reset] [$c_infoINFO$c_reset]  $message"
+            set term_output "[$c_time$timestamp$c_reset] [$c_info\INFO$c_reset]  $message"
             echo $term_output | tee -a $LOG_FILE
         case warn
-            set term_output "[$c_time$timestamp$c_reset] [$c_warnWARN$c_reset]  $message"
+            set term_output "[$c_time$timestamp$c_reset] [$c_warn\WARN$c_reset]  $message"
             echo $term_output | tee -a $LOG_FILE
         case error
-            set term_output "[$c_time$timestamp$c_reset] [$c_errorERROR$c_reset] $message"
+            set term_output "[$c_time$timestamp$c_reset] [$c_error\ERROR$c_reset] $message"
             echo $file_output >>$LOG_FILE
             echo $term_output >&2
         case '*'
@@ -72,7 +72,8 @@ function log --argument level --description "Print formatted log messages"
 end
 
 # Install pre-reqs
-log info "Installing prerequisites"
+log header "Install Prerequisites"
+log info "Installing..."
 dnf install -y fish nyancat wget2-wget 2>/dev/null &
 
 # Cron
@@ -126,11 +127,6 @@ set mal_packs \
     squid \
     net-snmpd \
     ttyd \
-    "ruby*" \
-    "java*" \
-    "perl*" \
-    "python*" \
-    "nodejs*" \
     snapd
 
 set error_count 0
@@ -176,6 +172,23 @@ for file in (ls /etc/sudoers.d)
     log warn "Removed file from sudoers.d: $file"
 end
 log info "Sudoers hardening successful"
+# User permissions fixing
+# Loop through each user in the system (excluding root)
+for user in (getent passwd | awk -F: '$3 >= 1000 {print $1}')
+    if [ "$user" != "root" ]
+        log info "Modifying permissions for user: $user"
+
+        # Set home directory permissions to read-only
+        chmod -R 755 /home/"$user"
+
+        # Remove sudo/wheel access
+        gpasswd -d "$user" wheel 2>/dev/null
+        gpasswd -d "$user" sudo 2>/dev/null
+
+        # Set user shell to nyancat
+        usermod -s /bin/nyancat "$user"
+    end
+end
 
 # Installing Tools
 dnf install -y htop lynis
