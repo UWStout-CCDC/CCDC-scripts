@@ -38,9 +38,10 @@ backup_file() {
 }
 
 validate_ipv6() {
-    # Returns 0 (true) if the argument looks like a valid IPv6 address (no prefix)
+    # Pass address via env var to avoid shell injection from user-supplied input
     local addr="$1"
-    python3 -c "import ipaddress; ipaddress.IPv6Address('$addr')" 2>/dev/null
+    IPV6_CHECK_ADDR="$addr" python3 -c \
+        "import ipaddress, os; ipaddress.IPv6Address(os.environ['IPV6_CHECK_ADDR'])" 2>/dev/null
 }
 
 prompt_yn() {
@@ -191,13 +192,14 @@ prompt_gateway() {
 
 # ─── 5. DNS ───────────────────────────────────────────────────────────────────
 _pick_public_dns() {
-    echo
-    echo -e "  ${BOLD}Public IPv6 DNS Options:${RESET}"
-    echo -e "  1) Google      → 2001:4860:4860::8888"
-    echo -e "  2) Cloudflare  → 2606:4700:4700::1111"
-    echo -e "  3) OpenDNS     → 2620:119:35::35"
-    echo -e "  4) Custom      → enter manually"
-    echo
+    # All display lines go to stderr so stdout can be captured by the $() caller
+    echo >&2
+    echo -e "  ${BOLD}Public IPv6 DNS Options:${RESET}" >&2
+    echo -e "  1) Google      → 2001:4860:4860::8888" >&2
+    echo -e "  2) Cloudflare  → 2606:4700:4700::1111" >&2
+    echo -e "  3) OpenDNS     → 2620:119:35::35" >&2
+    echo -e "  4) Custom      → enter manually" >&2
+    echo >&2
 
     local choice addr
     while true; do
@@ -213,7 +215,7 @@ _pick_public_dns() {
                 done
                 break
                 ;;
-            *) echo "Enter 1, 2, 3, or 4." ;;
+            *) echo "Enter 1, 2, 3, or 4." >&2 ;;
         esac
     done
     echo "$addr"
@@ -283,14 +285,8 @@ _configure_nmcli() {
 _configure_netplan() {
     log_info "Configuring via netplan…"
 
-    local yaml_file
-    yaml_file=$(ls /etc/netplan/*.yaml 2>/dev/null | head -1)
-
-    if [[ -z "$yaml_file" ]]; then
-        yaml_file="/etc/netplan/01-netcfg.yaml"
-        log_warn "No netplan file found — creating $yaml_file"
-    fi
-
+    # Write to a dedicated override file so existing interface config is untouched
+    local yaml_file="/etc/netplan/60-ccdc-ipv6.yaml"
     backup_file "$yaml_file"
 
     local dns_block="            addresses: [${DNS_PRIMARY}"
@@ -302,8 +298,6 @@ network:
   version: 2
   ethernets:
     ${IFACE}:
-      dhcp4: true
-      dhcp6: false
       addresses:
         - ${IPV6_ADDR}/${IPV6_PREFIX}
       routes:
@@ -314,7 +308,7 @@ ${dns_block}
 NETPLAN
 
     netplan apply
-    log_ok "Netplan configuration applied."
+    log_ok "Netplan configuration applied (${yaml_file})."
 }
 
 _configure_interfaces() {
@@ -323,8 +317,14 @@ _configure_interfaces() {
     local ifaces_file="/etc/network/interfaces"
     backup_file "$ifaces_file"
 
-    # Remove any existing IPv6 stanza for this interface
-    sed -i "/^iface ${IFACE} inet6/,/^$/d" "$ifaces_file" 2>/dev/null || true
+    # Remove any existing IPv6 stanza for this interface.
+    # awk handles special chars in IFACE names (e.g. eth0.100) and end-of-file correctly.
+    awk -v iface="$IFACE" '
+        /^iface / && $2==iface && $4=="inet6" { skip=1; next }
+        skip && /^[^ \t]/ { skip=0 }
+        skip { next }
+        { print }
+    ' "$ifaces_file" > "${ifaces_file}.tmp" && mv "${ifaces_file}.tmp" "$ifaces_file"
 
     local dns_line="dns-nameservers ${DNS_PRIMARY}"
     [[ -n "$DNS_SECONDARY" ]] && dns_line="${dns_line} ${DNS_SECONDARY}"
@@ -428,10 +428,10 @@ status_report() {
         local label="$1" result="$2"
         if [[ "$result" == "ok" ]]; then
             printf "  ${GREEN}✓${RESET}  %-40s ${GREEN}PASS${RESET}\n" "$label"
-            ((pass++))
+            pass=$((pass + 1))
         else
             printf "  ${RED}✗${RESET}  %-40s ${RED}FAIL${RESET}\n" "$label"
-            ((fail++))
+            fail=$((fail + 1))
         fi
     }
 
@@ -456,8 +456,11 @@ status_report() {
         _check "Default IPv6 route configured" "fail"
     fi
 
+    # ping6 was merged into ping -6 on modern distros; fall back to ping6 if needed
+    _ping6() { ping -6 "$@" 2>/dev/null || ping6 "$@" 2>/dev/null; }
+
     # 4. Gateway reachable
-    if ping6 -c 2 -W 3 "$IPV6_GW" &>/dev/null 2>&1; then
+    if _ping6 -c 2 -W 3 "$IPV6_GW" &>/dev/null; then
         _check "Gateway reachable ($IPV6_GW)" "ok"
     else
         _check "Gateway reachable ($IPV6_GW)" "fail"
@@ -475,10 +478,10 @@ status_report() {
     fi
 
     # 6. Internet connectivity (Google Public DNS as beacon)
-    if ping6 -c 2 -W 5 2001:4860:4860::8888 &>/dev/null 2>&1; then
-        _check "Internet connectivity (ping6 Google DNS)" "ok"
+    if _ping6 -c 2 -W 5 2001:4860:4860::8888 &>/dev/null; then
+        _check "Internet connectivity (ping -6 Google DNS)" "ok"
     else
-        _check "Internet connectivity (ping6 Google DNS)" "fail"
+        _check "Internet connectivity (ping -6 Google DNS)" "fail"
     fi
 
     echo

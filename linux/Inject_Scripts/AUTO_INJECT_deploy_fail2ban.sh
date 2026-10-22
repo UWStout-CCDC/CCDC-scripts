@@ -80,6 +80,8 @@ install_fail2ban() {
 
     case "$PKG_MGR" in
         apt)
+            log_info "Updating apt cache…"
+            apt-get update -qq
             log_info "Installing fail2ban…"
             DEBIAN_FRONTEND=noninteractive apt-get install -y fail2ban
             ;;
@@ -110,11 +112,12 @@ install_fail2ban() {
 
 # ─── Timing helpers ───────────────────────────────────────────────────────────
 _prompt_bantime() {
+    # All display lines go to stderr so stdout can be captured by the $() caller
     local default="${1:-1h}"
-    echo -e "\n  ${BOLD}Ban duration:${RESET}"
-    echo -e "    1) 10 minutes    2) 1 hour (rec)  3) 12 hours"
-    echo -e "    4) 24 hours      5) 1 week         6) Permanent (-1)"
-    echo -e "    7) Custom"
+    echo -e "\n  ${BOLD}Ban duration:${RESET}" >&2
+    echo -e "    1) 10 minutes    2) 1 hour (rec)  3) 12 hours" >&2
+    echo -e "    4) 24 hours      5) 1 week         6) Permanent (-1)" >&2
+    echo -e "    7) Custom" >&2
     local choice
     while true; do
         read -rp "  Choice [1-7, default=${default}]: " choice
@@ -137,9 +140,10 @@ _prompt_bantime() {
 }
 
 _prompt_maxretry() {
+    # All display lines go to stderr so stdout can be captured by the $() caller
     local default="${1:-5}"
-    echo -e "\n  ${BOLD}Max failures before ban:${RESET}"
-    echo -e "    1) 3 (strict)   2) 5 (default)   3) 10 (lenient)   4) Custom"
+    echo -e "\n  ${BOLD}Max failures before ban:${RESET}" >&2
+    echo -e "    1) 3 (strict)   2) 5 (default)   3) 10 (lenient)   4) Custom" >&2
     local choice
     while true; do
         read -rp "  Choice [1-4, default=${default}]: " choice
@@ -159,10 +163,11 @@ _prompt_maxretry() {
 }
 
 _prompt_findtime() {
+    # All display lines go to stderr so stdout can be captured by the $() caller
     local default="${1:-10m}"
-    echo -e "\n  ${BOLD}Detection window (failures within this window = ban):${RESET}"
-    echo -e "    1) 5 minutes    2) 10 minutes (rec)   3) 30 minutes"
-    echo -e "    4) 1 hour       5) Custom"
+    echo -e "\n  ${BOLD}Detection window (failures within this window = ban):${RESET}" >&2
+    echo -e "    1) 5 minutes    2) 10 minutes (rec)   3) 30 minutes" >&2
+    echo -e "    4) 1 hour       5) Custom" >&2
     local choice
     while true; do
         read -rp "  Choice [1-5, default=${default}]: " choice
@@ -416,6 +421,7 @@ configure_opencart() {
     elif [[ -f /var/log/nginx/access.log ]];     then acc_log="/var/log/nginx/access.log"
     else acc_log="/var/log/apache2/access.log"
     fi
+    local custom
     read -rp "    Web server access log [${acc_log}]: " custom
     [[ -n "$custom" ]] && acc_log="$custom"
     log_info "Access log: $acc_log"
@@ -446,9 +452,8 @@ findtime = ${ft}"
     if [[ "$choice" == "2" || "$choice" == "3" ]]; then
         cat > /etc/fail2ban/filter.d/opencart-login.conf << 'FILTER'
 [Definition]
-# Brute-force attempts on the OpenCart customer login
+# Brute-force attempts on the OpenCart customer login page only
 failregex = ^<HOST> .* "POST /index\.php\?route=account/login.* HTTP.*" \d{3} .*$
-            ^<HOST> .* "POST /.*login.* HTTP.*" \d{3} .*$
 ignoreregex =
 FILTER
         log_ok "Filter written: /etc/fail2ban/filter.d/opencart-login.conf"
@@ -581,6 +586,7 @@ configure_splunk() {
     [[ -z "$choice" ]] && choice="3"
 
     local splunk_log_dir="/opt/splunk/var/log/splunk"
+    local custom
     read -rp "    Splunk log directory [${splunk_log_dir}]: " custom
     [[ -n "$custom" ]] && splunk_log_dir="$custom"
     log_info "Splunk log dir: $splunk_log_dir"
@@ -594,10 +600,11 @@ configure_splunk() {
     if [[ "$choice" == "1" || "$choice" == "3" ]]; then
         cat > /etc/fail2ban/filter.d/splunk-web.conf << 'FILTER'
 [Definition]
-# Failed Splunk Web UI authentication (splunkd.log)
-failregex = .*- - - \[.*\] "POST /en-US/account/login HTTP.* 200.*
-            .*AuditLogger.*action=login.*status=failure.*clientip=<HOST>
-            .*Invalid username or password.*
+# Failed Splunk Web UI authentication (splunkd.log / web_access.log)
+# All patterns require <HOST> and target only failure events, not HTTP 200 successes
+failregex = .*AuditLogger.*action=login.*status=failure.*clientip=<HOST>
+            .*user=\S+\sstatus=failure.*\sip=<HOST>
+            ^<HOST> .* "POST /en-US/account/login HTTP/[0-9.]+" [45][0-9][0-9] .*$
 ignoreregex =
 FILTER
         log_ok "Filter written: /etc/fail2ban/filter.d/splunk-web.conf"
@@ -645,10 +652,12 @@ write_and_apply() {
         printf "# CCDC fail2ban configuration — generated %s\n" "$(date)"
         printf "# Re-run deploy_fail2ban.sh to regenerate\n\n"
 
-        # Detect and set the correct banaction for the active firewall
+        # Detect and set the correct banaction for the active firewall.
+        # nftables is only selected when iptables-legacy is genuinely absent —
+        # just having nft installed does not mean it is the active firewall.
         if systemctl is-active --quiet firewalld 2>/dev/null; then
             printf "[DEFAULT]\nbanaction = firewallcmd-ipset\nbanaction_allports = firewallcmd-allports\n\n"
-        elif command -v nft &>/dev/null && nft list ruleset &>/dev/null 2>&1; then
+        elif ! command -v iptables &>/dev/null && command -v nft &>/dev/null; then
             printf "[DEFAULT]\nbanaction = nftables-multiport\nbanaction_allports = nftables-allports\n\n"
         else
             printf "[DEFAULT]\nbanaction = iptables-multiport\nbanaction_allports = iptables-allports\n\n"
@@ -663,10 +672,12 @@ write_and_apply() {
     log_ok "Config written: $JAIL_CONF_FILE"
 
     log_info "Testing fail2ban configuration…"
-    if fail2ban-client -t 2>&1 | grep -qi "error"; then
-        log_warn "fail2ban config test reported issues — check $JAIL_CONF_FILE"
-    else
+    local test_out
+    if test_out=$(fail2ban-client -t 2>&1); then
         log_ok "Configuration test passed."
+    else
+        log_warn "fail2ban config test failed — check $JAIL_CONF_FILE"
+        echo "$test_out" | head -20
     fi
 
     log_info "Enabling fail2ban at boot…"
