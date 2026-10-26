@@ -31,7 +31,7 @@
 #   --allow <cidr>       Restrict firewall rules and Splunk Web to this IPv4 source network
 #                        (e.g. 172.20.240.0/24). Localhost is always allowed.
 #   --no-receive         Disable listening for forwarders on 9997
-#   --no-rest            Disable listening for REST on 8089
+#   --no-management      Disable listening on management interface on 8089
 #   --syslog-port <n>    Also listen for syslog over TCP on this port (use >1024, e.g. 1514,
 #                        because splunk does not run as root; 514 would need root)
 #   --web-port <n>       Splunk web port (default 8000)
@@ -67,9 +67,10 @@ DL_DIR="$CCDC_DIR/downloads"
 # Last-resort fallback if the splunk.com page cannot be scraped. Splunk removes old
 # builds from time to time, so if this 404s, set SPLUNK_URL to a current link.
 FALLBACK_URL="https://download.splunk.com/products/splunk/releases/10.6.1.1/linux/splunk-10.6.1.1-b2ae2962645c-linux-amd64.tgz"
-ALLOW_NET=""
+ALLOW_NET="0.0.0.0/0, ::/0"
+ALLOW_MGMT="0.0.0.0/0, ::/0"
 RECEIVE=1
-REST=1
+MANAGEMENT=1
 SYSLOG_PORT=""
 WEB_PORT=8000
 DO_FW=1
@@ -367,13 +368,13 @@ EOF
     echo "httpport = $WEB_PORT"
     echo "enableSplunkWebSSL = false"
     echo "enableSearchJobXslt = false"
-    [[ -n "$ALLOW_NET" ]] && echo "acceptFrom = $ALLOW_NET, 127.0.0.1"
+    [[ -n "$ALLOW_NET" ]] && echo "acceptFrom = $ALLOW_NET, 127.0.0.0/8"
   } > "$APP_DIR/local/web.conf"
 
-  # Management port only reachable locally (Splunk Web talks to it over localhost)
+  # Management port
   cat > "$APP_DIR/local/server.conf" <<EOF
 [httpServer]
-acceptFrom = 127.0.0.1, ::1
+acceptFrom = $ALLOW_MGMT, 127.0.0.1, ::1
 EOF
 
   # Separate indexes so searches stay tidy and the other services' logs are easy to find
@@ -507,7 +508,7 @@ EOF
 
 fw_ports() {
   local p=("$WEB_PORT")
-  [[ $RECEIVE -eq 1 ]] && p+=(8089)
+  [[ $MANAGEMENT -eq 1 ]] && p+=(8089)
   [[ $RECEIVE -eq 1 ]] && p+=(9997)
   [[ -n "$SYSLOG_PORT" ]] && p+=("$SYSLOG_PORT")
   echo "${p[@]}"
