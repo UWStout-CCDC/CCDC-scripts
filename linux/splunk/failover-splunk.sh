@@ -367,6 +367,7 @@ EOF
     echo "httpport = $WEB_PORT"
     echo "enableSplunkWebSSL = false"
     echo "enableSearchJobXslt = false"
+    echo "startwebserver = 1"
     [[ -n "$ALLOW_NET" ]] && echo "acceptFrom = $ALLOW_NET, 127.0.0.0/8"
   } > "$APP_DIR/local/web.conf"
 
@@ -620,6 +621,7 @@ start_splunk() {
       warn "Splunkd exited during startup. Check: journalctl -u Splunkd; tail $SPLUNK_HOME/var/log/splunk/splunkd.log"
       return 1
     fi
+    log "No response from Web; Waiting..."
     sleep 5
   done
   warn "Splunk web did not answer on $WEB_PORT yet. Check: journalctl -u Splunkd; tail $SPLUNK_HOME/var/log/splunk/splunkd.log"
