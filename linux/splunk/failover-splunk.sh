@@ -365,7 +365,7 @@ EOF
   {
     echo "[settings]"
     echo "httpport = $WEB_PORT"
-    echo "enableSplunkWebSSL = true"
+    echo "enableSplunkWebSSL = false"
     echo "enableSearchJobXslt = false"
     [[ -n "$ALLOW_NET" ]] && echo "acceptFrom = $ALLOW_NET, 127.0.0.1"
   } > "$APP_DIR/local/web.conf"
