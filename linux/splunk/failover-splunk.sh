@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# add-splunk.sh - Add Splunk to a box that is already set up and running other services.
+# failover-splunk.sh - Add Splunk to a box that is already set up and running other services.
 #
 # Works on RHEL-like (RHEL/Rocky/Alma/CentOS/Fedora) and Debian-like (Ubuntu/Debian) systems.
 #
@@ -22,7 +22,7 @@
 #   - checks afterwards that every service that was running before is still running
 #
 # Usage:
-#   ./add-splunk.sh [options]
+#   ./failover-splunk.sh [options]
 #
 # Splunk is downloaded automatically (latest Linux x86_64 .tgz from splunk.com, SHA512-verified).
 # If /opt/splunk already exists with Splunk in it, the download is skipped.
@@ -56,7 +56,7 @@ fi
 SPLUNK_HOME="/opt/splunk"
 SPLUNK_USER="splunk"
 CCDC_DIR="/ccdc"
-LOGFILE="$CCDC_DIR/logs/add-splunk.txt"
+LOGFILE="$CCDC_DIR/logs/failover-splunk.txt"
 APP_NAME="ccdc_base"
 APP_DIR="$SPLUNK_HOME/etc/apps/$APP_NAME"
 FW_SCRIPT="$CCDC_DIR/scripts/linux/splunk-fw.sh"
