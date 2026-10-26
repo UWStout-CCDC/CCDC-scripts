@@ -67,8 +67,7 @@ DL_DIR="$CCDC_DIR/downloads"
 # Last-resort fallback if the splunk.com page cannot be scraped. Splunk removes old
 # builds from time to time, so if this 404s, set SPLUNK_URL to a current link.
 FALLBACK_URL="https://download.splunk.com/products/splunk/releases/10.6.1.1/linux/splunk-10.6.1.1-b2ae2962645c-linux-amd64.tgz"
-ALLOW_NET="0.0.0.0/0, ::/0"
-ALLOW_MGMT="0.0.0.0/0, ::/0"
+ALLOW_NET="0.0.0.0/0"
 RECEIVE=1
 MANAGEMENT=1
 SYSLOG_PORT=""
@@ -374,7 +373,7 @@ EOF
   # Management port
   cat > "$APP_DIR/local/server.conf" <<EOF
 [httpServer]
-acceptFrom = $ALLOW_MGMT, 127.0.0.1, ::1
+acceptFrom = $ALLOW_NET, 127.0.0.1, ::1
 EOF
 
   # Separate indexes so searches stay tidy and the other services' logs are easy to find
