@@ -275,6 +275,7 @@ install_splunk() {
 
   log "Extracting to $(dirname "$SPLUNK_HOME")"
   tar -xzf "$file" -C "$(dirname "$SPLUNK_HOME")" || die "Extract failed (disk full?)"
+  chown -R splunk:splunk /opt/splunk || die "Could not transfer ownership of /opt/splunk"
   rm -f "$file"
 
   [[ -x "$SPLUNK_HOME/bin/splunk" ]] || die "Extracted, but $SPLUNK_HOME/bin/splunk is missing"
