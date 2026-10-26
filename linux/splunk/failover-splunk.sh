@@ -30,7 +30,8 @@
 # Options:
 #   --allow <cidr>       Restrict firewall rules and Splunk Web to this IPv4 source network
 #                        (e.g. 172.20.240.0/24). Localhost is always allowed.
-#   --receive            Also listen for forwarders on 9997 and REST on 8089
+#   --no-receive         Disable listening for forwarders on 9997
+#   --no-rest            Disable listening for REST on 8089
 #   --syslog-port <n>    Also listen for syslog over TCP on this port (use >1024, e.g. 1514,
 #                        because splunk does not run as root; 514 would need root)
 #   --web-port <n>       Splunk web port (default 8000)
@@ -68,6 +69,7 @@ DL_DIR="$CCDC_DIR/downloads"
 FALLBACK_URL="https://download.splunk.com/products/splunk/releases/10.6.1.1/linux/splunk-10.6.1.1-b2ae2962645c-linux-amd64.tgz"
 ALLOW_NET=""
 RECEIVE=1
+REST=1
 SYSLOG_PORT=""
 WEB_PORT=8000
 DO_FW=1
@@ -649,7 +651,8 @@ summary() {
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --allow)       need_val "$@"; ALLOW_NET="$2"; shift 2 ;;
-    --receive)     RECEIVE=1; shift ;;
+    --no-receive)  RECEIVE=0; shift ;;
+    --no-rest)     REST=0; shift ;;
     --syslog-port) need_val "$@"; SYSLOG_PORT="$2"; shift 2 ;;
     --web-port)    need_val "$@"; WEB_PORT="$2"; shift 2 ;;
     --no-firewall) DO_FW=0; shift ;;
