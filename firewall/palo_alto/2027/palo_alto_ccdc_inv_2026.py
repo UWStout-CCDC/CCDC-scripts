@@ -53,7 +53,7 @@ include_subnet_fallback = prompt_default("Include internal subnet 172.20.240.0/2
 permitted_ips = [f"{ubuntu_mgmt_ip}/32", f"{windows_mgmt_ip}/32"]
 if include_subnet_fallback:
     permitted_ips.append("172.20.240.0/24")
-permitted_ip_cli = "[ " + " ".join(permitted_ips) + " ]"
+permitted_ip_cmds = "\n".join([f"set deviceconfig system permitted-ip {ip}" for ip in permitted_ips])
 
 # 3. Zone Names
 print("\n[*] Firewall Security Zones:")
@@ -68,17 +68,24 @@ ext_interface = prompt_default("Enter External Layer 3 Interface (towards VyOS)"
 int_interface = prompt_default("Enter Internal Layer 3 Interface (towards LAN Switch)", "ethernet1/3")
 
 # 5. Security & Enforcement Options
-print("\n[*] Security Enforcement & Features:")
-enable_custom_fallback = prompt_default("Create dedicated Custom Service rules alongside App-ID rules for scoring resilience? (y/n)", "y").lower() == 'y'
+print("\n[*] Security Enforcement & Features (Licensed Competition Profile):")
+print("    Note: Backup rules use port-based service definitions (application any) and will be created")
+print("    in a DISABLED state by default ('disabled yes') to enforce strict zero-trust security.")
+enable_custom_fallback = prompt_default("Create backup Custom Service rules (disabled by default)? (y/n)", "y").lower() == 'y'
 enable_kill_shells = prompt_default("Enable KillReverseShells rule (drops outbound to 10.0.0.0/8 & 192.168.0.0/16)? (y/n)", "y").lower() == 'y'
 enable_dos_rules = prompt_default("Enable Aggregate DoS Protection rules on scored public services? (y/n)", "y").lower() == 'y'
-enable_threat_profiles = prompt_default("Attach Threat Prevention Profiles (AV, Anti-Spyware, Vuln) to outbound internet? (y/n)", "y").lower() == 'y'
+enable_threat_inbound = prompt_default("Attach Threat Prevention (AV, Spyware, Vuln, WildFire) to INBOUND scored servers? (y/n)", "y").lower() == 'y'
+enable_threat_outbound = prompt_default("Attach Threat Prevention to OUTBOUND Internet traffic? (y/n)", "y").lower() == 'y'
+enable_dns_sinkhole = prompt_default("Enable Anti-Spyware DNS Sinkhole to detect & intercept Red Team C2 beacons? (y/n)", "y").lower() == 'y'
+enable_auto_updates = prompt_default("Configure automated dynamic updates for Threats & Antivirus content? (y/n)", "y").lower() == 'y'
 
 output_filename = "PAConfig_CCDC2026.txt"
 script_dir = os.path.dirname(os.path.abspath(__file__))
 output_filepath = os.path.join(script_dir, output_filename)
 
-threat_profile_cmd = "profile-setting profiles spyware strict virus default vulnerability default" if enable_threat_profiles else ""
+inbound_threat_cmd = "profile-setting group CCDC-Threat-Protection" if enable_threat_inbound else ""
+outbound_threat_cmd = "profile-setting group CCDC-Threat-Protection" if enable_threat_outbound else ""
+dns_threat_cmd = "profile-setting group CCDC-Threat-Protection" if enable_dns_sinkhole else ""
 
 # Build Configuration
 commands = f"""# =====================================================================
@@ -94,7 +101,7 @@ configure
 # ---------------------------------------------------------------------
 # System Settings & Management Hardening
 # ---------------------------------------------------------------------
-set deviceconfig system permitted-ip {permitted_ip_cli}
+{permitted_ip_cmds}
 set deviceconfig system dns-setting servers primary 172.20.240.100
 set deviceconfig system dns-setting servers secondary 9.9.9.9
 set deviceconfig system service disable-telnet yes
@@ -123,7 +130,7 @@ set address LAN ip-netmask 172.20.240.0/24
 # ---------------------------------------------------------------------
 set address UbuntuWkstPriv ip-netmask {ubuntu_mgmt_ip}/32
 set address WindowsWkstPriv ip-netmask {windows_mgmt_ip}/32
-set address-group MgmtWorkstations members [ UbuntuWkstPriv WindowsWkstPriv ]
+set address-group MgmtWorkstations static [ UbuntuWkstPriv WindowsWkstPriv ]
 
 # ---------------------------------------------------------------------
 # Address Objects: Scored Servers (Private & Scored Public)
@@ -161,7 +168,7 @@ set address DNS-Quad9-1 ip-netmask 9.9.9.9/32
 set address DNS-Quad9-2 ip-netmask 149.112.112.112/32
 set address DNS-Google-1 ip-netmask 8.8.8.8/32
 set address DNS-Google-2 ip-netmask 8.8.4.4/32
-set address-group Approved-DNS-Servers members [ ADPriv ADPub DNS-Cloudflare-1 DNS-Cloudflare-2 DNS-Quad9-1 DNS-Quad9-2 DNS-Google-1 DNS-Google-2 ]
+set address-group Approved-DNS-Servers static [ ADPriv ADPub DNS-Cloudflare-1 DNS-Cloudflare-2 DNS-Quad9-1 DNS-Quad9-2 DNS-Google-1 DNS-Google-2 ]
 
 # ---------------------------------------------------------------------
 # Custom Service Objects (For non-default ports & fallback definitions)
@@ -189,7 +196,24 @@ set service svc-ntp protocol udp port 123
 
 # Service Group for Active Directory
 set service-group grp-ad-services members [ svc-dns-tcp svc-dns-udp svc-winrm svc-ldap svc-kerberos-tcp svc-kerberos-udp svc-smb svc-rpc svc-ntp ]
+"""
 
+if enable_threat_inbound or enable_threat_outbound or enable_dns_sinkhole:
+    commands += f"""
+# ---------------------------------------------------------------------
+# Security Profiles & Profile Group (Licensed Threat Prevention & WildFire)
+# ---------------------------------------------------------------------
+"""
+    if enable_dns_sinkhole:
+        commands += """set profiles spyware CCDC-AntiSpyware botnet-domains lists default-paloalto-dns action sinkhole
+set profiles spyware CCDC-AntiSpyware botnet-domains sinkhole ipv4-address pan-sinkhole-default-ip
+set profiles spyware CCDC-AntiSpyware botnet-domains sinkhole ipv6-address ::1
+"""
+    spyware_profile = "CCDC-AntiSpyware" if enable_dns_sinkhole else "strict"
+    commands += f"""set profiles profile-group CCDC-Threat-Protection virus default spyware {spyware_profile} vulnerability default wildfire-analysis default
+"""
+
+commands += f"""
 # ---------------------------------------------------------------------
 # NAT Rules (1:1 Bi-directional Static NAT + Outbound PAT)
 # ---------------------------------------------------------------------
@@ -211,8 +235,9 @@ set rulebase nat rules LAN-OutboundPAT nat-type ipv4 from {int_zone} to {ext_zon
 #       and destination zone matches post-NAT zone ({int_zone}).
 #
 # Per Architecture Guidelines:
-# - App-ID rules specify 'service application-default'.
-# - Custom Service rules specify custom port objects and are kept strictly SEPARATE.
+# - App-ID rules strictly enforce Layer 7 application classification ('service application-default' or specific ports).
+# - Backup Custom Service rules (port-only) use 'application any' and are strictly DISABLED by default ('disabled yes')
+#   to prevent permissive network access and enforce maximum zero-trust security.
 # ---------------------------------------------------------------------
 delete rulebase security
 """
@@ -231,75 +256,81 @@ set rulebase security rules AllowICMP action allow from any to any source any de
 set rulebase security rules AllowNTPOutbound action allow from {int_zone} to {ext_zone} source any destination any application ntp service application-default
 
 # Outbound Core Infrastructure: DNS restricted strictly to Approved Resolvers (Local AD, 1.1.1.1, 9.9.9.9, 8.8.8.8)
-# App-ID Rule:
-set rulebase security rules AllowDNSOutbound-AppID action allow from {int_zone} to any source any destination Approved-DNS-Servers application dns service application-default
+# App-ID Rule (with Anti-Spyware DNS Sinkhole when enabled):
+set rulebase security rules AllowDNSOutbound-AppID action allow from {int_zone} to any source any destination Approved-DNS-Servers application dns service application-default {dns_threat_cmd}
+"""
 
-# Custom Service Rule (Fallback UDP/TCP 53 for Approved Resolvers):
-set rulebase security rules AllowDNSOutbound-CustomSvc action allow from {int_zone} to any source any destination Approved-DNS-Servers service [ svc-dns-udp svc-dns-tcp ] application any
+if enable_custom_fallback:
+    commands += f"""
+# Custom Service Rule (Backup UDP/TCP 53 for Approved Resolvers - DISABLED BY DEFAULT):
+set rulebase security rules AllowDNSOutbound-CustomFallback action allow from {int_zone} to any source any destination Approved-DNS-Servers service [ svc-dns-udp svc-dns-tcp ] application any disabled yes
+"""
 
+commands += f"""
 # Explicitly Block & Drop all Unauthorized Outbound DNS (Kills DNS Tunnels, C2 Beacons, & Rogue Resolvers)
 set rulebase security rules BlockUnauthorizedDNS action drop from {int_zone} to {ext_zone} source any destination any service [ svc-dns-udp svc-dns-tcp ] application any
 
 # Outbound Internet Access for Web & Package Managers (App-ID Rule)
 # Supports web browsing, apt, dnf/yum, winget/ms-update, git, and OCSP certificate validation
-set rulebase security rules AllowInternetOutbound-AppID action allow from {int_zone} to {ext_zone} source any destination any application [ web-browsing ssl apt-get yum ms-update git ocsp ] service application-default {threat_profile_cmd}
-
-# Outbound Internet Access for Package Managers & Web (Custom Service Fallback - TCP 80 & 443)
-# Guarantees that any Linux package manager (apt, dnf, yum, pip, curl, wget) and Windows (winget, PowerShell Gallery)
-# will never be blocked or dropped mid-download due to App-ID classification shifts or non-standard User-Agents.
-set rulebase security rules AllowInternetOutbound-CustomSvc action allow from {int_zone} to {ext_zone} source any destination any service [ svc-http svc-https ] application any {threat_profile_cmd}
-
-# =====================================================================
-# INBOUND SCORED SERVICES - APP-ID RULES (service application-default)
-# =====================================================================
-
-# 1. Rocky Ecom: Web & SSH (App-ID)
-# Covers: ecomm-http (web-browsing:80), ecomm-https (ssl:443), ecomm-ssh (ssh:22)
-set rulebase security rules AllowEcomm-AppID action allow from {ext_zone} to {int_zone} source any destination EcommPub application [ web-browsing ssl ssh ] service application-default
-
-# 2. Ubuntu Email: Mail protocols & Roundcube Webmail (App-ID)
-# Covers: webmail-smtp (smtp:25, submission:587, smtps:465), webmail-pop3 (pop3:110, pop3s:995),
-#         webmail-imap (imap:143, imaps:993), webmail-roundcube (web-browsing:80, ssl:443), webmail-ssh (ssh:22)
-set rulebase security rules AllowEmail-AppID action allow from {ext_zone} to {int_zone} source any destination EmailPub application [ smtp submission smtps pop3 pop3s imap imaps web-browsing ssl ssh ] service application-default
-
-# 3. Debian Splunk: SSH (App-ID)
-# Covers: splunk-ssh (ssh:22)
-# Note: Splunk Web (8000) and Splunk Mgmt (8089) use non-standard ports, defined in Custom Service rule below.
-set rulebase security rules AllowSplunk-AppID action allow from {ext_zone} to {int_zone} source any destination SplunkPub application [ ssh ] service application-default
-
-# 4. Windows 2022 AD: Active Directory & Domain Services (App-ID)
-# Covers: ad-dns (dns:53), ad-winrm (ms-wman:5985,5986), LDAP/Kerberos/SMB/RPC auth
-set rulebase security rules AllowAD-AppID action allow from {ext_zone} to {int_zone} source any destination ADPub application [ dns ms-wman ldap ldaps kerberos ms-ds-smb msrpc ms-ds-replication ] service application-default
-
-# 5. Windows 2019 MSSQL: Database, RDP & SMB (App-ID)
-# Covers: mssql-mssql (ms-sql-db:1433), mssql-rdp (ms-rdp:3389), mssql-smb (ms-ds-smb:445, netbios-ssn:139)
-set rulebase security rules AllowMSSQL-AppID action allow from {ext_zone} to {int_zone} source any destination MSSQLPub application [ ms-sql-db ms-rdp ms-ds-smb netbios-ssn ] service application-default
-
-# 6. Windows 2022 AD Time Synchronization (App-ID)
-# Allows internal LAN systems and external clients to sync NTP time with AD (172.20.240.100)
-set rulebase security rules AllowNTP-To-AD-AppID action allow from any to {int_zone} source any destination [ ADPub ADPriv ] application ntp service application-default
-
-# =====================================================================
-# INBOUND SCORED SERVICES - SEPARATE CUSTOM SERVICE RULES
-# (For non-default ports & scoring engine synthetic traffic resilience)
-# =====================================================================
-
-# Splunk Non-Standard Ports: Web GUI (8000) & REST Mgmt API (8089)
-# Covers: splunk-web (8000), splunk-mgmt (8089), splunk-query (8000/8089)
-set rulebase security rules AllowSplunk-CustomSvc action allow from {ext_zone} to {int_zone} source any destination SplunkPub service [ svc-splunk-web svc-splunk-mgmt ] application any
-
-# AD NTP Time Synchronization (Custom Service Fallback - UDP 123)
-set rulebase security rules AllowNTP-To-AD-CustomSvc action allow from any to {int_zone} source any destination [ ADPub ADPriv ] service svc-ntp application any
+set rulebase security rules AllowInternetOutbound-AppID action allow from {int_zone} to {ext_zone} source any destination any application [ web-browsing ssl apt-get yum ms-update git ocsp ] service application-default {outbound_threat_cmd}
 """
 
 if enable_custom_fallback:
     commands += f"""
-# Resilience Fallback Rules for Scored Services:
-# Prevents scoring downtime if synthetic scoring probes do not perform full App-ID handshakes.
-set rulebase security rules AllowEcomm-CustomFallback action allow from {ext_zone} to {int_zone} source any destination EcommPub service [ svc-http svc-https svc-ssh ] application any
-set rulebase security rules AllowEmail-CustomFallback action allow from {ext_zone} to {int_zone} source any destination EmailPub service [ svc-smtp svc-pop3 svc-imap svc-http svc-https svc-ssh ] application any
-set rulebase security rules AllowAD-CustomFallback action allow from {ext_zone} to {int_zone} source any destination ADPub service grp-ad-services application any
-set rulebase security rules AllowMSSQL-CustomFallback action allow from {ext_zone} to {int_zone} source any destination MSSQLPub service [ svc-mssql svc-rdp svc-smb ] application any
+# Outbound Internet Access for Package Managers & Web (Custom Service Fallback - TCP 80 & 443 - DISABLED BY DEFAULT)
+# Kept disabled by default for maximum zero-trust restriction. Enable only if package managers fail App-ID classification.
+set rulebase security rules AllowInternetOutbound-CustomFallback action allow from {int_zone} to {ext_zone} source any destination any service [ svc-http svc-https ] application any {outbound_threat_cmd} disabled yes
+"""
+
+commands += f"""
+# =====================================================================
+# INBOUND SCORED SERVICES - APP-ID RULES (ACTIVE)
+# =====================================================================
+
+# 1. Rocky Ecom: Web & SSH (App-ID)
+# Covers: ecomm-http (web-browsing:80), ecomm-https (ssl:443), ecomm-ssh (ssh:22)
+set rulebase security rules AllowEcomm-AppID action allow from {ext_zone} to {int_zone} source any destination EcommPub application [ web-browsing ssl ssh ] service application-default {inbound_threat_cmd}
+
+# 2. Ubuntu Email: Mail protocols & Roundcube Webmail (App-ID)
+# Covers: webmail-smtp (smtp:25,587), webmail-pop3 (pop3:110), webmail-imap (imap:143),
+#         webmail-roundcube (web-browsing:80, ssl:443), webmail-ssh (ssh:22), and SSL wrapper ports (ssl:465,993,995)
+set rulebase security rules AllowEmail-AppID action allow from {ext_zone} to {int_zone} source any destination EmailPub application [ smtp pop3 imap web-browsing ssl ssh ] service application-default {inbound_threat_cmd}
+
+# 3. Debian Splunk: SSH, Web GUI & REST Mgmt API (App-ID)
+# Covers: splunk-ssh (ssh:22), splunk-web (8000), splunk-mgmt (8089), splunk-query (8000/8089)
+set rulebase security rules AllowSplunk-SSH-AppID action allow from {ext_zone} to {int_zone} source any destination SplunkPub application [ ssh ] service application-default {inbound_threat_cmd}
+set rulebase security rules AllowSplunk-WebMgmt-AppID action allow from {ext_zone} to {int_zone} source any destination SplunkPub application [ splunk splunk-management web-browsing ssl ] service [ svc-splunk-web svc-splunk-mgmt ] {inbound_threat_cmd}
+
+# 4. Windows 2022 AD: Active Directory & Domain Services (App-ID)
+# Covers: ad-dns (dns:53), ad-winrm (windows-remote-management:5985,5986), LDAP/LDAPS (ldap/ssl:389,636),
+#         Kerberos (kerberos:88), SMB (ms-ds-smb:445), RPC (msrpc:135), AD Replication (active-directory, ms-dc-replication)
+set rulebase security rules AllowAD-AppID action allow from {ext_zone} to {int_zone} source any destination ADPub application [ active-directory ms-dc-replication dns windows-remote-management ldap kerberos ms-ds-smb msrpc ssl ] service application-default {inbound_threat_cmd}
+
+# 5. Windows 2019 MSSQL: Database, RDP & SMB (App-ID)
+# Covers: mssql-mssql (ms-sql-db:1433), mssql-rdp (ms-rdp:3389), mssql-smb (ms-ds-smb:445), NetBIOS Session (netbios-ss:139)
+set rulebase security rules AllowMSSQL-AppID action allow from {ext_zone} to {int_zone} source any destination MSSQLPub application [ ms-sql-db ms-rdp ms-ds-smb netbios-ss ] service application-default {inbound_threat_cmd}
+
+# 6. Windows 2022 AD Time Synchronization (App-ID)
+# Allows internal LAN systems and external clients to sync NTP time with AD (172.20.240.100)
+set rulebase security rules AllowNTP-To-AD-AppID action allow from any to {int_zone} source any destination [ ADPub ADPriv ] application ntp service application-default
+"""
+
+if enable_custom_fallback:
+    commands += f"""
+# =====================================================================
+# INBOUND SCORED SERVICES - BACKUP CUSTOM SERVICE RULES (DISABLED BY DEFAULT)
+# Port-only fallback rules for scoring resilience.
+# DISABLED by default ('disabled yes') to maintain strict zero-trust security.
+# Enable individually via GUI (toggle checkmark) or CLI:
+#   set rulebase security rules <RuleName> disabled no ; commit
+# only if synthetic scoring engine fails App-ID classification.
+# =====================================================================
+set rulebase security rules AllowEcomm-CustomFallback action allow from {ext_zone} to {int_zone} source any destination EcommPub service [ svc-http svc-https svc-ssh ] application any disabled yes
+set rulebase security rules AllowEmail-CustomFallback action allow from {ext_zone} to {int_zone} source any destination EmailPub service [ svc-smtp svc-pop3 svc-imap svc-http svc-https svc-ssh ] application any disabled yes
+set rulebase security rules AllowSplunk-CustomFallback action allow from {ext_zone} to {int_zone} source any destination SplunkPub service [ svc-splunk-web svc-splunk-mgmt svc-ssh ] application any disabled yes
+set rulebase security rules AllowAD-CustomFallback action allow from {ext_zone} to {int_zone} source any destination ADPub service grp-ad-services application any disabled yes
+set rulebase security rules AllowMSSQL-CustomFallback action allow from {ext_zone} to {int_zone} source any destination MSSQLPub service [ svc-mssql svc-rdp svc-smb ] application any disabled yes
+set rulebase security rules AllowNTP-To-AD-CustomFallback action allow from any to {int_zone} source any destination [ ADPub ADPriv ] service svc-ntp application any disabled yes
 """
 
 commands += f"""
@@ -319,44 +350,34 @@ commands += f"""
 # ---------------------------------------------------------------------
 # Zone Protection Profile ("Slime Zone") - L3/L4 Flood & Anomaly Shield
 # ---------------------------------------------------------------------
-set network profiles zone-protection-profile "Slime Zone" flood syn red alarm-rate 100
-set network profiles zone-protection-profile "Slime Zone" flood syn red activate-rate 100
-set network profiles zone-protection-profile "Slime Zone" flood syn red maximal-rate 400
-set network profiles zone-protection-profile "Slime Zone" flood syn enable yes
-set network profiles zone-protection-profile "Slime Zone" flood syn red action random-early-drop
+set network profiles zone-protection-profile "Slime Zone" flood tcp-syn enable yes
+set network profiles zone-protection-profile "Slime Zone" flood tcp-syn action red alarm-rate 100 activate-rate 100 maximal-rate 400
 
-set network profiles zone-protection-profile "Slime Zone" flood icmp red alarm-rate 100
-set network profiles zone-protection-profile "Slime Zone" flood icmp red activate-rate 100
-set network profiles zone-protection-profile "Slime Zone" flood icmp red maximal-rate 400
 set network profiles zone-protection-profile "Slime Zone" flood icmp enable yes
+set network profiles zone-protection-profile "Slime Zone" flood icmp red alarm-rate 100 activate-rate 100 maximal-rate 400
 
-set network profiles zone-protection-profile "Slime Zone" flood udp red alarm-rate 100
-set network profiles zone-protection-profile "Slime Zone" flood udp red activate-rate 100
-set network profiles zone-protection-profile "Slime Zone" flood udp red maximal-rate 400
 set network profiles zone-protection-profile "Slime Zone" flood udp enable yes
+set network profiles zone-protection-profile "Slime Zone" flood udp red alarm-rate 100 activate-rate 100 maximal-rate 400
 
-set network profiles zone-protection-profile "Slime Zone" flood other-ip red alarm-rate 100
-set network profiles zone-protection-profile "Slime Zone" flood other-ip red activate-rate 100
-set network profiles zone-protection-profile "Slime Zone" flood other-ip red maximal-rate 400
 set network profiles zone-protection-profile "Slime Zone" flood other-ip enable yes
+set network profiles zone-protection-profile "Slime Zone" flood other-ip red alarm-rate 100 activate-rate 100 maximal-rate 400
 
 # Reconnaissance / Port Scan Protection (Automated IP block on aggressive scanners)
-set network profiles zone-protection-profile "Slime Zone" scan threat-id 8001 action block-ip track-by attacker-and-victim interval 300 threshold 5
-set network profiles zone-protection-profile "Slime Zone" scan threat-id 8002 action block-ip track-by attacker-and-victim interval 300 threshold 5
-set network profiles zone-protection-profile "Slime Zone" scan threat-id 8003 action block-ip track-by attacker-and-victim interval 300 threshold 5
-set network profiles zone-protection-profile "Slime Zone" scan threat-id 8006 action block-ip track-by attacker-and-victim interval 300 threshold 5
+set network profiles zone-protection-profile "Slime Zone" scan tcp-port-scan action block-ip track-by source-and-destination interval 5 threshold 20 duration 300
+set network profiles zone-protection-profile "Slime Zone" scan udp-port-scan action block-ip track-by source-and-destination interval 5 threshold 20 duration 300
+set network profiles zone-protection-profile "Slime Zone" scan host-sweep action block-ip track-by source-and-destination interval 5 threshold 20 duration 300
 
 # Packet Discard Checks (Anti-Spoofing & Protocol Anomalies)
 set network profiles zone-protection-profile "Slime Zone" discard-ip-spoof yes
 set network profiles zone-protection-profile "Slime Zone" discard-ip-frag yes
-set network profiles zone-protection-profile "Slime Zone" discard-malformed yes
+set network profiles zone-protection-profile "Slime Zone" strict-ip-check yes
 set network profiles zone-protection-profile "Slime Zone" discard-tcp-split-handshake yes
-set network profiles zone-protection-profile "Slime Zone" discard-tcp-overlap-segment yes
 set network profiles zone-protection-profile "Slime Zone" discard-tcp-syn-with-data yes
 set network profiles zone-protection-profile "Slime Zone" discard-tcp-synack-with-data yes
-set network profiles zone-protection-profile "Slime Zone" icmp-ping-zero-id yes
-set network profiles zone-protection-profile "Slime Zone" icmp-fragment yes
-set network profiles zone-protection-profile "Slime Zone" icmp-large-packet yes
+set network profiles zone-protection-profile "Slime Zone" discard-overlapping-tcp-segment-mismatch yes
+set network profiles zone-protection-profile "Slime Zone" discard-icmp-ping-zero-id yes
+set network profiles zone-protection-profile "Slime Zone" discard-icmp-frag yes
+set network profiles zone-protection-profile "Slime Zone" discard-icmp-large-packet yes
 
 # Bind Slime Zone profile to External and Internal Zones
 set zone {ext_zone} network zone-protection-profile "Slime Zone"
@@ -376,12 +397,21 @@ set profiles dos-protection CCDC_Protection type aggregate flood other-ip enable
 set profiles dos-protection CCDC_Protection type aggregate flood icmpv6 enable yes
 set profiles dos-protection CCDC_Protection type aggregate flood tcp-syn enable yes
 
-set rulebase dos rules Ecomm-DOS action protect from {ext_zone} to {int_zone} source any destination EcommPub service any protection aggregate profile CCDC_Protection
-set rulebase dos rules Email-DOS action protect from {ext_zone} to {int_zone} source any destination EmailPub service any protection aggregate profile CCDC_Protection
-set rulebase dos rules Splunk-DOS action protect from {ext_zone} to {int_zone} source any destination SplunkPub service any protection aggregate profile CCDC_Protection
-set rulebase dos rules AD-DOS action protect from {ext_zone} to {int_zone} source any destination ADPub service any protection aggregate profile CCDC_Protection
-set rulebase dos rules MSSQL-DOS action protect from {ext_zone} to {int_zone} source any destination MSSQLPub service any protection aggregate profile CCDC_Protection
-set rulebase dos rules ProtectDefault action protect from any to any source any destination any service any protection aggregate profile default
+set rulebase dos rules Ecomm-DOS from zone [ {ext_zone} ] to zone [ {int_zone} ] source [ any ] destination [ EcommPub ] service [ any ] action protect protection aggregate profile CCDC_Protection
+set rulebase dos rules Email-DOS from zone [ {ext_zone} ] to zone [ {int_zone} ] source [ any ] destination [ EmailPub ] service [ any ] action protect protection aggregate profile CCDC_Protection
+set rulebase dos rules Splunk-DOS from zone [ {ext_zone} ] to zone [ {int_zone} ] source [ any ] destination [ SplunkPub ] service [ any ] action protect protection aggregate profile CCDC_Protection
+set rulebase dos rules AD-DOS from zone [ {ext_zone} ] to zone [ {int_zone} ] source [ any ] destination [ ADPub ] service [ any ] action protect protection aggregate profile CCDC_Protection
+set rulebase dos rules MSSQL-DOS from zone [ {ext_zone} ] to zone [ {int_zone} ] source [ any ] destination [ MSSQLPub ] service [ any ] action protect protection aggregate profile CCDC_Protection
+set rulebase dos rules ProtectDefault from zone [ any ] to zone [ any ] source [ any ] destination [ any ] service [ any ] action protect protection aggregate profile CCDC_Protection
+"""
+
+if enable_auto_updates:
+    commands += """
+# ---------------------------------------------------------------------
+# Dynamic Updates (Licensed Content Pack & Threat Signatures)
+# ---------------------------------------------------------------------
+set deviceconfig system update-schedule threats recurring hourly action download-and-install
+set deviceconfig system update-schedule anti-virus recurring hourly action download-and-install
 """
 
 # Post-configuration: Commit and admin credentials
@@ -398,7 +428,22 @@ with open(output_filepath, "w") as f:
     f.write(commands)
 
 print(f"\n[+] Configuration file successfully written to: {output_filepath}")
-print("[+] Instructions for applying configuration to Palo Alto:")
+print("\n[*] Zero-Trust & Licensed Security Posture:")
+print("    - Primary App-ID rules are ACTIVE and strictly enforce application-level inspection.")
+if enable_threat_inbound:
+    print("    - Licensed Threat Prevention (AV, Anti-Spyware, Vuln, WildFire) attached to INBOUND scored services")
+    print("      to automatically intercept and block Red Team CVE exploits, webshells, and payloads.")
+if enable_dns_sinkhole:
+    print("    - Anti-Spyware DNS Sinkhole ENABLED: Queries to C2 domains will be redirected to the sinkhole")
+    print("      and generate immediate high-priority alerts in Threat logs showing infected internal hosts.")
+if enable_auto_updates:
+    print("    - Automated Dynamic Updates ENABLED: Scheduled hourly to download and install latest threats.")
+print("    - Backup Custom Service rules (port-only) are set to DISABLED ('disabled yes') by default")
+print("      to prevent permissive bypass and eliminate red team tunneling over allowed ports.")
+print("    - If a scoring probe fails due to synthetic payload classification:")
+print("        * In GUI: Go to Policies -> Security Rules -> Click checkmark to enable the specific fallback rule.")
+print("        * In CLI: set rulebase security rules <RuleName> disabled no ; commit")
+print("\n[+] Instructions for applying configuration to Palo Alto:")
 print("    1. Log in via SSH to Palo Alto at 172.20.240.200 (or console)")
 print("    2. Enter command: set cli scripting-mode on")
 print("    3. Enter command: configure")
