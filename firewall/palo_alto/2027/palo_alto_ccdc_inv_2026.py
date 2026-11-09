@@ -96,8 +96,6 @@ commands = f"""# ===============================================================
 # Management Workstations: {ubuntu_mgmt_ip} (Ubuntu) | {windows_mgmt_ip} (Windows)
 # =====================================================================
 
-configure
-
 # ---------------------------------------------------------------------
 # System Settings & Management Hardening
 # ---------------------------------------------------------------------
@@ -205,12 +203,14 @@ if enable_threat_inbound or enable_threat_outbound or enable_dns_sinkhole:
 # ---------------------------------------------------------------------
 """
     if enable_dns_sinkhole:
-        commands += """set profiles spyware CCDC-AntiSpyware botnet-domains lists default-paloalto-dns action sinkhole
-set profiles spyware CCDC-AntiSpyware botnet-domains sinkhole ipv4-address pan-sinkhole-default-ip
+        commands += """set profiles spyware CCDC-AntiSpyware botnet-domains sinkhole ipv4-address pan-sinkhole-default-ip
 set profiles spyware CCDC-AntiSpyware botnet-domains sinkhole ipv6-address ::1
 """
     spyware_profile = "CCDC-AntiSpyware" if enable_dns_sinkhole else "strict"
-    commands += f"""set profiles profile-group CCDC-Threat-Protection virus default spyware {spyware_profile} vulnerability default wildfire-analysis default
+    commands += f"""set profile-group CCDC-Threat-Protection virus default
+set profile-group CCDC-Threat-Protection spyware {spyware_profile}
+set profile-group CCDC-Threat-Protection vulnerability default
+set profile-group CCDC-Threat-Protection wildfire-analysis default
 """
 
 commands += f"""
@@ -299,7 +299,7 @@ set rulebase security rules AllowEmail-AppID action allow from {ext_zone} to {in
 # 3. Debian Splunk: SSH, Web GUI & REST Mgmt API (App-ID)
 # Covers: splunk-ssh (ssh:22), splunk-web (8000), splunk-mgmt (8089), splunk-query (8000/8089)
 set rulebase security rules AllowSplunk-SSH-AppID action allow from {ext_zone} to {int_zone} source any destination SplunkPub application [ ssh ] service application-default {inbound_threat_cmd}
-set rulebase security rules AllowSplunk-WebMgmt-AppID action allow from {ext_zone} to {int_zone} source any destination SplunkPub application [ splunk splunk-management web-browsing ssl ] service [ svc-splunk-web svc-splunk-mgmt ] {inbound_threat_cmd}
+set rulebase security rules AllowSplunk-WebMgmt-AppID action allow from {ext_zone} to {int_zone} source any destination SplunkPub application [ splunk web-browsing ssl ] service [ svc-splunk-web svc-splunk-mgmt ] {inbound_threat_cmd}
 
 # 4. Windows 2022 AD: Active Directory & Domain Services (App-ID)
 # Covers: ad-dns (dns:53), ad-winrm (windows-remote-management:5985,5986), LDAP/LDAPS (ldap/ssl:389,636),
@@ -307,8 +307,8 @@ set rulebase security rules AllowSplunk-WebMgmt-AppID action allow from {ext_zon
 set rulebase security rules AllowAD-AppID action allow from {ext_zone} to {int_zone} source any destination ADPub application [ active-directory ms-dc-replication dns windows-remote-management ldap kerberos ms-ds-smb msrpc ssl ] service application-default {inbound_threat_cmd}
 
 # 5. Windows 2019 MSSQL: Database, RDP & SMB (App-ID)
-# Covers: mssql-mssql (ms-sql-db:1433), mssql-rdp (ms-rdp:3389), mssql-smb (ms-ds-smb:445), NetBIOS Session (netbios-ss:139)
-set rulebase security rules AllowMSSQL-AppID action allow from {ext_zone} to {int_zone} source any destination MSSQLPub application [ ms-sql-db ms-rdp ms-ds-smb netbios-ss ] service application-default {inbound_threat_cmd}
+# Covers: mssql-mssql (mssql-db-base, mssql-db:1433), mssql-rdp (ms-rdp:3389), mssql-smb (ms-ds-smb:445), NetBIOS Session (netbios-ss:139)
+set rulebase security rules AllowMSSQL-AppID action allow from {ext_zone} to {int_zone} source any destination MSSQLPub application [ mssql-db-base mssql-db ms-rdp ms-ds-smb netbios-ss ] service application-default {inbound_threat_cmd}
 
 # 6. Windows 2022 AD Time Synchronization (App-ID)
 # Allows internal LAN systems and external clients to sync NTP time with AD (172.20.240.100)
@@ -363,9 +363,17 @@ set network profiles zone-protection-profile "Slime Zone" flood other-ip enable 
 set network profiles zone-protection-profile "Slime Zone" flood other-ip red alarm-rate 100 activate-rate 100 maximal-rate 400
 
 # Reconnaissance / Port Scan Protection (Automated IP block on aggressive scanners)
-set network profiles zone-protection-profile "Slime Zone" scan tcp-port-scan action block-ip track-by source-and-destination interval 5 threshold 20 duration 300
-set network profiles zone-protection-profile "Slime Zone" scan udp-port-scan action block-ip track-by source-and-destination interval 5 threshold 20 duration 300
-set network profiles zone-protection-profile "Slime Zone" scan host-sweep action block-ip track-by source-and-destination interval 5 threshold 20 duration 300
+set network profiles zone-protection-profile "Slime Zone" scan tcp-port-scan action block-ip
+set network profiles zone-protection-profile "Slime Zone" scan tcp-port-scan interval 5
+set network profiles zone-protection-profile "Slime Zone" scan tcp-port-scan threshold 20
+
+set network profiles zone-protection-profile "Slime Zone" scan udp-port-scan action block-ip
+set network profiles zone-protection-profile "Slime Zone" scan udp-port-scan interval 5
+set network profiles zone-protection-profile "Slime Zone" scan udp-port-scan threshold 20
+
+set network profiles zone-protection-profile "Slime Zone" scan host-sweep action block-ip
+set network profiles zone-protection-profile "Slime Zone" scan host-sweep interval 5
+set network profiles zone-protection-profile "Slime Zone" scan host-sweep threshold 20
 
 # Packet Discard Checks (Anti-Spoofing & Protocol Anomalies)
 set network profiles zone-protection-profile "Slime Zone" discard-ip-spoof yes
@@ -397,12 +405,53 @@ set profiles dos-protection CCDC_Protection type aggregate flood other-ip enable
 set profiles dos-protection CCDC_Protection type aggregate flood icmpv6 enable yes
 set profiles dos-protection CCDC_Protection type aggregate flood tcp-syn enable yes
 
-set rulebase dos rules Ecomm-DOS from zone [ {ext_zone} ] to zone [ {int_zone} ] source [ any ] destination [ EcommPub ] service [ any ] action protect protection aggregate profile CCDC_Protection
-set rulebase dos rules Email-DOS from zone [ {ext_zone} ] to zone [ {int_zone} ] source [ any ] destination [ EmailPub ] service [ any ] action protect protection aggregate profile CCDC_Protection
-set rulebase dos rules Splunk-DOS from zone [ {ext_zone} ] to zone [ {int_zone} ] source [ any ] destination [ SplunkPub ] service [ any ] action protect protection aggregate profile CCDC_Protection
-set rulebase dos rules AD-DOS from zone [ {ext_zone} ] to zone [ {int_zone} ] source [ any ] destination [ ADPub ] service [ any ] action protect protection aggregate profile CCDC_Protection
-set rulebase dos rules MSSQL-DOS from zone [ {ext_zone} ] to zone [ {int_zone} ] source [ any ] destination [ MSSQLPub ] service [ any ] action protect protection aggregate profile CCDC_Protection
-set rulebase dos rules ProtectDefault from zone [ any ] to zone [ any ] source [ any ] destination [ any ] service [ any ] action protect protection aggregate profile CCDC_Protection
+set rulebase dos rules Ecomm-DOS from [ {ext_zone} ]
+set rulebase dos rules Ecomm-DOS to [ {int_zone} ]
+set rulebase dos rules Ecomm-DOS source [ any ]
+set rulebase dos rules Ecomm-DOS destination [ EcommPub ]
+set rulebase dos rules Ecomm-DOS service [ any ]
+set rulebase dos rules Ecomm-DOS action protect
+set rulebase dos rules Ecomm-DOS protection aggregate profile CCDC_Protection
+
+set rulebase dos rules Email-DOS from [ {ext_zone} ]
+set rulebase dos rules Email-DOS to [ {int_zone} ]
+set rulebase dos rules Email-DOS source [ any ]
+set rulebase dos rules Email-DOS destination [ EmailPub ]
+set rulebase dos rules Email-DOS service [ any ]
+set rulebase dos rules Email-DOS action protect
+set rulebase dos rules Email-DOS protection aggregate profile CCDC_Protection
+
+set rulebase dos rules Splunk-DOS from [ {ext_zone} ]
+set rulebase dos rules Splunk-DOS to [ {int_zone} ]
+set rulebase dos rules Splunk-DOS source [ any ]
+set rulebase dos rules Splunk-DOS destination [ SplunkPub ]
+set rulebase dos rules Splunk-DOS service [ any ]
+set rulebase dos rules Splunk-DOS action protect
+set rulebase dos rules Splunk-DOS protection aggregate profile CCDC_Protection
+
+set rulebase dos rules AD-DOS from [ {ext_zone} ]
+set rulebase dos rules AD-DOS to [ {int_zone} ]
+set rulebase dos rules AD-DOS source [ any ]
+set rulebase dos rules AD-DOS destination [ ADPub ]
+set rulebase dos rules AD-DOS service [ any ]
+set rulebase dos rules AD-DOS action protect
+set rulebase dos rules AD-DOS protection aggregate profile CCDC_Protection
+
+set rulebase dos rules MSSQL-DOS from [ {ext_zone} ]
+set rulebase dos rules MSSQL-DOS to [ {int_zone} ]
+set rulebase dos rules MSSQL-DOS source [ any ]
+set rulebase dos rules MSSQL-DOS destination [ MSSQLPub ]
+set rulebase dos rules MSSQL-DOS service [ any ]
+set rulebase dos rules MSSQL-DOS action protect
+set rulebase dos rules MSSQL-DOS protection aggregate profile CCDC_Protection
+
+set rulebase dos rules ProtectDefault from [ any ]
+set rulebase dos rules ProtectDefault to [ any ]
+set rulebase dos rules ProtectDefault source [ any ]
+set rulebase dos rules ProtectDefault destination [ any ]
+set rulebase dos rules ProtectDefault service [ any ]
+set rulebase dos rules ProtectDefault action protect
+set rulebase dos rules ProtectDefault protection aggregate profile CCDC_Protection
 """
 
 if enable_auto_updates:
@@ -414,18 +463,20 @@ set deviceconfig system update-schedule threats recurring hourly action download
 set deviceconfig system update-schedule anti-virus recurring hourly action download-and-install
 """
 
-# Post-configuration: Commit and admin credentials
+# Post-configuration: Commit changes
 commands += """
 # ---------------------------------------------------------------------
-# Commit Changes & Terminate Stale Sessions
+# Commit Changes
 # ---------------------------------------------------------------------
 commit
-set mgt-config users admin password
-delete admin-sessions
 """
 
+# Generate clean, comment-free commands for 100% paste resilience
+clean_lines = [line.strip() for line in commands.splitlines() if line.strip() and not line.strip().startswith("#")]
+clean_commands = "\n".join(clean_lines) + "\n"
+
 with open(output_filepath, "w") as f:
-    f.write(commands)
+    f.write(clean_commands)
 
 print(f"\n[+] Configuration file successfully written to: {output_filepath}")
 print("\n[*] Zero-Trust & Licensed Security Posture:")
@@ -448,6 +499,8 @@ print("    1. Log in via SSH to Palo Alto at 172.20.240.200 (or console)")
 print("    2. Enter command: set cli scripting-mode on")
 print("    3. Enter command: configure")
 print(f"    4. Copy and paste the contents of '{output_filename}' into the terminal.")
-print("    5. When prompted, enter a strong new admin password.")
-print("    6. Exit configuration mode and run: set cli scripting-mode off")
+print("    5. Exit configuration mode: exit")
+print("    6. (Optional) Set admin password: set mgt-config users admin password")
+print("    7. (Optional) Terminate stale admin sessions: delete admin-sessions")
+print("    8. Exit scripting mode: set cli scripting-mode off")
 print("=" * 75)
