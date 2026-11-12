@@ -861,7 +861,6 @@ table inet filter {
     iif "lo" accept
 
     ip protocol icmp accept
-    ip6 nexthdr icmpv6 accept
 
     tcp dport { 22, 25, 80, 110, 143 } ct state new accept
   }
