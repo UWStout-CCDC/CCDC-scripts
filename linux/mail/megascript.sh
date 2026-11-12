@@ -25,9 +25,9 @@
 # 1. BOOTSTRAP
 # =============================================================================
 
-# Survive a dropped or frozen terminal (ssh disconnect, nftbuild restarting ssh,
-# closed window, Ctrl-Z, background tty writes). Signals ignored here stay
-# ignored across the exec below and are inherited by every child process.
+# Survive a dropped or frozen terminal (ssh disconnect, closed window, Ctrl-Z,
+# background tty writes). Signals ignored here stay ignored across the exec
+# below and are inherited by every child process.
 # Ctrl-C is deliberately left working so you can still abort.
 trap '' HUP PIPE TSTP TTIN TTOU
 
@@ -91,7 +91,6 @@ export WORK_DIR   # the background upgrade script reads this
 MAIN_LOG="$WORK_DIR/main.log"                          # output of every step
 WARNINGS_FILE="$WORK_DIR/warnings.log"                 # shown in the final report
 PREFLIGHT_FINDINGS_FILE="$WORK_DIR/preflight.log"      # keylogger check findings
-NFTBUILD_FETCH_STATUS_FILE="$WORK_DIR/nftbuild_fetch.rc"
 UPGRADE_LOG="$WORK_DIR/upgrade.log"
 FINAL_REPORT_FILE="$WORK_DIR/final_report.txt"
 UPGRADE_PID_FILE="$WORK_DIR/upgrade.pid"
@@ -99,7 +98,7 @@ UPGRADE_STATUS_FILE="$WORK_DIR/upgrade_status"
 PURGE_LIST_FILE="$WORK_DIR/purge.list"
 OWNED_PATHS_INDEX="$WORK_DIR/owned_paths.index"
 
-readonly WORK_DIR MAIN_LOG WARNINGS_FILE PREFLIGHT_FINDINGS_FILE NFTBUILD_FETCH_STATUS_FILE
+readonly WORK_DIR MAIN_LOG WARNINGS_FILE PREFLIGHT_FINDINGS_FILE
 readonly UPGRADE_LOG UPGRADE_PID_FILE UPGRADE_STATUS_FILE FINAL_REPORT_FILE PURGE_LIST_FILE OWNED_PATHS_INDEX
 
 : > "$MAIN_LOG"
@@ -594,13 +593,6 @@ run_preflight
 prompt_new_password "$INVOKING_USER" NEW_USER_PASSWORD
 prompt_new_password root             NEW_ROOT_PASSWORD
 
-# Download nftbuild in parallel with everything else. The nftbuild step waits
-# for NFTBUILD_FETCH_STATUS_FILE to appear, which merges it back in.
-(
-  curl -fsSL --max-time 180 -o "$WORK_DIR/nftbuild" https://tinyurl.com/nftbuild
-  echo $? > "$NFTBUILD_FETCH_STATUS_FILE"
-) &
-
 # Remote-access packages that are not scored. They are disabled right away and
 # purged after the background upgrade finishes (the upgrade holds the apt lock).
 cat > "$PURGE_LIST_FILE" <<'PURGE_LIST_EOF'
@@ -800,20 +792,99 @@ UPGRADE_SCRIPT_EOF
     < /dev/null > "$UPGRADE_LOG" 2>&1 &
 }
 
-# Wait for the parallel nftbuild download, install it and run it.
-step_run_nftbuild() {
-  while [[ ! -f $NFTBUILD_FETCH_STATUS_FILE ]]; do
-    sleep 1
+# Replace every other firewall with one nftables ruleset: allow icmp, ssh, smtp,
+# http, pop3, imap and established traffic in, everything out. Handles immutable files.
+step_build_nftables_firewall() {
+  local nft_conf=/etc/nftables.conf
+  local service_name binary_name table_name chain_name path
+
+  # chattr -i -a on a path (symlinks resolved) only if the flags are set
+  unlock_path() {
+    local resolved
+    resolved=$(readlink -f "$1" 2>/dev/null || echo "$1")
+    [[ -e $resolved ]] || return 0
+    if lsattr -d "$resolved" 2>/dev/null | awk '{print $1}' | grep -qE '[ia]'; then
+      chattr -i -a "$resolved"
+    fi
+    return 0
+  }
+
+  if ! command -v nft > /dev/null; then
+    if ((NO_PACKAGE_CHANGES)); then
+      report_only_note "nft not installed, would run: apt-get install nftables"
+      return 0
+    fi
+    apt-get "${APT_OPTIONS[@]}" install nftables || { add_warning "nftables install failed, no firewall applied"; return 1; }
+  fi
+
+  # Stop, disable and mask every other firewall
+  for service_name in ufw firewalld iptables ip6tables ebtables netfilter-persistent shorewall; do
+    if systemctl cat "$service_name" &>/dev/null; then
+      systemctl disable --now "$service_name"
+      systemctl mask "$service_name"
+    fi
+  done
+  systemctl unmask nftables 2>/dev/null
+
+  # Reset legacy iptables-family rules (legacy and nft backends)
+  for binary_name in iptables iptables-legacy ip6tables ip6tables-legacy; do
+    command -v "$binary_name" > /dev/null || continue
+    for chain_name in INPUT FORWARD OUTPUT; do "$binary_name" -P "$chain_name" ACCEPT 2>/dev/null; done
+    for table_name in filter nat mangle raw security; do
+      "$binary_name" -t "$table_name" -F 2>/dev/null
+      "$binary_name" -t "$table_name" -X 2>/dev/null
+      "$binary_name" -t "$table_name" -Z 2>/dev/null
+    done
+  done
+  for binary_name in ebtables arptables; do
+    command -v "$binary_name" > /dev/null && { "$binary_name" -F 2>/dev/null; "$binary_name" -X 2>/dev/null; }
   done
 
-  if [[ $(cat "$NFTBUILD_FETCH_STATUS_FILE") != 0 ]]; then
-    add_warning "nftbuild download failed"
+  nft flush ruleset
+
+  # Config dir, config file and unit files may be immutable
+  for path in /etc "$nft_conf" /etc/systemd/system/nftables.service \
+              /lib/systemd/system/nftables.service /usr/lib/systemd/system/nftables.service; do
+    unlock_path "$path"
+  done
+
+  cat > "$nft_conf" <<'NFT_EOF'
+#!/usr/sbin/nft -f
+flush ruleset
+
+table inet filter {
+  chain input {
+    type filter hook input priority 0; policy drop;
+
+    ct state established,related accept
+    ct state invalid drop
+    iif "lo" accept
+
+    ip protocol icmp accept
+    ip6 nexthdr icmpv6 accept
+
+    tcp dport { 22, 25, 80, 110, 143 } ct state new accept
+  }
+
+  chain forward {
+    type filter hook forward priority 0; policy drop;
+  }
+
+  chain output {
+    type filter hook output priority 0; policy accept;
+  }
+}
+NFT_EOF
+  chmod 600 "$nft_conf"
+
+  # Validate before applying so a typo cannot leave the box wide open
+  if ! nft -c -f "$nft_conf"; then
+    add_warning "nftables config failed validation, no firewall applied"
     return 1
   fi
 
-  install -m 700 -o root -g root "$WORK_DIR/nftbuild" /usr/local/sbin/nftbuild
-
-  /usr/local/sbin/nftbuild -sys mail -ssh ei || add_warning "nftbuild exited non-zero"
+  nft -f "$nft_conf" || { add_warning "nft failed to apply $nft_conf"; return 1; }
+  systemctl enable --now nftables || add_warning "could not enable nftables service"
 }
 
 # Neutralise unscored remote-access tools immediately: stop and mask their
@@ -1187,11 +1258,11 @@ step_reload_systemd() {
 #     The background upgrade is only started AFTER the bootloader step, so it can
 #     never run update-initramfs at the same time as ours.
 #
-#   Group 3 (after nftbuild, which is third-party and runs alone):
+#   Group 3 (after the firewall step, which runs alone):
 #     permissions | mail/PHP audit (read-only) | temp cleanup | memory-only processes
 #
 # Never overlapped: the apt steps with each other (they share one dpkg lock anyway),
-# nftbuild (unknown side effects), and daemon-reload (must see every change).
+# the firewall step (flushes rules mid-run), and daemon-reload (must see every change).
 
 readonly -a STEPS=(
   "2|Change user and root passwords|step_change_passwords"
@@ -1207,7 +1278,7 @@ readonly -a STEPS=(
   "5|Check and fix bootloader (parallel)|step_check_bootloader"
   "2|Start background apt upgrade|step_start_background_upgrade"
 
-  "15|Run nftbuild|step_run_nftbuild"
+  "4|Build nftables firewall|step_build_nftables_firewall"
 
   "45|Fix permissions and ownership|step_fix_permissions"
   "2|Mail and PHP read-only checks (parallel)|step_check_mail_and_php"
@@ -1239,6 +1310,7 @@ readonly -a OVERLAPPED_STEPS=(
 readonly -a APT_STEPS=(
   step_check_binary_integrity step_install_fish
   step_remove_snap step_check_bootloader step_start_background_upgrade
+  step_build_nftables_firewall
 )
 
 # announce_apt_step FUNCTION DESCRIPTION
