@@ -1,29 +1,43 @@
-# tools installer:
-#   install winget (use 2019 for 2019) (detect OS ?)
-#   install Sysinternals :3333333
-#   install firefox
-#   install Docker if on non-AD server
-
 #Requires -RunAsAdministrator
 
 [CmdletBinding()]
 param()
 
-# Elevation check (replaces #Requires to keep the console window open on failure)
+# -----------------------------------------------------------------------------
+# Console Theme & Safety Initialization (Seamless pure-black styling)
+# -----------------------------------------------------------------------------
+try {
+    [Console]::BackgroundColor = [ConsoleColor]::Black
+    [Console]::ForegroundColor = [ConsoleColor]::White
+    $Host.UI.RawUI.BackgroundColor = 'Black'
+    $Host.UI.RawUI.ForegroundColor = 'White'
+    if ($Host.PrivateData) {
+        $Host.PrivateData.WarningBackgroundColor = 'Black'
+        $Host.PrivateData.WarningForegroundColor = 'Yellow'
+        $Host.PrivateData.ErrorBackgroundColor   = 'Black'
+        $Host.PrivateData.ErrorForegroundColor   = 'Red'
+        $Host.PrivateData.VerboseBackgroundColor = 'Black'
+        $Host.PrivateData.VerboseForegroundColor = 'Cyan'
+        $Host.PrivateData.DebugBackgroundColor   = 'Black'
+        $Host.PrivateData.DebugForegroundColor   = 'DarkCyan'
+    }
+    $PSDefaultParameterValues['Write-Host:BackgroundColor'] = 'Black'
+    Clear-Host
+} catch {}
+
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin) {
-    Write-Host "`n[!] ERROR: shed-installs.ps1 must be run as Administrator!" -ForegroundColor Red
-    Write-Host "[!] Please right-click PowerShell and select 'Run as administrator'." -ForegroundColor Yellow
-    Write-Host ""
+    Write-Host "`n[!] ERROR: script must be run as Administrator!" -ForegroundColor Red -BackgroundColor Black
+    Write-Host "" -BackgroundColor Black
     Read-Host "Press Enter to exit..."
     exit 1
 }
 
 # Keep console window open on terminating errors
 trap {
-    Write-Host "`n[FATAL ERROR] $($_.Exception.Message)" -ForegroundColor Red
-    Write-Host $_.ScriptStackTrace -ForegroundColor DarkGray
-    Write-Host ""
+    Write-Host "`n[FATAL ERROR] $($_.Exception.Message)" -ForegroundColor Red -BackgroundColor Black
+    Write-Host $_.ScriptStackTrace -ForegroundColor DarkGray -BackgroundColor Black
+    Write-Host "" -BackgroundColor Black
     Read-Host "Script encountered an error. Press Enter to exit..."
     break
 }
@@ -31,7 +45,6 @@ trap {
 $InstallDir = "C:\Tools"
 $DownloadsDir = "$InstallDir\downloads"
 $LogsDir = "$InstallDir\logs"
-$dl = $DownloadsDir
 
 # global preferences to stop catch errors and hide progress bars
 $ErrorActionPreference = 'Stop'
@@ -44,27 +57,23 @@ $PSNativeCommandUseErrorActionPreference = $false
 # TLS 1.2 to "fix downloads" - claude
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-try {
-    $Host.UI.RawUI.BackgroundColor = 'Black'
-    $Host.UI.RawUI.ForegroundColor = 'White'
-    Clear-Host
-} catch {}
-
 $splash = @'
 
             ___                    +--------------------------------------------+
     `=/~~~~~   ~\                  |             shed-installs.ps1              |
-     | ,      ,_ `\_/~\-           |                                            |
-     >/'>/ ~|||`\( ,~\-            |  installs all of the fun tools we need :3  |
+     | ,      ,_ `\_/~\-           |   made for MWCCDC 2026-27' invitationals   |
+     >/'>/ ~|||`\( ,~\-            |                                            |
      |  |   `||   \;               |                                            |
-\\\\//\\\/TX\\//\\\\|//            |  <-------- that's kayne whitney            |
+\\\\//\\\/TX\\//\\\\|//            |  <------------ that's kayne                |
                                    +--------------------------------------------+
 '@
-Write-Host $splash -ForegroundColor Red
+Write-Host $splash -ForegroundColor Red -BackgroundColor Black
 
 # Create install directory for tools
-Write-Host "[+] Creating install directory at $InstallDir" -ForegroundColor Green
+Write-Host "[+] Creating install directory at $InstallDir" -ForegroundColor Green -BackgroundColor Black
 New-Item -ItemType Directory -Force -Path $InstallDir, $LogsDir, $DownloadsDir | Out-Null
+Set-Location -Path $InstallDir
+[System.IO.Directory]::SetCurrentDirectory($InstallDir)
 
 # Log everything from CLI to file (safely ignore if a transcript is already running)
 $script:TranscriptPath = "$LogsDir\install-$(Get-Date -f yyyyMMdd-HHmmss).log"
@@ -74,7 +83,22 @@ try {
     Write-Warning "Could not start transcript (an existing transcript may already be active): $($_.Exception.Message)"
 }
 
-# Domain Controller check (ProductType: 1 = Workstation, 2 = Domain Controller, 3 = Server)
+function Write-Log {
+    param(
+        [string]$Message,
+        [ValidateSet("INFO", "WARN", "ERROR", "SUCCESS")]$Level = "INFO"
+    )
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $colors = @{
+        "INFO"    = "Cyan"
+        "WARN"    = "Yellow"
+        "ERROR"   = "Red"
+        "SUCCESS" = "Green"
+    }
+    Write-Host "[$timestamp] [$Level] $Message" -ForegroundColor $colors[$Level] -BackgroundColor Black
+}
+
+# Role Detection: Domain Controller & MSSQL Server
 $isDC = $false
 try {
     $os = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
@@ -86,51 +110,95 @@ if (-not $isDC -and (Get-Service -Name NTDS -ErrorAction SilentlyContinue)) {
     $isDC = $true
 }
 
+$sqlServices = @('MSSQLSERVER', 'MSSQL$*', 'SQLSERVER*', 'SQLBrowser')
+$foundSqlSvc = foreach ($s in $sqlServices) {
+    $svc = Get-Service -Name $s -ErrorAction SilentlyContinue
+    if ($svc) { $svc; break }
+}
+$isMSSQL = [bool]$foundSqlSvc -or [bool](Get-Process -Name sqlservr -ErrorAction SilentlyContinue)
+
+Write-Host "[*] Host Role Analysis -> Domain Controller: $isDC | MSSQL Server: $isMSSQL" -ForegroundColor Cyan
+
 $Downloads = [System.Collections.Generic.List[hashtable]]::new()
 
 # Sysinternals Suite is always directly downloaded & extracted to C:\Tools\Sysinternals
-# (WinGet manifests for Sysinternals use portable ZIP packages which WinGet rejects on Windows Server with NoApplicableInstallers)
 Write-Host "[+] Queuing Sysinternals Suite for direct download." -ForegroundColor Green
 $Downloads.Add(@{
     Name = 'Sysinternals'
     Url  = 'https://download.sysinternals.com/files/SysinternalsSuite.zip'
 })
 
-Write-Host "[+] Queuing Npcap installer for direct download." -ForegroundColor Green
+Write-Host "[+] Queuing Npcap installer for download and silent installation." -ForegroundColor Green
 $Downloads.Add(@{
-    Name = 'Npcap'
-    Url  = 'https://npcap.com/dist/npcap-1.90.exe'
+    Name        = 'Npcap'
+    Url         = 'https://npcap.com/dist/npcap-1.90.exe'
+    InstallArgs = '/S /winpcap_mode=yes'
 })
 
-if ($isDC) {
-    Write-Host "[!] Host is an Active Directory Domain Controller (AD DS). Skipping Docker CE." -ForegroundColor Yellow
-} else {
-    Write-Host "[+] Host is not an AD Domain Controller. Docker CE queued for download." -ForegroundColor Green
+if ($isMSSQL) {
+    Write-Host "[+] MSSQL Server detected. Queuing Docker CE installer script." -ForegroundColor Green
     $Downloads.Add(@{
         Name = 'Docker'
         Url  = 'https://raw.githubusercontent.com/microsoft/Windows-Containers/Main/helpful_tools/Install-DockerCE/install-docker-ce.ps1'
     })
+} else {
+    Write-Host "[*] Host is not an MSSQL Server. Skipping Docker CE." -ForegroundColor Yellow
 }
 
-function Write-SpinnerFrame {
-    param([string]$Text)
-    try {
-        $prev = [System.Console]::ForegroundColor
-        [System.Console]::ForegroundColor = [System.ConsoleColor]::Cyan
-        [System.Console]::Write($Text)
-        [System.Console]::ForegroundColor = $prev
-    } catch {
-        Write-Host $Text -NoNewline -ForegroundColor Cyan
-    }
-}
+# -----------------------------------------------------------------------------
+# Background Animated Spinner Engine
+# -----------------------------------------------------------------------------
+try {
+    Add-Type -TypeDefinition @"
+using System;
+using System.Threading;
 
-function Clear-SpinnerLine {
-    try {
-        [System.Console]::Write("`r" + (" " * 78) + "`r")
-    } catch {
-        Write-Host ("`r" + (" " * 78) + "`r") -NoNewline
+public class ConsoleSpinner : IDisposable {
+    private Thread _thread;
+    private volatile bool _running;
+    private string _text;
+    private static readonly string[] Frames = new string[] { "|", "/", "-", "\\" };
+
+    public ConsoleSpinner(string text) {
+        _text = text;
+        _running = true;
+        _thread = new Thread(Run);
+        _thread.IsBackground = true;
+        _thread.Start();
+    }
+
+    private void Run() {
+        int i = 0;
+        while (_running) {
+            try {
+                Console.ForegroundColor = ConsoleColor.Cyan;
+                Console.BackgroundColor = ConsoleColor.Black;
+                Console.Write("\r  [" + Frames[i % Frames.Length] + "] " + _text + "...   ");
+                Console.ForegroundColor = ConsoleColor.White;
+                i++;
+                Thread.Sleep(80);
+            } catch {}
+        }
+    }
+
+    public void Stop(string doneText, bool success) {
+        _running = false;
+        try {
+            _thread.Join(300);
+            Console.ForegroundColor = success ? ConsoleColor.Green : ConsoleColor.Yellow;
+            Console.BackgroundColor = ConsoleColor.Black;
+            string icon = success ? "[+]" : "[!]";
+            Console.WriteLine("\r  " + icon + " " + doneText + "                              ");
+            Console.ForegroundColor = ConsoleColor.White;
+        } catch {}
+    }
+
+    public void Dispose() {
+        _running = false;
     }
 }
+"@ -ErrorAction SilentlyContinue
+} catch {}
 
 function Invoke-WithSpinner {
     param(
@@ -139,23 +207,34 @@ function Invoke-WithSpinner {
         [Parameter(Mandatory=$true)][scriptblock]$ScriptBlock,
         [object[]]$ArgumentList = @()
     )
-    $spinChars = @('|', '/', '-', '\')
-    $spinIndex = 0
-    $job = Start-Job -ScriptBlock $ScriptBlock -ArgumentList $ArgumentList
-    while ($job.State -eq 'Running' -or $job.State -eq 'NotStarted') {
-        $frame = $spinChars[$spinIndex]
-        Write-SpinnerFrame ("`r[$frame] $StatusText...".PadRight(75))
-        $spinIndex = ($spinIndex + 1) % $spinChars.Count
-        Start-Sleep -Milliseconds 120
-    }
-    Receive-Job -Job $job -ErrorAction SilentlyContinue | Out-Null
-    $jobState = $job.State
-    Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
-    Clear-SpinnerLine
-    if ($jobState -eq 'Completed') {
-        Write-Host "[+] $DoneText" -ForegroundColor Green
-    } else {
-        Write-Host "[!] $StatusText failed" -ForegroundColor Yellow
+
+    $sp = $null
+    try { $sp = New-Object ConsoleSpinner($StatusText) } catch {}
+    if (-not $sp) { Write-Host "  [*] $StatusText..." -ForegroundColor Cyan -BackgroundColor Black }
+
+    $failed = $false
+    $errMsg = ""
+    try {
+        & $ScriptBlock @ArgumentList
+    } catch {
+        $failed = $true
+        $errMsg = $_.Exception.Message
+        throw
+    } finally {
+        if ($sp) {
+            if ($failed) {
+                $sp.Stop("$StatusText failed: $errMsg", $false)
+            } else {
+                $sp.Stop($DoneText, $true)
+            }
+            $sp.Dispose()
+        } else {
+            if ($failed) {
+                Write-Host "  [!] $StatusText failed: $errMsg" -ForegroundColor Yellow -BackgroundColor Black
+            } else {
+                Write-Host "  [+] $DoneText" -ForegroundColor Green -BackgroundColor Black
+            }
+        }
     }
 }
 
@@ -165,52 +244,74 @@ function Invoke-FastDownload {
         [Parameter(Mandatory=$true)][string]$OutFile,
         [string]$Description = (Split-Path -Leaf $OutFile)
     )
-    $spinChars = @('|', '/', '-', '\')
-    $spinIndex = 0
 
-    $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
-    if ($curl) {
-        $proc = Start-Process -FilePath $curl.Source -ArgumentList "-s", "-S", "-L", "--connect-timeout", "10", "--max-time", "300", "-o", "`"$OutFile`"", "`"$Url`"" -NoNewWindow -PassThru
-        while (-not $proc.HasExited) {
-            $frame = $spinChars[$spinIndex]
-            Write-SpinnerFrame ("`r[$frame] Downloading $Description...".PadRight(75))
-            $spinIndex = ($spinIndex + 1) % $spinChars.Count
-            Start-Sleep -Milliseconds 120
+    try {
+        Invoke-WithSpinner "Downloading $Description" "Downloaded $Description" {
+            # 1. Try curl.exe (fastest, lowest memory footprint ~4MB)
+            $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
+            if ($curl) {
+                try {
+                    $proc = Start-Process -FilePath $curl.Source -ArgumentList "-s", "-S", "-L", "--connect-timeout", "10", "--max-time", "120", "-o", "`"$OutFile`"", "`"$Url`"" -NoNewWindow -Wait -PassThru
+                    if ($proc.ExitCode -eq 0 -and (Test-Path $OutFile) -and (Get-Item $OutFile).Length -gt 0) {
+                        return
+                    }
+                } catch {}
+            }
+
+            # 2. In-process .NET WebClient with TLS 1.2 and explicit Dispose()
+            try {
+                [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+                $wc = New-Object System.Net.WebClient
+                try {
+                    $wc.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+                    $wc.DownloadFile($Url, $OutFile)
+                } finally {
+                    $wc.Dispose()
+                }
+                if ((Test-Path $OutFile) -and (Get-Item $OutFile).Length -gt 0) {
+                    return
+                }
+            } catch {}
+
+            # 3. Fallback to Invoke-WebRequest
+            Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing -TimeoutSec 60 -ErrorAction Stop
+            if ((Test-Path $OutFile) -and (Get-Item $OutFile).Length -gt 0) {
+                return
+            }
+
+            throw "Download failed for $Description"
         }
-        Clear-SpinnerLine
-        if ($proc.ExitCode -eq 0 -and (Test-Path $OutFile) -and (Get-Item $OutFile).Length -gt 0) {
-            Write-Host "[+] Downloaded $Description" -ForegroundColor Green
+    } catch {
+        Write-Host "  [!] Failed to download $Description" -ForegroundColor Red -BackgroundColor Black
+    }
+}
+
+function Expand-FastArchive {
+    param(
+        [Parameter(Mandatory=$true)][string]$Path,
+        [Parameter(Mandatory=$true)][string]$DestinationPath
+    )
+    if (-not (Test-Path $DestinationPath)) {
+        New-Item -ItemType Directory -Path $DestinationPath -Force | Out-Null
+    }
+
+    # Try 7-Zip if installed
+    $7z = @(
+        "$env:ProgramFiles\7-Zip\7z.exe",
+        "${env:ProgramFiles(x86)}\7-Zip\7z.exe"
+    ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+
+    if ($7z) {
+        $p = Start-Process -FilePath $7z -ArgumentList "x", "-y", "`"-o$DestinationPath`"", "`"$Path`"" -NoNewWindow -Wait -PassThru
+        if ($p.ExitCode -eq 0) {
+            [System.GC]::Collect()
             return
         }
     }
 
-    # Fallback to WebClient with live bracket spinner
-    $wcJob = Start-Job -ScriptBlock {
-        param($u, $o)
-        $ErrorActionPreference = 'Stop'
-        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-        try {
-            $wc = New-Object System.Net.WebClient
-            $wc.DownloadFile($u, $o)
-            return
-        } catch {}
-        Invoke-WebRequest -Uri $u -OutFile $o -UseBasicParsing -TimeoutSec 300
-    } -ArgumentList $Url, $OutFile
-
-    while ($wcJob.State -eq 'Running' -or $wcJob.State -eq 'NotStarted') {
-        $frame = $spinChars[$spinIndex]
-        Write-SpinnerFrame ("`r[$frame] Downloading $Description...".PadRight(75))
-        $spinIndex = ($spinIndex + 1) % $spinChars.Count
-        Start-Sleep -Milliseconds 120
-    }
-    Remove-Job -Job $wcJob -Force -ErrorAction SilentlyContinue
-    Clear-SpinnerLine
-
-    if ((Test-Path $OutFile) -and (Get-Item $OutFile).Length -gt 0) {
-        Write-Host "[+] Downloaded $Description" -ForegroundColor Green
-    } else {
-        Write-Host "[!] Failed to download $Description" -ForegroundColor Red
-    }
+    # Fallback to Expand-Archive with explicit garbage collection
+    Expand-Archive -Path $Path -DestinationPath $DestinationPath -Force
+    [System.GC]::Collect()
 }
 
 function Test-WingetExecutable {
@@ -248,7 +349,6 @@ function Get-WingetPath {
     if ($appxDir) {
         $candidate = Join-Path $appxDir.FullName 'winget.exe'
         if (Test-Path $candidate) {
-            try { icacls $appxDir.FullName /grant '*S-1-5-32-544:(OI)(CI)F' /t /q 2>$null } catch {}
             if (Test-WingetExecutable $candidate) { return $candidate }
         }
     }
@@ -259,7 +359,6 @@ function Get-WingetPath {
     if ($pkg -and $pkg.InstallLocation) {
         $candidate = Join-Path $pkg.InstallLocation 'winget.exe'
         if (Test-Path $candidate) {
-            try { icacls $pkg.InstallLocation /grant '*S-1-5-32-544:(OI)(CI)F' /t /q 2>$null } catch {}
             if (Test-WingetExecutable $candidate) { return $candidate }
         }
     }
@@ -291,16 +390,15 @@ function Install-WingetLocal {
     }
 
     if ($SourceDir -and (Test-Path $SourceDir)) {
-        try { icacls $SourceDir /grant '*S-1-5-32-544:(OI)(CI)F' /t /q 2>$null } catch {}
-        # Robocopy with /B (backup operator mode to bypass WindowsApps ACL lockout)
-        robocopy $SourceDir $dest /B /E /MT:8 /R:1 /W:1 /NFL /NDL /NJH /NJS | Out-Null
+        # Robocopy with /B (backup operator mode to safely copy without modifying WindowsApps ACLs)
+        robocopy $SourceDir $dest /B /E /MT:2 /R:1 /W:1 /NFL /NDL /NJH /NJS | Out-Null
     }
 
     # Ensure VC++ Redistributable is installed (required by standalone winget runtime)
     $vcKey = 'HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64'
     $hasVc = (Test-Path $vcKey) -and ((Get-ItemProperty -Path $vcKey -Name Installed -ErrorAction SilentlyContinue).Installed -eq 1)
     if (-not $hasVc) {
-        $vc = "$dl\vc_redist.x64.exe"
+        $vc = "$DownloadsDir\vc_redist.x64.exe"
         if (-not (Test-Path $vc)) {
             Invoke-FastDownload 'https://aka.ms/vs/17/release/vc_redist.x64.exe' $vc 'VC++ Redistributable'
         }
@@ -321,11 +419,10 @@ function Install-WingetLocal {
     }
 }
 
-try {
-    $wingetPath = Get-WingetPath
-
-    if (-not $wingetPath) {
-        # Check if DesktopAppInstaller is already staged on the system (standard on Server 2022)
+function Install-WingetLegacyBootstrap {
+    Write-Host "[*] Bootstrapping WinGet for Windows Server 2019 (manual bundle & DISM extraction)..." -ForegroundColor Cyan
+    try {
+        # Check if DesktopAppInstaller is already staged on the system
         $existingPkg = Get-AppxPackage -AllUsers Microsoft.DesktopAppInstaller -ErrorAction SilentlyContinue |
             Sort-Object Version -Descending | Select-Object -First 1
 
@@ -340,110 +437,167 @@ try {
         if ($existingPkg -and $existingPkg.InstallLocation) {
             Write-Host "[+] Staged DesktopAppInstaller found at $($existingPkg.InstallLocation). Configuring..." -ForegroundColor Cyan
             try {
-                icacls $existingPkg.InstallLocation /grant '*S-1-5-32-544:(OI)(CI)F' /t /q 2>$null | Out-Null
                 Add-AppxPackage -DisableDevelopmentMode -Register "$($existingPkg.InstallLocation)\AppxManifest.xml" -ErrorAction SilentlyContinue | Out-Null
             } catch {}
             Install-WingetLocal -SourceDir $existingPkg.InstallLocation
-            $wingetPath = Get-WingetPath
+            $wPath = Get-WingetPath
+            if ($wPath) { return $wPath }
         }
 
-        # If still not found, bootstrap winget with fast downloads and DISM provisioning
-        if (-not $wingetPath) {
+        # Determine URLs dynamically from latest GitHub release with fallback to official endpoints
+        $bundleUrl  = 'https://aka.ms/getwinget'
+        $depsUrl    = 'https://github.com/microsoft/winget-cli/releases/latest/download/DesktopAppInstaller_Dependencies.zip'
+        $licenseUrl = $null
+
+        try {
+            $rel = Invoke-RestMethod 'https://api.github.com/repos/microsoft/winget-cli/releases/latest' -Headers @{ 'User-Agent' = 'PowerShell' } -TimeoutSec 10 -ErrorAction Stop
+            $bAsset = $rel.assets | Where-Object { $_.name -like '*.msixbundle' } | Select-Object -First 1
+            $lAsset = $rel.assets | Where-Object { $_.name -like '*_License1.xml' } | Select-Object -First 1
+            $dAsset = $rel.assets | Where-Object { $_.name -like '*Dependencies.zip' } | Select-Object -First 1
+            if ($bAsset) { $bundleUrl  = $bAsset.browser_download_url }
+            if ($lAsset) { $licenseUrl = $lAsset.browser_download_url }
+            if ($dAsset) { $depsUrl    = $dAsset.browser_download_url }
+        } catch {}
+
+        # Download packages
+        Invoke-FastDownload $depsUrl "$DownloadsDir\winget-deps.zip" 'winget-deps.zip'
+        Invoke-FastDownload $bundleUrl "$DownloadsDir\winget.msixbundle" 'winget.msixbundle'
+        if ($licenseUrl) {
+            Invoke-FastDownload $licenseUrl "$DownloadsDir\winget-license.xml" 'winget-license.xml'
+        }
+
+        # Extract dependencies
+        Invoke-WithSpinner "Extracting winget-deps.zip" "Extracted winget-deps.zip" {
+            param($z, $d)
+            Expand-FastArchive -Path $z -DestinationPath $d
+        } @("$DownloadsDir\winget-deps.zip", "$DownloadsDir\winget-deps")
+
+        $depsPath = Join-Path "$DownloadsDir\winget-deps" "x64"
+        if (-not (Test-Path $depsPath)) { $depsPath = "$DownloadsDir\winget-deps" }
+        $deps = @(Get-ChildItem $depsPath -Filter *.appx | Select-Object -ExpandProperty FullName)
+        Write-Host "[+] Dependencies found: $($deps.Count) (includes native WindowsAppRuntime 1.8 .appx)" -ForegroundColor Green
+
+        # Provision and register each dependency package (.appx)
+        foreach ($dep in $deps) {
+            $depLeaf = Split-Path -Leaf $dep
+            Invoke-WithSpinner "Registering dependency: $depLeaf" "Registered dependency: $depLeaf" {
+                param($p)
+                try { Add-AppxProvisionedPackage -Online -PackagePath $p -SkipLicense -ErrorAction SilentlyContinue | Out-Null } catch {}
+                try { Add-AppxPackage -Path $p -ErrorAction SilentlyContinue } catch {}
+            } @($dep)
+        }
+
+        # Install winget with DISM provisioning and Appx registration
+        if (Test-Path "$DownloadsDir\winget-license.xml") {
+            Invoke-WithSpinner "Installing winget with dependencies and license" "Installed winget package" {
+                param($p, $lic, $d)
+                try { Add-AppxProvisionedPackage -Online -PackagePath $p -LicensePath $lic -DependencyPackagePath $d -ErrorAction SilentlyContinue | Out-Null } catch {}
+                try { Add-AppxPackage -Path $p -DependencyPath $d -ErrorAction SilentlyContinue | Out-Null } catch {}
+            } @("$DownloadsDir\winget.msixbundle", "$DownloadsDir\winget-license.xml", $deps)
+        } else {
+            Invoke-WithSpinner "Installing winget with dependencies" "Installed winget package" {
+                param($p, $d)
+                try { Add-AppxProvisionedPackage -Online -PackagePath $p -SkipLicense -DependencyPackagePath $d -ErrorAction SilentlyContinue | Out-Null } catch {}
+                try { Add-AppxPackage -Path $p -DependencyPath $d -ErrorAction SilentlyContinue | Out-Null } catch {}
+            } @("$DownloadsDir\winget.msixbundle", $deps)
+        }
+
+        # Register by family name and sync to local tool path
+        try { Add-AppxPackage -RegisterByFamilyName -MainPackage Microsoft.DesktopAppInstaller_8wekyb3d8bbwe -ErrorAction SilentlyContinue | Out-Null } catch {}
+        Install-WingetLocal
+        $wPath = Get-WingetPath
+        if ($wPath) { return $wPath }
+
+        # Direct ZIP extraction fallback if AppX service failed on Server 2019
+        Write-Host "[*] AppX registration incomplete. Attempting direct portable extraction fallback..." -ForegroundColor Cyan
+        Invoke-WithSpinner "Extracting winget standalone binaries" "Extracted winget standalone binaries" {
+            param($bundle, $depsList, $dest)
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+            $tmpBundle = "$bundle-extracted"
+            if (-not (Test-Path $tmpBundle)) { New-Item -ItemType Directory -Path $tmpBundle -Force | Out-Null }
+            [System.IO.Compression.ZipFile]::ExtractToDirectory($bundle, $tmpBundle)
+
+            $nestedMsix = Get-ChildItem -Path $tmpBundle -Filter "*x64*.msix" -Recurse | Where-Object { $_.Name -notmatch 'stub' } | Select-Object -First 1
+            if ($nestedMsix) {
+                if (-not (Test-Path $dest)) { New-Item -ItemType Directory -Path $dest -Force | Out-Null }
+                [System.IO.Compression.ZipFile]::ExtractToDirectory($nestedMsix.FullName, $dest)
+                foreach ($dep in $depsList) {
+                    try { [System.IO.Compression.ZipFile]::ExtractToDirectory($dep, $dest) } catch {}
+                }
+                [System.GC]::Collect()
+            }
+        } @("$DownloadsDir\winget.msixbundle", $deps, "$InstallDir\winget")
+
+        Install-WingetLocal
+        return (Get-WingetPath)
+    }
+    catch {
+        Write-Host "[--------------------------------------------------------------]" -ForegroundColor Red
+        Write-Host "[!] Windows Server 2019 manual bootstrap failed: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "[--------------------------------------------------------------]" -ForegroundColor Red
+        return $null
+    }
+}
+
+try {
+    $wingetPath = Get-WingetPath
+
+    if (-not $wingetPath) {
+        $osBuild = [System.Environment]::OSVersion.Version.Build
+        # Windows Server 2022 is build 20348+, Windows Server 2019 is build 17763
+        $isServer2022OrNewer = ($osBuild -ge 20348)
+
+        if ($isServer2022OrNewer) {
+            Write-Host "[*] Windows Server 2022/2025 detected (Build $osBuild). Bootstrapping via Microsoft WinGet Client module..." -ForegroundColor Cyan
+
+            # Method 1: Official Microsoft WinGet Client module (Repair-WinGetPackageManager)
             try {
-                # Determine URLs dynamically from latest GitHub release with fallback to official endpoints
-                $bundleUrl  = 'https://aka.ms/getwinget'
-                $depsUrl    = 'https://github.com/microsoft/winget-cli/releases/latest/download/DesktopAppInstaller_Dependencies.zip'
-                $licenseUrl = $null
-
-                try {
-                    $rel = Invoke-RestMethod 'https://api.github.com/repos/microsoft/winget-cli/releases/latest' -Headers @{ 'User-Agent' = 'PowerShell' } -TimeoutSec 10 -ErrorAction Stop
-                    $bAsset = $rel.assets | Where-Object { $_.name -like '*.msixbundle' } | Select-Object -First 1
-                    $lAsset = $rel.assets | Where-Object { $_.name -like '*_License1.xml' } | Select-Object -First 1
-                    $dAsset = $rel.assets | Where-Object { $_.name -like '*Dependencies.zip' } | Select-Object -First 1
-                    if ($bAsset) { $bundleUrl  = $bAsset.browser_download_url }
-                    if ($lAsset) { $licenseUrl = $lAsset.browser_download_url }
-                    if ($dAsset) { $depsUrl    = $dAsset.browser_download_url }
-                } catch {}
-
-                # Download packages
-                Invoke-FastDownload $depsUrl "$dl\winget-deps.zip" 'winget-deps.zip'
-                Invoke-FastDownload $bundleUrl "$dl\winget.msixbundle" 'winget.msixbundle'
-                if ($licenseUrl) {
-                    Invoke-FastDownload $licenseUrl "$dl\winget-license.xml" 'winget-license.xml'
+                Invoke-WithSpinner "Setting up PowerShell Gallery and NuGet provider" "Configured PSGallery & NuGet" {
+                    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+                    Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope CurrentUser -ErrorAction SilentlyContinue | Out-Null
+                    Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted -ErrorAction SilentlyContinue | Out-Null
                 }
 
-                # Extract dependencies
-                Invoke-WithSpinner "Extracting winget-deps.zip" "Extracted winget-deps.zip" {
-                    param($z, $d)
-                    Expand-Archive -Path $z -DestinationPath $d -Force
-                } @("$dl\winget-deps.zip", "$dl\winget-deps")
-
-                $depsPath = Join-Path "$dl\winget-deps" "x64"
-                if (-not (Test-Path $depsPath)) { $depsPath = "$dl\winget-deps" }
-                $deps = @(Get-ChildItem $depsPath -Filter *.appx | Select-Object -ExpandProperty FullName)
-                Write-Host "[+] Dependencies found: $($deps.Count) (includes native WindowsAppRuntime 1.8 .appx)" -ForegroundColor Green
-
-                # Provision and register each dependency package (.appx)
-                foreach ($dep in $deps) {
-                    $depLeaf = Split-Path -Leaf $dep
-                    Invoke-WithSpinner "Registering dependency: $depLeaf" "Registered dependency: $depLeaf" {
-                        param($p)
-                        try { Add-AppxProvisionedPackage -Online -PackagePath $p -SkipLicense -ErrorAction SilentlyContinue | Out-Null } catch {}
-                        try { Add-AppxPackage -Path $p -ErrorAction SilentlyContinue } catch {}
-                    } @($dep)
+                Invoke-WithSpinner "Installing Microsoft.WinGet.Client module from PSGallery" "Installed Microsoft.WinGet.Client" {
+                    Install-Module -Name Microsoft.WinGet.Client -Force -Scope CurrentUser -Repository PSGallery -ErrorAction Stop
+                    Import-Module -Name Microsoft.WinGet.Client -Force -ErrorAction Stop
                 }
 
-                # Install winget with DISM provisioning and Appx registration
-                if (Test-Path "$dl\winget-license.xml") {
-                    Invoke-WithSpinner "Installing winget with dependencies and license" "Installed winget package" {
-                        param($p, $lic, $d)
-                        try { Add-AppxProvisionedPackage -Online -PackagePath $p -LicensePath $lic -DependencyPackagePath $d -ErrorAction SilentlyContinue | Out-Null } catch {}
-                        try { Add-AppxPackage -Path $p -DependencyPath $d -ErrorAction SilentlyContinue | Out-Null } catch {}
-                    } @("$dl\winget.msixbundle", "$dl\winget-license.xml", $deps)
-                } else {
-                    Invoke-WithSpinner "Installing winget with dependencies" "Installed winget package" {
-                        param($p, $d)
-                        try { Add-AppxProvisionedPackage -Online -PackagePath $p -SkipLicense -DependencyPackagePath $d -ErrorAction SilentlyContinue | Out-Null } catch {}
-                        try { Add-AppxPackage -Path $p -DependencyPath $d -ErrorAction SilentlyContinue | Out-Null } catch {}
-                    } @("$dl\winget.msixbundle", $deps)
+                Invoke-WithSpinner "Running Repair-WinGetPackageManager for Windows Server 2022" "Completed WinGet package manager bootstrap" {
+                    Repair-WinGetPackageManager -AllUsers -Latest -Force -ErrorAction Stop
                 }
 
-                # Register by family name and sync to local tool path
-                try { Add-AppxPackage -RegisterByFamilyName -MainPackage Microsoft.DesktopAppInstaller_8wekyb3d8bbwe -ErrorAction SilentlyContinue | Out-Null } catch {}
+                # Sync installed binaries to C:\Tools\winget for elevated Administrator PATH execution
                 Install-WingetLocal
                 $wingetPath = Get-WingetPath
+            } catch {
+                Write-Warning "Official Microsoft.WinGet.Client bootstrap encountered an error: $($_.Exception.Message)"
+            }
 
-                # Direct ZIP extraction fallback if AppX service failed on Server
-                if (-not $wingetPath) {
-                    Write-Host "[*] AppX registration incomplete. Attempting direct portable extraction fallback..." -ForegroundColor Cyan
-                    Invoke-WithSpinner "Extracting winget standalone binaries" "Extracted winget standalone binaries" {
-                        param($bundle, $depsList, $dest)
-                        Add-Type -AssemblyName System.IO.Compression.FileSystem
-                        $tmpBundle = "$bundle-extracted"
-                        if (-not (Test-Path $tmpBundle)) { New-Item -ItemType Directory -Path $tmpBundle -Force | Out-Null }
-                        [System.IO.Compression.ZipFile]::ExtractToDirectory($bundle, $tmpBundle)
-
-                        $nestedMsix = Get-ChildItem -Path $tmpBundle -Filter "*x64*.msix" -Recurse | Where-Object { $_.Name -notmatch 'stub' } | Select-Object -First 1
-                        if ($nestedMsix) {
-                            if (-not (Test-Path $dest)) { New-Item -ItemType Directory -Path $dest -Force | Out-Null }
-                            [System.IO.Compression.ZipFile]::ExtractToDirectory($nestedMsix.FullName, $dest)
-                            foreach ($dep in $depsList) {
-                                try { [System.IO.Compression.ZipFile]::ExtractToDirectory($dep, $dest) } catch {}
-                            }
-                        }
-                    } @("$dl\winget.msixbundle", $deps, "$InstallDir\winget")
-
+            # Method 2: Fallback to automated winget-install script from PSGallery
+            if (-not $wingetPath) {
+                Write-Host "[*] Attempting fallback via winget-install script..." -ForegroundColor Cyan
+                try {
+                    Invoke-WithSpinner "Installing and executing winget-install script" "Completed winget-install script" {
+                        Install-Script -Name winget-install -Force -Scope CurrentUser -ErrorAction Stop
+                        & (Get-Command winget-install -CommandType ExternalScript).Source -Force -ErrorAction SilentlyContinue
+                    }
                     Install-WingetLocal
                     $wingetPath = Get-WingetPath
+                } catch {
+                    Write-Warning "winget-install fallback failed: $($_.Exception.Message)"
                 }
             }
-            catch {
-                Write-Host "[--------------------------------------------------------------]" -ForegroundColor Red
-                Write-Host "[!] winget bootstrap FAILED: $($_.Exception.Message)" -ForegroundColor Red
-                Write-Host "[--------------------------------------------------------------]" -ForegroundColor Red
-            }
 
-            $wingetPath = Get-WingetPath
+            # Method 3: Final fallback to Server 2019 manual bootstrap if Server 2022 methods fail
+            if (-not $wingetPath) {
+                Write-Host "[*] Server 2022 methods unsuccessful. Falling back to manual bundle/DISM bootstrap..." -ForegroundColor Yellow
+                $wingetPath = Install-WingetLegacyBootstrap
+            }
+        }
+        else {
+            Write-Host "[*] Windows Server 2019 / legacy build detected (Build $osBuild). Using manual bundle & DISM bootstrap..." -ForegroundColor Cyan
+            $wingetPath = Install-WingetLegacyBootstrap
         }
     }
 
@@ -467,314 +621,357 @@ try {
     }
 
     #----------------------------------------------------------
-    # JOB QUEUE: Launch all installs and downloads concurrently
+    # SEQUENTIAL INSTALLATION & DOWNLOAD PIPELINE
+    # (Runs sequentially in-process to prevent memory thrashing,
+    #  msiexec 1618 mutex collisions, and Explorer shell crashes)
     #----------------------------------------------------------
-    $Jobs = [System.Collections.Generic.List[PSObject]]::new()
+    $jobResults = [System.Collections.Generic.List[PSCustomObject]]::new()
 
-    # 1. Winget package install jobs (Run sequentially to avoid msiexec and SQLite lock contention)
-    if ($wingetPath) {
-        $packages = @('Mozilla.Firefox', 'BiniSoft.WindowsFirewallControl', '7zip.7zip')
-        
-        Write-Host "[+] Queuing sequential winget install job for: $($packages -join ', ')" -ForegroundColor Cyan
-        $job = Start-Job -Name "Install-WingetPackages" -ScriptBlock {
-            param($pkgList, $exePath, $targetInstallDir, $downloadsPath)
-            $ErrorActionPreference = 'Stop'
-            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-            # Ensure path is available in the background job process
-            $exeDir = Split-Path -Parent $exePath
-            if ($exeDir -and $env:Path -notlike "*$exeDir*") {
-                $env:Path = "$exeDir;$env:Path"
-            }
-            if ($env:Path -notlike "*$env:LOCALAPPDATA\Microsoft\WindowsApps*") {
-                $env:Path += ";$env:LOCALAPPDATA\Microsoft\WindowsApps"
-            }
-
-            function Invoke-FastDownload {
-                param($u, $o)
-                $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
-                if ($curl) {
-                    $p = Start-Process -FilePath $curl.Source -ArgumentList "-s", "-S", "-L", "--connect-timeout", "10", "--max-time", "300", "-o", "`"$o`"", "`"$u`"" -NoNewWindow -Wait -PassThru
-                    if ($p.ExitCode -eq 0 -and (Test-Path $o) -and (Get-Item $o).Length -gt 0) { return }
-                }
-                try {
-                    $wc = New-Object System.Net.WebClient
-                    $wc.DownloadFile($u, $o)
-                    return
-                } catch {}
-                Invoke-WebRequest -Uri $u -OutFile $o -UseBasicParsing -TimeoutSec 300
-            }
-
-            $maxRetries = 3
-            $retryDelay = 5
-            $failedPackages = [System.Collections.Generic.List[string]]::new()
-
-            foreach ($pkgId in $pkgList) {
-                Write-Host "`n[*] [$pkgId] Starting installation via winget..."
-                $installed = $false
-                $lastCode = 0
-
-                for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
-                    Write-Host "[*] [$pkgId] (Attempt $attempt/$maxRetries) Running winget install..."
-                    $wingetArgs = @('install', '--id', $pkgId, '--exact', '--source', 'winget', '--silent', '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity')
-                    & $exePath $wingetArgs
-
-                    $lastCode = $LASTEXITCODE
-                    if ($lastCode -eq 0) {
-                        Write-Host "[+] [$pkgId] Successfully installed!"
-                        $installed = $true
-                        break
-                    }
-                    else {
-                        if ($attempt -lt $maxRetries) {
-                            Write-Warning "[-] [$pkgId] Winget returned code $lastCode. Retrying in ${retryDelay}s..."
-                            Start-Sleep -Seconds $retryDelay
-                        }
-                    }
-                }
-
-                if (-not $installed) {
-                    Write-Warning "[!] [$pkgId] Winget failed with exit code $lastCode. Triggering direct fallback..."
-                    if ($pkgId -match 'Sysinternals') {
-                        try {
-                            $targetZip = Join-Path $downloadsPath "SysinternalsSuite.zip"
-                            $targetDir = Join-Path $targetInstallDir "Sysinternals"
-                            Write-Host "[*] Downloading Sysinternals directly..."
-                            Invoke-FastDownload 'https://download.sysinternals.com/files/SysinternalsSuite.zip' $targetZip
-                            if (Test-Path $targetZip) {
-                                if (-not (Test-Path $targetDir)) { New-Item -ItemType Directory -Path $targetDir -Force | Out-Null }
-                                Expand-Archive -Path $targetZip -DestinationPath $targetDir -Force
-                                Write-Host "[+] [$pkgId] Sysinternals installed directly from zip!"
-                                $installed = $true
-                            }
-                        } catch {
-                            Write-Warning "[!] Sysinternals direct install failed: $($_.Exception.Message)"
-                        }
-                    }
-                    elseif ($pkgId -match 'Firefox') {
-                        try {
-                            $targetExe = Join-Path $downloadsPath "FirefoxInstaller.exe"
-                            Write-Host "[*] Downloading Firefox directly..."
-                            Invoke-FastDownload 'https://download.mozilla.org/?product=firefox-latest-ssl&os=win64&lang=en-US' $targetExe
-                            if (Test-Path $targetExe) {
-                                $proc = Start-Process -FilePath $targetExe -ArgumentList '/S' -Wait -PassThru
-                                if ($proc.ExitCode -in 0, 3010) {
-                                    Write-Host "[+] [$pkgId] Firefox installed directly via silent installer!"
-                                    $installed = $true
-                                }
-                            }
-                        } catch {
-                            Write-Warning "[!] Firefox direct install failed: $($_.Exception.Message)"
-                        }
-                    }
-                }
-
-                if (-not $installed) {
-                    Write-Warning "[!] [$pkgId] Installation failed completely with exit code $lastCode"
-                    $failedPackages.Add("$pkgId (code $lastCode)")
-                }
-            }
-
-            if ($failedPackages.Count -gt 0) {
-                throw "Package installation failed for: $($failedPackages -join ', ')"
-            }
-        } -ArgumentList $packages, $wingetPath, $InstallDir, $dl
-
-        $Jobs.Add($job)
-    }
-    else {
-        Write-Warning "[!] winget unavailable. Falling back to direct fast download for Firefox."
-
-        # Add Firefox to direct download queue with silent installer switch
-        $Downloads.Add(@{
-            Name        = 'Firefox'
-            Url         = 'https://download.mozilla.org/?product=firefox-latest-ssl&os=win64&lang=en-US'
-            InstallArgs = '/S'
-        })
-    }
-
-    # 2. Standalone file download & install jobs
+    # 1. Process Standalone Tool Downloads & Extractions
+    Write-Host "`n[+] Processing standalone tool downloads..." -ForegroundColor Cyan
     foreach ($d in $Downloads) {
-        Write-Host "[+] Queuing download job for: $($d.Name)" -ForegroundColor Cyan
-        $job = Start-Job -Name "Download-$($d.Name)" -ScriptBlock {
-            param($name, $url, $destDir, $targetInstallDir, $installArgs)
-            $ErrorActionPreference = 'Stop'
-            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        $name = $d.Name
+        $url = $d.Url
+        $installArgs = $d.InstallArgs
 
-            function Invoke-FastDownload {
-                param($u, $o)
-                $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
-                if ($curl) {
-                    & $curl.Source -s -S -L --connect-timeout 10 --max-time 300 -o $o $u
-                    if ($LASTEXITCODE -eq 0 -and (Test-Path $o) -and (Get-Item $o).Length -gt 0) { return }
-                }
-                try {
-                    $wc = New-Object System.Net.WebClient
-                    $wc.DownloadFile($u, $o)
-                    return
-                } catch {}
-                Invoke-WebRequest -Uri $u -OutFile $o -UseBasicParsing -TimeoutSec 300
-            }
+        $filename = Split-Path -Leaf $url
+        if (-not $filename -or $filename -notlike "*.*") {
+            $filename = if ($installArgs) { "$name.exe" } else { "$name.dat" }
+        }
+        $outFile = Join-Path $DownloadsDir $filename
 
-            $filename = Split-Path -Leaf $url
-            if (-not $filename -or $filename -notlike "*.*") {
-                $filename = if ($installArgs) { "$name.exe" } else { "$name.dat" }
-            }
-            $outFile = Join-Path $destDir $filename
+        Invoke-FastDownload $url $outFile "$name ($filename)"
 
-            Write-Host "[*] [$name] Downloading from $url to $outFile..."
-            Invoke-FastDownload $url $outFile
-            Write-Host "[+] [$name] Download complete."
-
-            # If it's a zip file, unpack it
+        if ((Test-Path $outFile) -and (Get-Item $outFile).Length -gt 0) {
+            # Extract archive if zip
             if ($filename -like "*.zip") {
-                $extractPath = Join-Path $targetInstallDir $name
-                Write-Host "[*] [$name] Extracting archive to $extractPath..."
-                Expand-Archive -Path $outFile -DestinationPath $extractPath -Force
-                Write-Host "[+] [$name] Archive extracted."
-            }
-            # If silent installer args provided, execute installer
-            elseif ($installArgs) {
-                Write-Host "[*] [$name] Running silent installer ($installArgs)..."
-                $proc = Start-Process -FilePath $outFile -ArgumentList $installArgs -Wait -PassThru
-                if ($proc.ExitCode -in 0, 3010) {
-                    Write-Host "[+] [$name] Installation successful!"
-                } else {
-                    Write-Warning "[-] [$name] Installer exited with code: $($proc.ExitCode)"
+                $extractPath = Join-Path $InstallDir $name
+                Write-Host "[*] [$name] Extracting archive to $extractPath..." -ForegroundColor Cyan
+                try {
+                    Expand-FastArchive -Path $outFile -DestinationPath $extractPath
+                    Write-Host "[+] [$name] Archive extracted successfully." -ForegroundColor Green
+                    $jobResults.Add([PSCustomObject]@{
+                        JobName = $name
+                        Status  = "Success"
+                        Details = "Extracted to $extractPath"
+                    })
+                } catch {
+                    Write-Warning "[!] [$name] Archive extraction failed: $($_.Exception.Message)"
+                    $jobResults.Add([PSCustomObject]@{
+                        JobName = $name
+                        Status  = "Failed"
+                        Details = "Extraction error: $($_.Exception.Message)"
+                    })
                 }
             }
-        } -ArgumentList $d.Name, $d.Url, $DownloadsDir, $InstallDir, $d.InstallArgs
-
-        $Jobs.Add($job)
+            # Execute PowerShell script if .ps1 (e.g., Docker installer)
+            elseif ($filename -like "*.ps1") {
+                Write-Host "[*] [$name] Executing PowerShell installation script ($filename)..." -ForegroundColor Cyan
+                try {
+                    $proc = Start-Process -FilePath "powershell.exe" -ArgumentList "-ExecutionPolicy Bypass -NoProfile -File `"$outFile`"" -Wait -PassThru
+                    if ($proc.ExitCode -in 0, 3010) {
+                        Write-Host "[+] [$name] Execution completed successfully!" -ForegroundColor Green
+                        $jobResults.Add([PSCustomObject]@{
+                            JobName = $name
+                            Status  = "Success"
+                            Details = "Executed PowerShell script (exit code 0)"
+                        })
+                    } else {
+                        Write-Warning "[-] [$name] Script exited with code: $($proc.ExitCode)"
+                        $jobResults.Add([PSCustomObject]@{
+                            JobName = $name
+                            Status  = "Failed"
+                            Details = "Exit code $($proc.ExitCode)"
+                        })
+                    }
+                } catch {
+                    Write-Warning "[!] [$name] Script execution failed: $($_.Exception.Message)"
+                    $jobResults.Add([PSCustomObject]@{
+                        JobName = $name
+                        Status  = "Failed"
+                        Details = "Launch error: $($_.Exception.Message)"
+                    })
+                }
+            }
+            # Execute silent installer if args provided
+            elseif ($installArgs) {
+                try {
+                    $exitCode = 0
+                    Invoke-WithSpinner "Installing $name ($installArgs)" "$name installed successfully" {
+                        $proc = Start-Process -FilePath $outFile -ArgumentList $installArgs -Wait -PassThru
+                        $exitCode = $proc.ExitCode
+                        if ($exitCode -notin 0, 3010) {
+                            throw "Installer exited with code $exitCode"
+                        }
+                    }
+                    $jobResults.Add([PSCustomObject]@{
+                        JobName = $name
+                        Status  = "Success"
+                        Details = "Installed (exit code $exitCode)"
+                    })
+                } catch {
+                    Write-Warning "[!] [$name] Installation failed: $($_.Exception.Message)"
+                    $jobResults.Add([PSCustomObject]@{
+                        JobName = $name
+                        Status  = "Failed"
+                        Details = "$($_.Exception.Message)"
+                    })
+                }
+            }
+            else {
+                $jobResults.Add([PSCustomObject]@{
+                    JobName = $name
+                    Status  = "Success"
+                    Details = "Downloaded to $outFile"
+                })
+            }
+        } else {
+            $jobResults.Add([PSCustomObject]@{
+                JobName = $name
+                Status  = "Failed"
+                Details = "Download failed"
+            })
+        }
     }
 
-    # MONITORING: Track running jobs and notify as each finishes
-    # -----------------------------------------------------------
-    if ($Jobs.Count -gt 0) {
-        Write-Host "`n[+] Launched $($Jobs.Count) install/download job(s) in parallel. Waiting for completion..." -ForegroundColor Cyan
-        $Jobs | Format-Table Id, Name, State -AutoSize | Out-String | Write-Host
+    # 2. Process WinGet Package Installations
+    if ($wingetPath) {
+        $packages = @('Mozilla.Firefox', '7zip.7zip', 'BiniSoft.WindowsFirewallControl', 'Malwarebytes.Malwarebytes')
+        Write-Host "`n[+] Installing packages sequentially via winget: $($packages -join ', ')..." -ForegroundColor Cyan
 
-        $completedIds = [System.Collections.Generic.HashSet[int]]::new()
-        $jobResults = [System.Collections.Generic.List[PSCustomObject]]::new()
-        $spinChars = @('|', '/', '-', '\')
-        $spinIndex = 0
+        $maxRetries = 2
+        $retryDelay = 3
 
-        while ($completedIds.Count -lt $Jobs.Count) {
-            $runningJobs = @($Jobs | Where-Object { -not $completedIds.Contains($_.Id) } | ForEach-Object { $_.Name })
-            $statusText = "`r[$($spinChars[$spinIndex])] Running ($($runningJobs.Count) active): $($runningJobs -join ', ')...".PadRight(75)
-            Write-SpinnerFrame $statusText
-            $spinIndex = ($spinIndex + 1) % $spinChars.Count
+        foreach ($pkgId in $packages) {
+            Write-Host "`n[*] [$pkgId] Starting installation via winget..." -ForegroundColor Cyan
+            $installed = $false
+            $lastCode = 0
 
-            foreach ($j in $Jobs) {
-                if (-not $completedIds.Contains($j.Id)) {
-                    $current = Get-Job -Id $j.Id
-                    if ($current.State -ne 'Running' -and $current.State -ne 'NotStarted') {
-                        $completedIds.Add($j.Id) | Out-Null
+            for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
+                Write-Host "[*] [$pkgId] (Attempt $attempt/$maxRetries) Running winget install..." -ForegroundColor Cyan
+                
+                # Malwarebytes is interactive so the operator can manually work through it
+                if ($pkgId -match 'Malwarebytes') {
+                    $wingetArgs = @('install', '--id', $pkgId, '--exact', '--source', 'winget', '--accept-package-agreements', '--accept-source-agreements')
+                } elseif ($attempt -eq 2 -and $pkgId -match 'WindowsFirewallControl') {
+                    # Broaden search if exact ID was not found on first attempt
+                    $wingetArgs = @('install', '--name', 'Windows Firewall Control', '--silent', '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity')
+                } else {
+                    $wingetArgs = @('install', '--id', $pkgId, '--exact', '--source', 'winget', '--silent', '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity')
+                }
+                
+                try {
+                    $proc = Start-Process -FilePath $wingetPath -ArgumentList $wingetArgs -NoNewWindow -Wait -PassThru
+                    $lastCode = $proc.ExitCode
+                } catch {
+                    $lastCode = -1
+                }
 
-                        # Clear the spinner line before writing job completion output
-                        Clear-SpinnerLine
-
-                        $outputLines = $null
-                        $isFailed = ($current.State -eq 'Failed')
-                        $errMsg = $null
-
-                        try {
-                            $outputLines = Receive-Job -Job $current -ErrorAction Stop
+                if ($lastCode -in 0, 3010) {
+                    # Validate installation via winget list
+                    $isVerified = $false
+                    try {
+                        $listOut = & $wingetPath list --id $pkgId --exact --disable-interactivity 2>&1
+                        if ($LASTEXITCODE -eq 0 -and "$listOut" -match [regex]::Escape($pkgId)) {
+                            $isVerified = $true
                         }
-                        catch {
-                            $isFailed = $true
-                            $errMsg = $_.Exception.Message
-                        }
+                    } catch {}
 
-                        if (-not $isFailed -and $current.State -eq 'Completed') {
-                            Write-Host "[+] Job '$($current.Name)' completed successfully!" -ForegroundColor Green
-                            $jobResults.Add([PSCustomObject]@{
-                                JobName = $current.Name
-                                Status  = "Success"
-                                Details = "Completed"
-                            })
-                        }
-                        else {
-                            if (-not $errMsg) {
-                                $errMsg = if ($current.ChildJobs.JobStateInfo.Reason) {
-                                    $current.ChildJobs.JobStateInfo.Reason.Message
-                                } else {
-                                    "Exited with state $($current.State)"
-                                }
-                            }
-                            Write-Host "[!] Job '$($current.Name)' failed: $errMsg" -ForegroundColor Red
-                            $jobResults.Add([PSCustomObject]@{
-                                JobName = $current.Name
-                                Status  = "Failed"
-                                Details = $errMsg
-                            })
-                        }
+                    if ($isVerified) {
+                        Write-Host "[+] [$pkgId] Successfully installed and verified via winget list!" -ForegroundColor Green
+                        $details = "Installed & verified via winget"
+                    } else {
+                        Write-Host "[+] [$pkgId] Successfully installed (exit code 0)." -ForegroundColor Green
+                        $details = "Installed via winget"
+                    }
 
-                        if ($isFailed -and $outputLines) {
-                            Write-Host "--- Output from $($current.Name) ---" -ForegroundColor DarkGray
-                            $outputLines | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
-                            Write-Host "------------------------------------" -ForegroundColor DarkGray
-                        }
+                    $installed = $true
+                    $jobResults.Add([PSCustomObject]@{
+                        JobName = $pkgId
+                        Status  = "Success"
+                        Details = $details
+                    })
+                    break
+                } else {
+                    if ($attempt -lt $maxRetries) {
+                        Write-Warning "[-] [$pkgId] Winget returned code $lastCode. Retrying in ${retryDelay}s..."
+                        Start-Sleep -Seconds $retryDelay
                     }
                 }
             }
-            Start-Sleep -Milliseconds 250
-        }
 
-        # Clear spinner line once all jobs finish
-        Clear-SpinnerLine
-
-        # -----------------------------------------------------------
-        # SUMMARY: Final status output
-        # -----------------------------------------------------------
-        $successCount = ($jobResults | Where-Object { $_.Status -eq 'Success' }).Count
-        $failCount = ($jobResults | Where-Object { $_.Status -eq 'Failed' }).Count
-        $totalCount = $jobResults.Count
-
-        Write-Host ("`n" + ("=" * 60)) -ForegroundColor Cyan
-        Write-Host "               ALL INSTALL JOBS COMPLETE" -ForegroundColor Cyan
-        Write-Host ("=" * 60) -ForegroundColor Cyan
-        $jobResults | Format-Table -AutoSize | Out-String | Write-Host
-
-        $timestamp = Get-Date -Format "HH:mm:ss"
-
-        if ($failCount -eq 0) {
-            Write-Host "[+] [$timestamp] All $totalCount installs finished successfully." -ForegroundColor Green
-        }
-        else {
-            Write-Host "[!] [$timestamp] Installs complete: $successCount succeeded, $failCount failed." -ForegroundColor Red
-        }
-        Write-Host (("=" * 60) + "`n") -ForegroundColor Cyan
-
-        # Cleanup jobs
-        $Jobs | ForEach-Object { Remove-Job -Job $_ -Force -ErrorAction SilentlyContinue }
-
-        # Post-install: Auto-accept Sysinternals EULA system-wide so tools launch without GUI prompts
-        try {
-            $eulaKeys = @('HKCU:\Software\Sysinternals', 'HKLM:\SOFTWARE\Sysinternals')
-            foreach ($k in $eulaKeys) {
-                if (-not (Test-Path $k)) { New-Item -Path $k -Force | Out-Null }
-                Set-ItemProperty -Path $k -Name 'EulaAccepted' -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue | Out-Null
+            # Direct fallback if winget installation failed
+            if (-not $installed) {
+                Write-Warning "[!] [$pkgId] Winget install failed (exit code $lastCode). Triggering direct fallback..."
+                if ($pkgId -match 'Firefox') {
+                    try {
+                        $targetExe = Join-Path $DownloadsDir "FirefoxInstaller.exe"
+                        Invoke-FastDownload 'https://download.mozilla.org/?product=firefox-latest-ssl&os=win64&lang=en-US' $targetExe 'Firefox direct installer'
+                        if (Test-Path $targetExe) {
+                            $proc = Start-Process -FilePath $targetExe -ArgumentList '/S' -Wait -PassThru
+                            if ($proc.ExitCode -in 0, 3010) {
+                                Write-Host "[+] [$pkgId] Firefox installed directly via silent installer!" -ForegroundColor Green
+                                $installed = $true
+                                $jobResults.Add([PSCustomObject]@{
+                                    JobName = $pkgId
+                                    Status  = "Success"
+                                    Details = "Installed via direct installer"
+                                })
+                            }
+                        }
+                    } catch {
+                        Write-Warning "[!] Firefox direct install failed: $($_.Exception.Message)"
+                    }
+                }
+                elseif ($pkgId -match '7zip') {
+                    try {
+                        $targetMsi = Join-Path $DownloadsDir "7z-x64.msi"
+                        Invoke-FastDownload 'https://github.com/ip7z/7zip/releases/download/26.06/7z2606-x64.msi' $targetMsi '7-Zip direct MSI'
+                        if (Test-Path $targetMsi) {
+                            $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList "/i `"$targetMsi`" /qn /norestart" -Wait -PassThru
+                            if ($proc.ExitCode -in 0, 3010) {
+                                Write-Host "[+] [$pkgId] 7-Zip installed directly via MSI!" -ForegroundColor Green
+                                $installed = $true
+                                $jobResults.Add([PSCustomObject]@{
+                                    JobName = $pkgId
+                                    Status  = "Success"
+                                    Details = "Installed via direct MSI"
+                                })
+                            }
+                        }
+                    } catch {
+                        Write-Warning "[!] 7-Zip direct install failed: $($_.Exception.Message)"
+                    }
+                }
+                elseif ($pkgId -match 'WindowsFirewallControl') {
+                    try {
+                        $targetExe = Join-Path $DownloadsDir "wfc6setup.exe"
+                        Invoke-FastDownload 'https://binisoft.org/download/wfc6setup.exe' $targetExe 'Windows Firewall Control installer'
+                        if (Test-Path $targetExe) {
+                            $exitCode = 0
+                            Invoke-WithSpinner "Installing Windows Firewall Control" "Windows Firewall Control installed successfully" {
+                                $proc = Start-Process -FilePath $targetExe -ArgumentList "-run -close -install" -Wait -PassThru
+                                $exitCode = $proc.ExitCode
+                                if ($exitCode -notin 0, 3010) {
+                                    $proc2 = Start-Process -FilePath $targetExe -ArgumentList "-install -silent" -Wait -PassThru
+                                    $exitCode = $proc2.ExitCode
+                                }
+                            }
+                            Write-Host "[+] [$pkgId] Windows Firewall Control installed directly!" -ForegroundColor Green
+                            $installed = $true
+                            $jobResults.Add([PSCustomObject]@{
+                                JobName = $pkgId
+                                Status  = "Success"
+                                Details = "Installed via direct installer"
+                            })
+                        }
+                    } catch {
+                        Write-Warning "[!] Windows Firewall Control direct install failed: $($_.Exception.Message)"
+                    }
+                }
             }
-            Write-Host "[+] Sysinternals EULA pre-accepted (HKCU & HKLM)" -ForegroundColor Green
-        } catch {}
 
-        # Post-install: Add Tools, Sysinternals & winget directory to system PATH if not already present
-        try {
-            $sysinternalsDir = "$InstallDir\Sysinternals"
-            $wingetDir = "$InstallDir\winget"
-            $machinePath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
-            $pathsToAdd = @($InstallDir, $sysinternalsDir, $wingetDir) | Where-Object { (Test-Path $_) -and ($machinePath -notlike "*$_*") }
-            if ($pathsToAdd) {
-                $newPath = ($machinePath.TrimEnd(';') + ';' + ($pathsToAdd -join ';')).Trim(';')
-                [System.Environment]::SetEnvironmentVariable("Path", $newPath, "Machine")
-                $env:Path = "$newPath;$env:Path"
-                Write-Host "[+] System PATH updated with $InstallDir" -ForegroundColor Green
+            if (-not $installed) {
+                Write-Host "[!] [$pkgId] Installation failed (code $lastCode)." -ForegroundColor Red
+                $jobResults.Add([PSCustomObject]@{
+                    JobName = $pkgId
+                    Status  = "Failed"
+                    Details = "Exit code $lastCode"
+                })
             }
-        } catch {}
+        }
     }
     else {
-        Write-Host "[!] No jobs queued to run." -ForegroundColor Yellow
+        Write-Warning "[!] winget unavailable. Falling back to direct silent installers..."
+        # Firefox Direct Fallback
+        $targetExe = Join-Path $DownloadsDir "FirefoxInstaller.exe"
+        Invoke-FastDownload 'https://download.mozilla.org/?product=firefox-latest-ssl&os=win64&lang=en-US' $targetExe 'Firefox installer'
+        if (Test-Path $targetExe) {
+            $proc = Start-Process -FilePath $targetExe -ArgumentList '/S' -Wait -PassThru
+            if ($proc.ExitCode -in 0, 3010) {
+                Write-Host "[+] Firefox installed directly!" -ForegroundColor Green
+                $jobResults.Add([PSCustomObject]@{
+                    JobName = 'Firefox'
+                    Status  = "Success"
+                    Details = "Installed via direct silent installer"
+                })
+            } else {
+                Write-Host "[!] Firefox direct installer failed with code $($proc.ExitCode)" -ForegroundColor Red
+                $jobResults.Add([PSCustomObject]@{
+                    JobName = 'Firefox'
+                    Status  = "Failed"
+                    Details = "Exit code $($proc.ExitCode)"
+                })
+            }
+        }
+
+        # Windows Firewall Control Direct Fallback
+        $wfcExe = Join-Path $DownloadsDir "wfc6setup.exe"
+        Invoke-FastDownload 'https://binisoft.org/download/wfc6setup.exe' $wfcExe 'Windows Firewall Control installer'
+        if (Test-Path $wfcExe) {
+            $proc = Start-Process -FilePath $wfcExe -ArgumentList "-run -close -install" -Wait -PassThru
+            if ($proc.ExitCode -in 0, 3010) {
+                Write-Host "[+] Windows Firewall Control installed directly!" -ForegroundColor Green
+                $jobResults.Add([PSCustomObject]@{
+                    JobName = 'BiniSoft.WindowsFirewallControl'
+                    Status  = "Success"
+                    Details = "Installed via direct installer"
+                })
+            }
+        }
+    }
+
+    # 3. Final Status Output
+    $successCount = ($jobResults | Where-Object { $_.Status -eq 'Success' }).Count
+    $failCount = ($jobResults | Where-Object { $_.Status -eq 'Failed' }).Count
+    $totalCount = $jobResults.Count
+
+    Write-Host ("`n" + ("=" * 60)) -ForegroundColor Cyan
+    Write-Host "               ALL INSTALL OPERATIONS COMPLETE" -ForegroundColor Cyan
+    Write-Host ("=" * 60) -ForegroundColor Cyan
+    $jobResults | Format-Table -AutoSize | Out-String | Write-Host
+
+    $timestamp = Get-Date -Format "HH:mm:ss"
+
+    if ($failCount -eq 0) {
+        Write-Host "[+] [$timestamp] All $totalCount installations/downloads finished successfully." -ForegroundColor Green
+    }
+    else {
+        Write-Host "[!] [$timestamp] Operations complete: $successCount succeeded, $failCount failed." -ForegroundColor Red
+    }
+    Write-Host (("=" * 60) + "`n") -ForegroundColor Cyan
+
+    # Post-install: Auto-accept Sysinternals EULA system-wide so tools launch without GUI prompts
+    try {
+        $eulaKeys = @('HKCU:\Software\Sysinternals', 'HKLM:\SOFTWARE\Sysinternals')
+        foreach ($k in $eulaKeys) {
+            if (-not (Test-Path $k)) { New-Item -Path $k -Force | Out-Null }
+            Set-ItemProperty -Path $k -Name 'EulaAccepted' -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue | Out-Null
+        }
+        Write-Host "[+] Sysinternals EULA pre-accepted (HKCU & HKLM)" -ForegroundColor Green
+    } catch {}
+
+    # Post-install: Add Tools, Sysinternals & winget directory to system PATH if not already present
+    try {
+        $sysinternalsDir = "$InstallDir\Sysinternals"
+        $wingetDir = "$InstallDir\winget"
+        $machinePath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
+        $pathsToAdd = @($InstallDir, $sysinternalsDir, $wingetDir) | Where-Object { (Test-Path $_) -and ($machinePath -notlike "*$_*") }
+        if ($pathsToAdd) {
+            $newPath = ($machinePath.TrimEnd(';') + ';' + ($pathsToAdd -join ';')).Trim(';')
+            [System.Environment]::SetEnvironmentVariable("Path", $newPath, "Machine")
+            $env:Path = "$newPath;$env:Path"
+            Write-Host "[+] System PATH updated with $InstallDir" -ForegroundColor Green
+        }
+    } catch {}
+
+    # Download shed-hardening and shed-scraper from GitHub
+    $repo = "https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master/windows"
+    foreach ($script in @("shed-hardening.ps1", "shed-scraper.ps1")) {
+        $target = "$InstallDir\$script"
+        if (-not (Test-Path $target)) {
+            Invoke-FastDownload "$repo/$script" $target
+        }
     }
 
     Write-Host "[+] Done." -ForegroundColor Green
