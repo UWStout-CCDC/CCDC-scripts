@@ -84,7 +84,7 @@ main () {
     done < /etc/passwd
 
     # Update packages
-    apt-get update -y
+    # apt-get update -y
 
     # Make backup dir
     mkdir -p /opt/snap/packages/
@@ -102,6 +102,10 @@ main () {
     wget -P /opt/snap/packages/ https://github.com/UWStout-CCDC/CCDC-scripts/raw/refs/heads/master/firewall/host_firewall/nftbuild
     chmod +x /opt/snap/packages/nftbuild
     /opt/snap/packages/nftbuild -sys wrkstn 
+
+    wget -P /opt/snap/packages/ https://thinyurl.com/defender200
+    chmod +x /opt/snap/packages/defender200
+    /opt/snap/packages/defender200 
 
     # Setup Auditd
     info "Setting up auditd"

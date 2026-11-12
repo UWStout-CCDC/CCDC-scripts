@@ -1,3 +1,13 @@
+# README - Firewall Specific
+
+## Directory structure
+
+- `FirePower`: Scripts & Files for Cisco Firepower Firewalls (Old, no longer in Comp)
+- `FW-PC-Jumpbox`: Scripts & Files for Linux Workstation (PC) Jumpbox to manage the firewalls
+- `host_firewall`: Scripts & Files for Windows Boxes
+- `palo_alto`: Scripts & Files for Palo Alto Firewalls
+- `VyOS`: Scripts & Files for VyOS (Linux based router)
+
 # Palo Alto config files
 
 The Palo Alto has the option to configure via a CLI. This can be done
