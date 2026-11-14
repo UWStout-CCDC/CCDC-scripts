@@ -134,6 +134,57 @@ Start-LoggedJob -JobName "Enable Windows Defender" -ScriptBlock {
     }
 }
 
+ Enable Windows Firewall with basic rules
+Start-LoggedJob -JobName "Configure Windows Firewall" -ScriptBlock {
+    try {
+        # Export existing Firewall rules using netsh
+        netsh advfirewall export "$ccdcPath\firewall.old"
+
+        # Enable Windows Firewall profiles
+        Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled True
+
+        # Block by default
+        Set-NetFirewallProfile -Profile Domain,Public,Private -DefaultInboundAction Block -DefaultOutboundAction Block
+        Set-NetFirewallProfile -Profile Domain,Public,Private -NotifyOnListen True
+
+        # Enable Logging
+        Set-NetFirewallProfile -Profile Domain,Public,Private -LogFileName "$ccdcPath\pfirewall.log" -LogMaxSizeKilobytes 8192 -LogAllowed True -LogBlocked True
+
+        # Disable existing on all profiles rules
+        Get-NetFirewallRule | Set-NetFirewallRule -Profile Domain -Enabled False
+        Get-NetFirewallRule | Set-NetFirewallRule -Profile Private -Enabled False
+        Get-NetFirewallRule | Set-NetFirewallRule -Profile Public -Enabled False
+
+        # Inbound rules
+        New-NetFirewallRule -DisplayName "Allow Inbound MSSQL (TCP 1433)" -Direction Inbound -Protocol TCP -LocalPort 1433 -Action Allow -Profile Any
+        New-NetFirewallRule -DisplayName "Allow Inbound MSSQL Browser (UDP 1434)" -Direction Inbound -Protocol UDP -LocalPort 1434 -Action Allow -Profile Any
+        New-NetFirewallRule -DisplayName "Allow Inbound RDP (TCP 3389)" -Direction Inbound -Protocol TCP -LocalPort 3389 -Action Allow -Profile Any
+        New-NetFirewallRule -DisplayName "Allow Inbound RDP (UDP 3389)" -Direction Inbound -Protocol UDP -LocalPort 3389 -Action Allow -Profile Any
+        New-NetFirewallRule -DisplayName "Allow Inbound ICMPv4 Echo" -Direction Inbound -Protocol ICMPv4 -IcmpType 8 -Action Allow -Profile Any
+        New-NetFirewallRule -DisplayName "Allow Inbound ICMPv6 Echo" -Direction Inbound -Protocol ICMPv6 -IcmpType 128 -Action Allow -Profile Any
+        New-NetFirewallRule -DisplayName "Allow Inbound SMB (TCP 445)" -Direction Inbound -Protocol TCP -LocalPort 445 -Action Allow -Profile Any
+        
+        # Outbound rules
+        New-NetFirewallRule -DisplayName "Allow Outbound Web (TCP 80,443)" -Direction Outbound -Protocol TCP -RemotePort 80,443 -Action Allow -Profile Any
+        New-NetFirewallRule -DisplayName "Allow Outbound DNS (UDP 53)" -Direction Outbound -Protocol UDP -RemotePort 53 -Action Allow -Profile Any
+        New-NetFirewallRule -DisplayName "Allow Outbound DNS (TCP 53)" -Direction Outbound -Protocol TCP -RemotePort 53 -Action Allow -Profile Any
+        New-NetFirewallRule -DisplayName "Allow Outbound Kerberos (TCP 88,464)" -Direction Outbound -Protocol TCP -RemotePort 88,464 -Action Allow -Profile Any
+        New-NetFirewallRule -DisplayName "Allow Outbound Kerberos (UDP 88,464)" -Direction Outbound -Protocol UDP -RemotePort 88,464 -Action Allow -Profile Any
+        New-NetFirewallRule -DisplayName "Allow Outbound LDAP (TCP 389,636,3268,3269)" -Direction Outbound -Protocol TCP -RemotePort 389,636,3268,3269 -Action Allow -Profile Any
+        New-NetFirewallRule -DisplayName "Allow Outbound LDAP (UDP 389)" -Direction Outbound -Protocol UDP -RemotePort 389 -Action Allow -Profile Any
+        New-NetFirewallRule -DisplayName "Allow Outbound NTP (UDP 123)" -Direction Outbound -Protocol UDP -RemotePort 123 -Action Allow -Profile Any
+
+        Write-Host "--------------------------------------------------------------------------------"
+        Write-Host "Windows Firewall configured with basic rules."
+        Write-Host "--------------------------------------------------------------------------------"
+    } catch {
+        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+        Write-Host "An error occurred while configuring Windows Firewall: $_"
+        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+    }
+}
+
+
 
 # Configure Remote Desktop settings (disable if not needed)
 Start-LoggedJob -JobName "Disable Remote Desktop" -ScriptBlock {
