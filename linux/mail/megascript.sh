@@ -233,6 +233,190 @@ protected_pids() {
 echo 'Acquire::Retries "0";' > /etc/apt/apt.conf.d/99-no-retries
 
 build_owned_path_index
+
+# ---- Network first: nothing below may depend on a poisoned network ----
+
+# Force the known-good network state and hunt for poisoning: wrong IP, extra
+# addresses, rogue routes/rules, ARP, DNS, hosts file, proxies, network hooks.
+# Idempotent: runs early (before apt) and again as a final re-check.
+# AD NOTE: 9.9.9.9 cannot resolve the AD domain. Use the DC FQDN in /etc/hosts or
+# IPs in krb5.conf/sssd.conf. The AD server is pinned in /etc/hosts below.
+step_fix_network() {
+  local want_cidr=172.20.240.15/24 want_net=172.20.240.0/24
+  local want_gw=172.20.240.254 want_dns=9.9.9.9
+  local iface candidate addr route_line prio gw_mac renderer file backup
+
+  # NIC: first physical one, else the one carrying the default route.
+  for candidate in /sys/class/net/*; do
+    [[ -e $candidate/device ]] && { iface=${candidate##*/}; break; }
+  done
+  iface=${iface:-$(ip -4 -o route show default | awk '{print $5; exit}')}
+  [[ -n $iface ]] || { add_warning "NETWORK: no usable interface found, nothing changed"; return 1; }
+
+  ip link set "$iface" up
+
+  # --- IP address: exactly one ---
+  for addr in $(ip -4 -o addr show dev "$iface" | awk '{print $4}'); do
+    [[ $addr == "$want_cidr" ]] && continue
+    ip addr del "$addr" dev "$iface" && add_warning "NETWORK: removed unexpected address $addr from $iface"
+  done
+  if ! ip -4 addr show dev "$iface" | grep -q "inet $want_cidr"; then
+    ip addr add "$want_cidr" dev "$iface"
+    add_warning "NETWORK: $want_cidr was missing on $iface, restored"
+  fi
+
+  # --- Routes: connected /24 and the one gateway only ---
+  ip route replace default via "$want_gw" dev "$iface"
+  ip -4 route show table main | while read -r route_line; do
+    case $route_line in
+      "default via $want_gw dev $iface"*) continue ;;
+      "$want_net dev $iface proto kernel"*) continue ;;
+    esac
+    # shellcheck disable=SC2086  # route text must word-split
+    ip route del $route_line && add_warning "NETWORK: removed route: $route_line"
+  done
+  ip -6 route show default | while read -r route_line; do
+    # shellcheck disable=SC2086
+    ip -6 route del $route_line && add_warning "NETWORK: removed IPv6 default route: $route_line"
+  done
+
+  # --- Policy routing and extra routing tables ---
+  ip -4 rule show | awk -F: '$1+0!=0 && $1+0!=32766 && $1+0!=32767 {print $1+0}' | while read -r prio; do
+    ip rule del priority "$prio" && add_warning "NETWORK: removed ip rule priority $prio"
+  done
+  ip -4 route show table all | grep -E 'table [0-9a-z]+' | grep -Evq 'table (local|main)' \
+    && add_warning "NETWORK: routes exist in non-main tables: ip route show table all"
+
+  # --- Other live interfaces ---
+  for candidate in /sys/class/net/*; do
+    candidate=${candidate##*/}
+    [[ $candidate == lo || $candidate == "$iface" ]] && continue
+    [[ $(< "/sys/class/net/$candidate/operstate") == down ]] && continue
+    add_warning "NETWORK: extra interface up: $candidate ($(ip -4 -o addr show dev "$candidate" | awk '{print $4}' | tr '\n' ' '))"
+  done
+
+  # --- ARP: rebuild the cache, flag the gateway MAC for a human to verify ---
+  cat > /etc/sysctl.d/98-megascript-net.conf <<'NETSYSCTL_EOF'
+net.ipv4.conf.all.arp_ignore = 1
+net.ipv4.conf.all.arp_announce = 2
+net.ipv4.conf.all.arp_filter = 1
+net.ipv6.conf.all.accept_ra = 0
+net.ipv6.conf.default.accept_ra = 0
+NETSYSCTL_EOF
+  sysctl -qp /etc/sysctl.d/98-megascript-net.conf
+  ip neigh flush dev "$iface"
+  ping -c1 -W2 "$want_gw" > /dev/null 2>&1 || add_warning "NETWORK: gateway $want_gw not answering ping (or ICMP blocked)"
+  gw_mac=$(ip neigh show "$want_gw" dev "$iface" | awk '{print $5}')
+  add_warning "NETWORK: gateway MAC is ${gw_mac:-unknown}, check it against the known-good one"
+
+  # --- DNS: static resolv.conf, no resolved, hosts lookups only files then dns ---
+  systemctl disable --now systemd-resolved 2>/dev/null
+  systemctl mask systemd-resolved 2>/dev/null
+  chattr -i /etc/resolv.conf 2>/dev/null
+  rm -f /etc/resolv.conf
+  printf 'nameserver %s\n' "$want_dns" > /etc/resolv.conf
+  chmod 644 /etc/resolv.conf
+  chattr +i /etc/resolv.conf 2>/dev/null
+  sed -i -E 's/^hosts:.*/hosts:          files dns/' /etc/nsswitch.conf
+
+  # --- /etc/hosts: pin the AD server. Names are read from the krb5, sssd and
+  # dovecot configs (KDC, realm, ad_server, ldap_uri ...). Any other hosts line that
+  # maps one of those names elsewhere (poisoning) is removed and reported. ---
+  local ad_ip=172.20.240.100
+  local ad_extra_names="ccdc.net"   # DC FQDN, always pinned (config-derived names are added too)
+  local ad_names=() ad_name realm conflict
+  realm=$(awk -F= 'tolower($1) ~ /^[ \t]*default_realm[ \t]*$/ {gsub(/[ \t\r]/,"",$2); print tolower($2); exit}' /etc/krb5.conf 2>/dev/null)
+
+  mapfile -t ad_names < <(
+    {
+      printf '%s\n' $ad_extra_names $realm
+      grep -hEi '^[[:space:]]*(kdc|admin_server|master_kdc|default_domain|ad_domain|ad_server|ad_backup_server|krb5_server|ldap_uri|uris|hosts)[[:space:]]*=' \
+          /etc/krb5.conf /etc/krb5.conf.d/* /etc/sssd/sssd.conf /etc/sssd/conf.d/* \
+          /etc/dovecot/dovecot-ldap.conf.ext /etc/dovecot/conf.d/*ldap* 2>/dev/null \
+        | cut -d= -f2- | tr ', ' '\n\n' | sed -E 's#^[A-Za-z]+://##; s#[:/].*$##'
+    } | tr 'A-Z' 'a-z' \
+      | grep -E '^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9-]+)+$' | grep -Ev '^[0-9.]+$' | sort -u
+  )
+
+  chattr -i /etc/hosts 2>/dev/null
+  if ((${#ad_names[@]} == 0)); then
+    add_warning "NETWORK: no AD hostnames found in krb5/sssd/dovecot configs, /etc/hosts NOT pinned. Set ad_extra_names in step_fix_network."
+  else
+    sed -i '/# megascript AD begin/,/# megascript AD end/d' /etc/hosts
+    for ad_name in "${ad_names[@]}"; do
+      conflict=$(grep -E "^[^#]*[[:space:]]${ad_name//./\\.}([[:space:]]|\$)" /etc/hosts)
+      if [[ -n $conflict ]]; then
+        add_warning "NETWORK: removed conflicting /etc/hosts entry for $ad_name: $conflict"
+        sed -i -E "/^[^#]*[[:space:]]${ad_name//./\\.}([[:space:]]|\$)/d" /etc/hosts
+      fi
+    done
+    printf '# megascript AD begin\n%s %s\n# megascript AD end\n' "$ad_ip" "${ad_names[*]}" >> /etc/hosts
+    add_warning "NETWORK: /etc/hosts pins $ad_ip -> ${ad_names[*]}"
+    [[ $(getent -s files hosts "${ad_names[0]}" | awk '{print $1; exit}') == "$ad_ip" ]] \
+      || add_warning "NETWORK: hosts lookup of ${ad_names[0]} did not return $ad_ip"
+  fi
+
+  grep -Ev '^\s*(#|$)|^(127\.|::1|ff0|fe00)' /etc/hosts 2>/dev/null | grep -v "^$ad_ip " | while read -r route_line; do
+    add_warning "NETWORK: /etc/hosts entry to verify: $route_line"
+  done
+  chattr +i /etc/hosts 2>/dev/null
+  timeout 5 getent hosts archive.ubuntu.com > /dev/null \
+    || add_warning "NETWORK: DNS test via $want_dns failed (upstream blocked?)"
+
+  # --- Persist across reboot via netplan (live state is already set above) ---
+  renderer=networkd
+  systemctl is-active --quiet NetworkManager && renderer=NetworkManager
+  if [[ ! -f /etc/netplan/01-megascript.yaml ]]; then   # back up only on the first run
+    backup=/root/netplan_backup_$(date +%Y%m%d-%H%M%S)
+    mkdir -p "$backup"; chmod 700 "$backup"
+    cp -a /etc/netplan/. "$backup"/ 2>/dev/null
+  fi
+  rm -f /etc/netplan/*.yaml
+  cat > /etc/netplan/01-megascript.yaml <<NETPLAN_EOF
+network:
+  version: 2
+  renderer: $renderer
+  ethernets:
+    $iface:
+      dhcp4: false
+      dhcp6: false
+      accept-ra: false
+      addresses: [$want_cidr]
+      routes:
+        - to: default
+          via: $want_gw
+      nameservers:
+        addresses: [$want_dns]
+NETPLAN_EOF
+  chmod 600 /etc/netplan/01-megascript.yaml
+  netplan generate || add_warning "NETWORK: netplan generate failed, config will not persist"
+  ls /etc/systemd/network/*.network > /dev/null 2>&1 \
+    && add_warning "NETWORK: leftover /etc/systemd/network/*.network files, review"
+
+  # --- Hooks that can rewrite network state, and proxies that can MitM apt ---
+  for file in /etc/dhcp/dhclient-enter-hooks.d/* /etc/dhcp/dhclient-exit-hooks.d/* \
+              /etc/NetworkManager/dispatcher.d/* /etc/networkd-dispatcher/*/* /etc/network/if-*.d/*; do
+    [[ -f $file ]] && ! is_package_owned "$file" && add_warning "NETWORK: unpackaged network hook: $file"
+  done
+
+  grep -rIiH '^[^#]*proxy' /etc/apt/apt.conf /etc/apt/apt.conf.d /etc/environment \
+       /etc/profile.d /etc/wgetrc /etc/curlrc 2>/dev/null | while read -r route_line; do
+    add_warning "NETWORK: proxy setting: $route_line"
+  done
+
+  grep -rhE '^(deb |URIs:)' /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null \
+    | grep -Ev 'ubuntu\.com' | while read -r route_line; do
+        add_warning "NETWORK: non-Ubuntu apt source: $route_line"
+      done
+
+  return 0
+}
+
+echo "Fixing network (first thing, before any apt or DNS use)"
+step_fix_network >> "$MAIN_LOG" 2>&1
+echo "  done."
+echo
+
 quiesce_background_apt_jobs
 
 
@@ -1585,6 +1769,7 @@ readonly -a STEPS=(
   "2|Start background targeted security upgrade|step_start_background_upgrade"
 
   "4|Build nftables firewall|step_build_nftables_firewall"
+  "3|Re-verify network state|step_fix_network"
 
   "45|Fix permissions and ownership|step_fix_permissions"
   "2|Mail and PHP read-only checks (parallel)|step_check_mail_and_php"
