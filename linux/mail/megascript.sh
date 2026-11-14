@@ -951,6 +951,194 @@ step_check_bootloader() {
   fi
 }
 
+# Remove every scheduled-task system (cron, anacron, at/atq/batch, fcron, bcron,
+# dcron, cronie, incron, systemd timers) so nothing can run unattended or persist.
+# Everything that was scheduled is archived first to
+# <root home>/scheduled_jobs_archive/<timestamp>/ (copies of the spool and config
+# files, plus JOBS_SUMMARY.txt with every active entry, atq/at job contents and
+# the systemd timer list). Then the daemons are stopped and masked, all timers are
+# stopped and masked, the job data is deleted, and the packages are purged (only
+# if apt confirms in a dry run that no scored package would be removed). Binaries
+# that survive are made unexecutable. With --no-apt the purge is only reported.
+# Note: masking every timer also stops logrotate, fstrim, tmpfiles-clean and the
+# apt-daily timers. That is intended for a short competition.
+step_remove_schedulers() {
+  local root_home archive_dir files_dir summary_file
+  local timer_dirs=() timer_files=()
+  local scheduler_packages=() removals=() blocked=() extras=()
+  local home_dir timer_file unit_name path job_id package binary_name binary_path
+  local cron_entry_count timer_list
+  local scored_regex='postfix|dovecot|roundcube|ssh|krb5|kerberos|sssd|php|apache|nginx|mysql|mariadb|postgres|libpam|sudo|ldap|nftables|fish'
+  local scheduler_package_regex='^(cron|cron-daemon-common|anacron|at|bcron|bcron-run|fcron|dcron|cronie|incron|systemd-cron|cron-apt)$'
+
+  # Classic cron/at/incron/fcron files and spools (config, allow/deny, job data).
+  local scheduler_paths=(
+    /etc/crontab /etc/cron.d /etc/cron.hourly /etc/cron.daily /etc/cron.weekly
+    /etc/cron.monthly /etc/cron.yearly /etc/cron.allow /etc/cron.deny
+    /etc/anacrontab /etc/at.allow /etc/at.deny
+    /etc/incron.d /etc/incron.allow /etc/incron.deny /etc/incron.conf
+    /etc/fcron /etc/fcrontab /etc/fcron.conf /etc/fcron.allow /etc/fcron.deny
+    /var/spool/cron /var/spool/at /var/spool/anacron /var/spool/incron /var/spool/fcron
+  )
+
+  # Local accounts only, never query sssd/LDAP here.
+  root_home=$(getent -s files passwd root | cut -d: -f6)
+  root_home=${root_home:-/root}
+
+  archive_dir="$root_home/scheduled_jobs_archive/$(date +%Y%m%d-%H%M%S)"
+  files_dir="$archive_dir/files"
+  summary_file="$archive_dir/JOBS_SUMMARY.txt"
+
+  mkdir -p "$files_dir"
+  chmod 700 "$root_home/scheduled_jobs_archive" "$archive_dir" "$files_dir"
+
+  # archive_path PATH: copy a file or directory into the archive, keeping its
+  # full path, owner, mode and timestamps.
+  archive_path() {
+    [[ -e $1 || -L $1 ]] || return 0
+    cp -a --parents "$1" "$files_dir"/
+  }
+
+  # --- 1. Archive everything that is scheduled ---------------------------------
+
+  # Summary first, while atd and cron are still running (atq needs atd).
+  {
+    echo "== Active cron/anacron/incron/fcron entries (comments and blank lines hidden) =="
+    grep -rEHv '^[[:space:]]*(#|$)' /etc/crontab /etc/cron.d /etc/anacrontab /etc/fcrontab \
+         /var/spool/cron /var/spool/incron /var/spool/fcron /etc/incron.d 2>/dev/null
+    echo
+    echo "== Scripts in /etc/cron.{hourly,daily,weekly,monthly,yearly} =="
+    ls -l /etc/cron.hourly /etc/cron.daily /etc/cron.weekly /etc/cron.monthly /etc/cron.yearly 2>/dev/null
+    echo
+    echo "== atq =="
+    atq 2>/dev/null
+    echo
+    echo "== at job contents =="
+    for job_id in $(atq 2>/dev/null | awk '{print $1}'); do
+      echo "--- at job $job_id"
+      at -c "$job_id" 2>/dev/null
+    done
+    echo
+    echo "== systemd timers (all) =="
+    systemctl list-timers --all --no-pager 2>/dev/null
+    echo
+    echo "== systemd linger users =="
+    ls -l /var/lib/systemd/linger 2>/dev/null
+  } > "$summary_file" 2>&1
+  chmod 600 "$summary_file"
+
+  cron_entry_count=$(grep -rEHv '^[[:space:]]*(#|$)' /etc/crontab /etc/cron.d /etc/anacrontab /etc/fcrontab \
+                       /var/spool/cron /var/spool/incron /var/spool/fcron /etc/incron.d 2>/dev/null | wc -l)
+
+  for path in "${scheduler_paths[@]}"; do
+    archive_path "$path"
+  done
+  archive_path /var/lib/systemd/linger
+
+  # Custom systemd timers (regular files, not the packaged symlinks) with their services.
+  timer_dirs=(/etc/systemd/system /run/systemd/system /etc/systemd/user /usr/local/lib/systemd/system)
+  for home_dir in /home/*/ /root/; do
+    timer_dirs+=("${home_dir}.config/systemd/user")
+  done
+
+  mapfile -t timer_files < <(find "${timer_dirs[@]}" -name '*.timer' ! -type l 2>/dev/null)
+
+  for timer_file in "${timer_files[@]}"; do
+    archive_path "$timer_file"
+    archive_path "${timer_file%.timer}.service"
+
+    unit_name=$(sed -n 's/^Unit=//p' "$timer_file" | head -1)
+    [[ -n $unit_name ]] && archive_path "$(dirname "$timer_file")/$unit_name"
+  done
+
+  add_warning "SCHEDULERS: jobs archived to $archive_dir (JOBS_SUMMARY.txt lists every entry), $cron_entry_count active cron-style entries, ${#timer_files[@]} custom timer files. Review for persistence."
+
+  # --- 2. Stop and mask scheduler daemons ---------------------------------------
+
+  for unit_name in cron crond atd anacron anacron.timer fcron bcron incron incrond cronie; do
+    if systemctl cat "$unit_name" &>/dev/null; then
+      systemctl disable --now "$unit_name"
+      systemctl mask "$unit_name"
+    fi
+  done
+
+  # --- 3. Remove custom timers, then stop and mask every timer ----------------------
+
+  # A regular unit file cannot be masked, so delete the custom ones first.
+  for timer_file in "${timer_files[@]}"; do
+    rm -f "$timer_file"
+  done
+  rm -rf /var/lib/systemd/linger/*   # no lingering user managers running user timers
+
+  timer_list=$(
+    {
+      systemctl list-unit-files --type=timer --no-legend --plain --no-pager 2>/dev/null
+      systemctl list-units --all --type=timer --no-legend --plain --no-pager 2>/dev/null
+    } | awk '{print $1}' | sort -u
+  )
+
+  for unit_name in $timer_list; do
+    systemctl stop "$unit_name"
+    systemctl disable "$unit_name"
+    systemctl mask "$unit_name"
+  done
+
+  # --- 4. Delete the job data (the archive holds the copies) --------------------
+
+  for path in "${scheduler_paths[@]}"; do
+    rm -rf "$path"
+  done
+
+  # --- 5. Purge the packages ---------------------------------------------------------
+
+  mapfile -t scheduler_packages < <(installed_packages_matching "$scheduler_package_regex")
+
+  if ((${#scheduler_packages[@]} > 0)); then
+    if ((NO_PACKAGE_CHANGES)); then
+      report_only_note "scheduler packages installed, would purge: ${scheduler_packages[*]}"
+    else
+      # Dry run: see what else apt would take with them before touching anything.
+      mapfile -t removals < <(apt-get -s purge "${scheduler_packages[@]}" 2>/dev/null | awk '/^Remv/ {print $2}')
+
+      for package in "${removals[@]}"; do
+        [[ " ${scheduler_packages[*]} " == *" $package "* ]] && continue
+
+        if [[ $package =~ $scored_regex ]]; then
+          blocked+=("$package")
+        else
+          extras+=("$package")
+        fi
+      done
+
+      if ((${#blocked[@]} > 0)); then
+        add_warning "SCHEDULERS: purge SKIPPED, it would also remove scored/auth packages: ${blocked[*]}. Daemons are masked and binaries disabled instead."
+      else
+        apt-get "${APT_OPTIONS[@]}" purge "${scheduler_packages[@]}" \
+          || add_warning "SCHEDULERS: apt purge of ${scheduler_packages[*]} failed (see $MAIN_LOG)"
+
+        ((${#extras[@]} > 0)) && add_warning "SCHEDULERS: purge also removed: ${extras[*]}"
+
+        # Pin so apt never pulls them back in.
+        printf 'Package: cron cron-daemon-common anacron at bcron bcron-run fcron dcron cronie incron systemd-cron cron-apt\nPin: release a=*\nPin-Priority: -10\n' \
+          > /etc/apt/preferences.d/noscheduler.pref
+      fi
+    fi
+  fi
+
+  # --- 6. Disable any binary that is still there -----------------------------------------
+
+  for binary_name in crontab at atq atrm batch atd cron crond anacron fcron fcrontab incrond incrontab; do
+    binary_path=$(command -v "$binary_name") && chmod 000 "$(readlink -f "$binary_path")"
+  done
+
+  for binary_name in crontab at atd cron; do
+    command -v "$binary_name" > /dev/null && [[ -x $(readlink -f "$(command -v "$binary_name")") ]] \
+      && add_warning "SCHEDULERS: $binary_name still executable"
+  done
+
+  return 0
+}
+
 # Least-privilege ownership and modes across /etc, /root, homes and the filesystem.
 # authorized_keys files are deliberately never touched (another tool manages them).
 step_fix_permissions() {
@@ -1254,6 +1442,8 @@ step_reload_systemd() {
 #
 #   Group 2 (apt chain: fish -> root shell -> snap):
 #     runs alongside the bootloader check (grub, initramfs, no apt unless tampered).
+#     The scheduler removal (archive, purge cron/at/timers) runs after the bootloader
+#     check, still inside the apt chain, and before the background upgrade.
 #     The background upgrade is only started AFTER the bootloader step, so it can
 #     never run update-initramfs at the same time as ours.
 #
@@ -1275,6 +1465,7 @@ readonly -a STEPS=(
   "1|Set root shell to fish|step_set_root_shell_to_fish"
   "90|Migrate scored snaps, remove snap|step_remove_snap"
   "5|Check and fix bootloader (parallel)|step_check_bootloader"
+  "15|Archive jobs, remove cron/at/timers|step_remove_schedulers"
   "2|Start background apt upgrade|step_start_background_upgrade"
 
   "4|Build nftables firewall|step_build_nftables_firewall"
@@ -1308,8 +1499,8 @@ readonly -a OVERLAPPED_STEPS=(
 # Steps that call apt-get. A notice is printed on the terminal when they start.
 readonly -a APT_STEPS=(
   step_check_binary_integrity step_install_fish
-  step_remove_snap step_check_bootloader step_start_background_upgrade
-  step_build_nftables_firewall
+  step_remove_snap step_check_bootloader step_remove_schedulers
+  step_start_background_upgrade step_build_nftables_firewall
 )
 
 # announce_apt_step FUNCTION DESCRIPTION
