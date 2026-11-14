@@ -108,7 +108,7 @@ readonly UPGRADE_LOG UPGRADE_PID_FILE UPGRADE_STATUS_FILE FINAL_REPORT_FILE PURG
 # Options for every apt-get call: non-interactive, wait up to 30 min for the
 # dpkg lock (the background upgrade holds it), keep existing config files.
 APT_OPTIONS=(-y -o DPkg::Lock::Timeout=1800 -o Dpkg::Options::=--force-confold
-             -o Acquire::Retries=1 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
+             -o Acquire::Retries=0 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
 readonly -a APT_OPTIONS
 
 # PIDs of this script and its parents, so checks never kill our own session.
@@ -227,6 +227,10 @@ protected_pids() {
       printf " "; for (p in keep) printf "%s ", p
     }'
 }
+
+# CVE-2026-109518 (APT MitM): a retried HTTP download can be swapped after verification.
+# Ubuntu's workaround is to disable retries, so every apt call from here on uses 0.
+echo 'Acquire::Retries "0";' > /etc/apt/apt.conf.d/99-no-retries
 
 build_owned_path_index
 quiesce_background_apt_jobs
@@ -649,8 +653,11 @@ step_install_fish() {
   if ((NO_PACKAGE_CHANGES)); then
     command -v fish > /dev/null \
       || report_only_note "fish not installed, would run: apt-get update; apt-get install fish"
+    report_only_note "apt itself should be upgraded (CVE-2026-109518), installed: $(dpkg-query -W -f='${Version}' apt 2>/dev/null), fixed: 2.4.15ubuntu0.1 (22.04) / 2.8.4ubuntu0.1 (24.04)"
   else
     apt-get update || add_warning "apt update failed"
+    # Fix apt first (CVE-2026-109518), retries are already off via 99-no-retries.
+    apt-get "${APT_OPTIONS[@]}" install --only-upgrade apt || add_warning "apt self-upgrade failed (CVE-2026-109518)"
     apt-get "${APT_OPTIONS[@]}" install fish || add_warning "fish install failed"
   fi
 
@@ -760,9 +767,9 @@ step_start_background_upgrade() {
 echo $$ > "$WORK_DIR/upgrade.pid"
 
 APT_OPTIONS=(-y -o DPkg::Lock::Timeout=1800 -o Dpkg::Options::=--force-confold
-             -o Acquire::Retries=1 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
+             -o Acquire::Retries=0 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
 
-threat_regex='^(linux-(image|modules|headers|generic)|openssh|openssl|libssl|sudo|polkit|pkexec|libpolkit|policykit|libc6|libc-bin|systemd|libsystemd|udev|libudev|dbus|libpam|libnss|libldap|libsasl2|libkrb5|krb5|libgssapi|sssd|postfix|dovecot|php|libapache2-mod-php|apache2|nginx|roundcube|mariadb|mysql|libsqlite|sqlite|libcurl|curl|libxml2|libexpat|zlib1g|libgnutls|gnutls|libgcrypt|gnupg|bash|util-linux|mount|libmount|login|passwd|libcap|libseccomp|git|python3|perl|libperl|vim|tar|cpio|needrestart|grub|shim|ca-certificates)'
+threat_regex='^(linux-(image|modules|headers|generic)|openssh|openssl|libssl|sudo|polkit|pkexec|libpolkit|policykit|libc6|libc-bin|systemd|libsystemd|udev|libudev|dbus|libpam|libnss|libldap|libsasl2|libkrb5|krb5|libgssapi|sssd|postfix|dovecot|php|libapache2-mod-php|apache2|nginx|roundcube|mariadb|mysql|libsqlite|sqlite|libcurl|curl|libxml2|libexpat|zlib1g|libgnutls|gnutls|libgcrypt|gnupg|bash|util-linux|mount|libmount|login|passwd|libcap|libseccomp|git|python3|perl|libperl|vim|tar|cpio|needrestart|grub|shim|ca-certificates|apt|libapt)'
 
 # Every installed package with a pending update from a -security pocket
 security_packages=$(apt-get -s --with-new-pkgs upgrade 2>/dev/null | awk '/^Inst/ && /-security/ {print $2}')
@@ -1314,6 +1321,10 @@ fs.protected_hardlinks = 1
 fs.protected_symlinks = 1
 fs.protected_fifos = 2
 fs.protected_regular = 2
+
+# CVE-2026-98432 (IPv4 TCP use-after-free): MPTCP off, no listener migration
+-net.mptcp.enabled = 0
+-net.ipv4.tcp_migrate_req = 0
 SYSCTL_EOF
   chmod 644 /etc/sysctl.d/99-megascript.conf
 
@@ -1335,7 +1346,8 @@ SYSCTL_EOF
 #   act_pedit             pedit COW     CVE-2026-46331
 #   ah6, tun, pppoe,      DirtyAH6 CVE-2026-80844, TUNderflow CVE-2026-81000,
 #   sctp_diag + sctp      PPPoEject CVE-2026-68121, DiagSpill CVE-2026-74469
-# Also: KVM nested virtualization off (Januscape CVE-2026-53359). ssh-keysign-pwn
+# Also: ksmbd blocked (kernel SMB server RCE flaws, Oct 2026, precaution) and KVM nested
+# virtualization off (Januscape CVE-2026-53359). ssh-keysign-pwn
 # (CVE-2026-46333) is covered by kernel.yama.ptrace_scope=2, set by the pre-flight
 # hardening and the sysctl step. Nothing scored uses any of these modules (IPsec, AFS,
 # RDS, tc pedit, TUN/TAP, PPPoE and SCTP are not in use on this box). To keep the
@@ -1359,6 +1371,7 @@ step_mitigate_kernel_lpes() {
     "ah6:DirtyAH6 CVE-2026-80844"
     "tun:TUNderflow CVE-2026-81000"
     "pppoe:PPPoEject CVE-2026-68121"
+    "ksmbd:kernel SMB server RCE flaws, Oct 2026 (precaution)"
     "sctp_diag:DiagSpill CVE-2026-74469"
     "sctp:DiagSpill CVE-2026-74469"
   )
