@@ -108,7 +108,7 @@ readonly UPGRADE_LOG UPGRADE_PID_FILE UPGRADE_STATUS_FILE FINAL_REPORT_FILE PURG
 # Options for every apt-get call: non-interactive, wait up to 30 min for the
 # dpkg lock (the background upgrade holds it), keep existing config files.
 APT_OPTIONS=(-y -o DPkg::Lock::Timeout=1800 -o Dpkg::Options::=--force-confold
-             -o Acquire::Retries=1 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
+             -o Acquire::Retries=0 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
 readonly -a APT_OPTIONS
 
 # PIDs of this script and its parents, so checks never kill our own session.
@@ -227,6 +227,10 @@ protected_pids() {
       printf " "; for (p in keep) printf "%s ", p
     }'
 }
+
+# CVE-2026-109518 (APT MitM): a retried HTTP download can be swapped after verification.
+# Ubuntu's workaround is to disable retries, so every apt call from here on uses 0.
+echo 'Acquire::Retries "0";' > /etc/apt/apt.conf.d/99-no-retries
 
 build_owned_path_index
 quiesce_background_apt_jobs
@@ -649,8 +653,11 @@ step_install_fish() {
   if ((NO_PACKAGE_CHANGES)); then
     command -v fish > /dev/null \
       || report_only_note "fish not installed, would run: apt-get update; apt-get install fish"
+    report_only_note "apt itself should be upgraded (CVE-2026-109518), installed: $(dpkg-query -W -f='${Version}' apt 2>/dev/null), fixed: 2.4.15ubuntu0.1 (22.04) / 2.8.4ubuntu0.1 (24.04)"
   else
     apt-get update || add_warning "apt update failed"
+    # Fix apt first (CVE-2026-109518), retries are already off via 99-no-retries.
+    apt-get "${APT_OPTIONS[@]}" install --only-upgrade apt || add_warning "apt self-upgrade failed (CVE-2026-109518)"
     apt-get "${APT_OPTIONS[@]}" install fish || add_warning "fish install failed"
   fi
 
@@ -735,15 +742,18 @@ step_remove_snap() {
   fi
 }
 
-# Start `apt upgrade` detached in the background, security-relevant packages
-# (kernel, PHP, mail stack, auth libraries) first. After the upgrade it purges
-# the remote-access packages from PURGE_LIST_FILE.
+# Start a TARGETED security upgrade detached in the background. No full upgrade:
+# only installed packages that have a pending update from a -security pocket AND
+# match the threat list (kernel, ssh, ssl, sudo/polkit, libc, systemd, PAM, auth
+# libraries, mail stack, web/PHP, DB, common parsers) are upgraded. Other pending
+# security updates are listed in the final report, not applied. Afterwards it
+# purges the remote-access packages from PURGE_LIST_FILE.
 step_start_background_upgrade() {
-  local package upgradable_count purge_targets=""
+  local package security_list purge_targets=""
 
   if ((NO_PACKAGE_CHANGES)); then
-    upgradable_count=$(apt-get -s --with-new-pkgs upgrade 2>/dev/null | grep -c '^Inst')
-    report_only_note "apt upgrade skipped: $upgradable_count packages upgradable per the current package lists (no apt update was run)"
+    security_list=$(apt-get -s --with-new-pkgs upgrade 2>/dev/null | awk '/^Inst/ && /-security/ {print $2}' | tr '\n' ' ')
+    report_only_note "targeted security upgrade skipped, pending security updates per the current package lists (no apt update was run): ${security_list:-none}"
 
     for package in $(cat "$PURGE_LIST_FILE"); do
       [[ $(dpkg-query -W -f='${db:Status-Abbrev}' "$package" 2>/dev/null) == ii* ]] && purge_targets+=" $package"
@@ -757,22 +767,28 @@ step_start_background_upgrade() {
 echo $$ > "$WORK_DIR/upgrade.pid"
 
 APT_OPTIONS=(-y -o DPkg::Lock::Timeout=1800 -o Dpkg::Options::=--force-confold
-             -o Acquire::Retries=1 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
+             -o Acquire::Retries=0 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
 
-priority_regex='^(linux-(image|modules|headers)|php|postfix|dovecot|openssh|openssl|libssl|krb5|libkrb5|sssd|libpam|libc6|sudo|systemd|apache2|nginx|roundcube|libldap|libsasl2)'
-priority_packages=$(dpkg-query -W -f='${db:Status-Abbrev} ${binary:Package}\n' \
-  | awk -v priority_regex="$priority_regex" '$1=="ii" && $2 ~ priority_regex {print $2}')
+threat_regex='^(linux-(image|modules|headers|generic)|openssh|openssl|libssl|sudo|polkit|pkexec|libpolkit|policykit|libc6|libc-bin|systemd|libsystemd|udev|libudev|dbus|libpam|libnss|libldap|libsasl2|libkrb5|krb5|libgssapi|sssd|postfix|dovecot|php|libapache2-mod-php|apache2|nginx|roundcube|mariadb|mysql|libsqlite|sqlite|libcurl|curl|libxml2|libexpat|zlib1g|libgnutls|gnutls|libgcrypt|gnupg|bash|util-linux|mount|libmount|login|passwd|libcap|libseccomp|git|python3|perl|libperl|vim|tar|cpio|needrestart|grub|shim|ca-certificates|apt|libapt)'
 
-# 1. Priority packages first
-if [ -n "$priority_packages" ]; then
-  apt-get "${APT_OPTIONS[@]}" install --only-upgrade $priority_packages
+# Every installed package with a pending update from a -security pocket
+security_packages=$(apt-get -s --with-new-pkgs upgrade 2>/dev/null | awk '/^Inst/ && /-security/ {print $2}')
+targeted_packages=$(printf '%s\n' $security_packages | grep -E "$threat_regex")
+skipped_packages=$(printf '%s\n' $security_packages | grep -Ev "$threat_regex" | grep -v '^$')
+
+printf '%s\n' $skipped_packages > "$WORK_DIR/skipped_security_upgrades"
+echo "targeted security upgrade: $(echo $targeted_packages)"
+echo "security updates NOT applied: $(echo $skipped_packages)"
+
+# 1. Targeted upgrade only (no full upgrade). New kernels need a reboot to take effect.
+upgrade_rc=0
+if [ -n "$targeted_packages" ]; then
+  apt-get "${APT_OPTIONS[@]}" install --only-upgrade $targeted_packages
+  upgrade_rc=$?
 fi
+echo "upgrade=$upgrade_rc" > "$WORK_DIR/upgrade_status"
 
-# 2. Everything else (--with-new-pkgs lets new kernels install, like `apt upgrade`)
-apt-get "${APT_OPTIONS[@]}" --with-new-pkgs upgrade
-echo "upgrade=$?" > "$WORK_DIR/upgrade_status"
-
-# 3. Purge unscored remote-access packages
+# 2. Purge unscored remote-access packages
 installed_purge_targets=""
 for package in $(cat "$WORK_DIR/purge.list"); do
   if dpkg -s "$package" > /dev/null 2>&1; then
@@ -1305,6 +1321,10 @@ fs.protected_hardlinks = 1
 fs.protected_symlinks = 1
 fs.protected_fifos = 2
 fs.protected_regular = 2
+
+# CVE-2026-98432 (IPv4 TCP use-after-free): MPTCP off, no listener migration
+-net.mptcp.enabled = 0
+-net.ipv4.tcp_migrate_req = 0
 SYSCTL_EOF
   chmod 644 /etc/sysctl.d/99-megascript.conf
 
@@ -1313,6 +1333,101 @@ SYSCTL_EOF
   chmod 644 /etc/security/limits.d/99-nocore.conf
 
   sysctl --system || add_warning "sysctl --system reported errors (see $MAIN_LOG)"
+}
+
+# Temporary mitigations for the 2026 run of kernel local privilege escalations, until
+# a patched kernel is booted. Each affected kernel module is blocked with a drop-in
+# under /run/modprobe.d (tmpfs, so it vanishes on reboot) and unloaded if loaded:
+#   algif_aead            Copy Fail     CVE-2026-31431
+#   esp4 esp6 rxrpc       Dirty Frag    CVE-2026-43284 / CVE-2026-43500
+#                         (the same modules also cover Fragnesia CVE-2026-46300
+#                          and DirtyClone CVE-2026-43503)
+#   rds                   PinTheft      CVE-2026-43494
+#   act_pedit             pedit COW     CVE-2026-46331
+#   ah6, tun, pppoe,      DirtyAH6 CVE-2026-80844, TUNderflow CVE-2026-81000,
+#   sctp_diag + sctp      PPPoEject CVE-2026-68121, DiagSpill CVE-2026-74469
+# Also: ksmbd blocked (kernel SMB server RCE flaws, Oct 2026, precaution) and KVM nested
+# virtualization off (Januscape CVE-2026-53359). ssh-keysign-pwn
+# (CVE-2026-46333) is covered by kernel.yama.ptrace_scope=2, set by the pre-flight
+# hardening and the sysctl step. Nothing scored uses any of these modules (IPsec, AFS,
+# RDS, tc pedit, TUN/TAP, PPPoE and SCTP are not in use on this box). To keep the
+# blocks across reboots, write the same file to /etc/modprobe.d instead. A module that
+# is built into the kernel cannot be blocked this way, it is reported instead.
+step_mitigate_kernel_lpes() {
+  local conf_dir=/run/modprobe.d
+  local conf_file=$conf_dir/disable-kernel-lpe-modules.conf
+  local builtin_list="/lib/modules/$(uname -r)/modules.builtin"
+  local entry module reason nested_file
+  local usable_modules=() builtin_modules=() loaded_modules=() unblocked_modules=()
+
+  # "module:what it mitigates"; sctp_diag comes before sctp so it unloads first.
+  local -a lpe_modules=(
+    "algif_aead:Copy Fail CVE-2026-31431"
+    "esp4:Dirty Frag CVE-2026-43284, Fragnesia CVE-2026-46300, DirtyClone CVE-2026-43503"
+    "esp6:Dirty Frag CVE-2026-43284, Fragnesia CVE-2026-46300, DirtyClone CVE-2026-43503"
+    "rxrpc:Dirty Frag CVE-2026-43500"
+    "rds:PinTheft CVE-2026-43494"
+    "act_pedit:pedit COW CVE-2026-46331"
+    "ah6:DirtyAH6 CVE-2026-80844"
+    "tun:TUNderflow CVE-2026-81000"
+    "pppoe:PPPoEject CVE-2026-68121"
+    "ksmbd:kernel SMB server RCE flaws, Oct 2026 (precaution)"
+    "sctp_diag:DiagSpill CVE-2026-74469"
+    "sctp:DiagSpill CVE-2026-74469"
+  )
+
+  mkdir -p "$conf_dir"
+
+  {
+    echo "# Temporary kernel LPE mitigations, cleared on reboot (megascript)"
+    for entry in "${lpe_modules[@]}"; do
+      module=${entry%%:*}
+      reason=${entry#*:}
+
+      if grep -qs "/${module}\.ko" "$builtin_list"; then
+        builtin_modules+=("$module")
+        continue
+      fi
+
+      usable_modules+=("$module")
+      echo "# $reason"
+      echo "install $module /bin/false"
+      echo "blacklist $module"
+    done
+
+    echo "# Januscape CVE-2026-53359: no nested virtualization"
+    echo "options kvm_intel nested=0"
+    echo "options kvm_amd nested=0"
+  } > "$conf_file"
+  chmod 644 "$conf_file"
+
+  # The exploits load these on demand, so unload anything already loaded.
+  for module in "${usable_modules[@]}"; do
+    grep -q "^$module " /proc/modules && modprobe -r "$module" 2>/dev/null
+  done
+
+  # KVM only needs to reload to pick up nested=0 (fails harmlessly if VMs are running).
+  modprobe -r kvm_intel kvm_amd 2>/dev/null
+
+  # --- Verify ---
+  for module in "${usable_modules[@]}"; do
+    grep -q "^$module " /proc/modules && loaded_modules+=("$module")
+    modprobe -n -v "$module" 2>&1 | grep -q '/bin/false' || unblocked_modules+=("$module")
+  done
+
+  for nested_file in /sys/module/kvm_intel/parameters/nested /sys/module/kvm_amd/parameters/nested; do
+    [[ -r $nested_file ]] && [[ $(< "$nested_file") == [1Y] ]] \
+      && add_warning "KERNEL-LPE: KVM nested virtualization still on ($nested_file), Januscape not mitigated until reboot or module reload"
+  done
+
+  ((${#builtin_modules[@]} > 0)) \
+    && add_warning "KERNEL-LPE: built into the running kernel, cannot be blocked: ${builtin_modules[*]}. Boot a patched kernel or add initcall_blacklist=<module>_init to the kernel command line."
+  ((${#loaded_modules[@]} > 0)) \
+    && add_warning "KERNEL-LPE: blocked but still loaded (in use): ${loaded_modules[*]}. Reboot into a patched kernel."
+  ((${#unblocked_modules[@]} > 0)) \
+    && add_warning "KERNEL-LPE: block check FAILED for: ${unblocked_modules[*]}"
+
+  add_warning "KERNEL-LPE: ${#usable_modules[@]} modules blocked until reboot ($conf_file). Install a patched kernel before rebooting. Not covered: GhostLock CVE-2026-43499 and any bug with no module to block."
 }
 
 # Read-only audit of postfix, dovecot, PHP and roundcube. Nothing is changed,
@@ -1434,7 +1549,7 @@ step_reload_systemd() {
 # with each other are overlapped:
 #
 #   Group 1 (nothing running yet, no apt activity):
-#     kill sessions | disable remote tools | binary integrity | sysctl
+#     kill sessions | disable remote tools | binary integrity | sysctl | kernel LPE module blocks
 #     Integrity must finish before any apt step starts, otherwise dpkg --verify
 #     could see a half-installed package and report false tampering.
 #
@@ -1460,13 +1575,14 @@ readonly -a STEPS=(
   "1|Disable unscored remote access tools (parallel)|step_disable_remote_access_tools"
   "8|Binary integrity check (parallel)|step_check_binary_integrity"
   "1|Apply sysctl hardening (parallel)|step_apply_sysctl_hardening"
+  "2|Temporary kernel LPE mitigations (parallel)|step_mitigate_kernel_lpes"
 
   "45|apt update and install fish|step_install_fish"
   "1|Set root shell to fish|step_set_root_shell_to_fish"
   "90|Migrate scored snaps, remove snap|step_remove_snap"
   "5|Check and fix bootloader (parallel)|step_check_bootloader"
   "15|Archive jobs, remove cron/at/timers|step_remove_schedulers"
-  "2|Start background apt upgrade|step_start_background_upgrade"
+  "2|Start background targeted security upgrade|step_start_background_upgrade"
 
   "4|Build nftables firewall|step_build_nftables_firewall"
 
@@ -1484,6 +1600,7 @@ readonly -a OVERLAPPED_STEPS=(
   "step_disable_remote_access_tools:step_kill_other_sessions"
   "step_check_binary_integrity:step_kill_other_sessions"
   "step_apply_sysctl_hardening:step_kill_other_sessions"
+  "step_mitigate_kernel_lpes:step_kill_other_sessions"
 
   "step_check_bootloader:step_install_fish"
 
@@ -1616,7 +1733,7 @@ report_results() {
     cat "$WARNINGS_FILE"
   fi
 
-  echo "--- apt upgrade (background) ---"
+  echo "--- targeted security upgrade (background) ---"
 
   if ((NO_PACKAGE_CHANGES)); then
     echo "Skipped (--no-apt): no package changes were made. See the REPORT-ONLY lines above."
@@ -1628,6 +1745,12 @@ report_results() {
     echo "Finished: $(tr '\n' ' ' < "$UPGRADE_STATUS_FILE" 2>/dev/null)"
   fi
 
+  if [[ -s $WORK_DIR/skipped_security_upgrades ]]; then
+    echo "Security updates NOT applied (not on the threat list), apply manually if needed:"
+    tr '\n' ' ' < "$WORK_DIR/skipped_security_upgrades"
+    echo
+  fi
+
   echo "Logs: $MAIN_LOG  $UPGRADE_LOG (tmpfs, gone on reboot)"
 }
 
@@ -1635,8 +1758,8 @@ if ((NO_PACKAGE_CHANGES)); then
   echo "NOTICE: --no-apt: NO package changes will be made. Repairs that would need apt are"
   echo "only logged (REPORT-ONLY lines in the final report)."
 else
-  echo "NOTICE: this script runs apt-get in several steps (reinstalls, snap removal, a full"
-  echo "background upgrade). Steps may pause while waiting for the dpkg lock. Do not interrupt."
+  echo "NOTICE: this script runs apt-get in several steps (reinstalls, snap removal, a targeted"
+  echo "background security upgrade). Steps may pause while waiting for the dpkg lock. Do not interrupt."
 fi
 echo "If this terminal drops, the script keeps running. Reattach with: tail -f $MAIN_LOG"
 echo
