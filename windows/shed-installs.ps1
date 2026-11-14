@@ -318,13 +318,18 @@ function Test-WingetExecutable {
     param([string]$Path)
     if (-not $Path -or -not (Test-Path $Path)) { return $false }
     try {
-        $p = Start-Process -FilePath $Path -ArgumentList '--version' -NoNewWindow -Wait -PassThru -ErrorAction Stop
-        if ($p.ExitCode -eq 0) { return $true }
+        $out = & $Path --version 2>&1
+        if ($LASTEXITCODE -eq 0 -or ("$out" -match 'v?\d+\.')) { return $true }
     } catch {}
 
     try {
-        $out = & $Path --version 2>&1
-        if ($LASTEXITCODE -eq 0 -or ($out -match 'v\d+\.')) { return $true }
+        $stdout = [System.IO.Path]::GetTempFileName()
+        $stderr = [System.IO.Path]::GetTempFileName()
+        $p = Start-Process -FilePath $Path -ArgumentList '--version' -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr -ErrorAction Stop
+        $exitCode = $p.ExitCode
+        $content = Get-Content $stdout -ErrorAction SilentlyContinue
+        Remove-Item $stdout, $stderr -Force -ErrorAction SilentlyContinue
+        if ($exitCode -eq 0 -or ("$content" -match 'v?\d+\.')) { return $true }
     } catch {}
 
     return $false
@@ -483,7 +488,7 @@ function Install-WingetLegacyBootstrap {
             Invoke-WithSpinner "Registering dependency: $depLeaf" "Registered dependency: $depLeaf" {
                 param($p)
                 try { Add-AppxProvisionedPackage -Online -PackagePath $p -SkipLicense -ErrorAction SilentlyContinue | Out-Null } catch {}
-                try { Add-AppxPackage -Path $p -ErrorAction SilentlyContinue } catch {}
+                try { Add-AppxPackage -Path $p -ErrorAction SilentlyContinue | Out-Null } catch {}
             } @($dep)
         }
 
@@ -564,7 +569,7 @@ try {
                 }
 
                 Invoke-WithSpinner "Running Repair-WinGetPackageManager for Windows Server 2022" "Completed WinGet package manager bootstrap" {
-                    Repair-WinGetPackageManager -AllUsers -Latest -Force -ErrorAction Stop
+                    Repair-WinGetPackageManager -AllUsers -Latest -Force -ErrorAction Stop | Out-Null
                 }
 
                 # Sync installed binaries to C:\Tools\winget for elevated Administrator PATH execution
@@ -580,7 +585,7 @@ try {
                 try {
                     Invoke-WithSpinner "Installing and executing winget-install script" "Completed winget-install script" {
                         Install-Script -Name winget-install -Force -Scope CurrentUser -ErrorAction Stop
-                        & (Get-Command winget-install -CommandType ExternalScript).Source -Force -ErrorAction SilentlyContinue
+                        & (Get-Command winget-install -CommandType ExternalScript).Source -Force -ErrorAction SilentlyContinue 2>&1 | Out-Null
                     }
                     Install-WingetLocal
                     $wingetPath = Get-WingetPath
@@ -608,10 +613,10 @@ try {
         if ($wDir -and $env:Path -notlike "*$wDir*") { $env:Path = "$wDir;$env:Path" }
 
         try {
-            $null = & $wingetPath --version
+            & $wingetPath --version 2>&1 | Out-Null
             # Initialize / update community source index
             Write-Host "[*] Initializing winget package source..." -ForegroundColor Cyan
-            & $wingetPath source update --disable-interactivity 2>&1 | Out-Null
+            & $wingetPath source update --disable-interactivity --accept-source-agreements 2>&1 | Out-Null
         } catch {
             Write-Warning "Could not execute winget version check: $($_.Exception.Message)"
         }
