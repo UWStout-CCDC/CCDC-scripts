@@ -3,7 +3,7 @@ Import-Module -Name Microsoft.PowerShell.LocalAccounts
 Import-Module -Name NetSecurity
 Import-Module -Name BitsTransfer
 
-$Host.UI.RawUI.ForegroundColor = "DarkGreen"
+$Host.UI.RawUI.ForegroundColor = "Blue"
 $Host.UI.RawUI.BackgroundColor = "Black"
 Clear-Host
 
@@ -19,56 +19,6 @@ New-Item -Path "C:\CCDC\tools-Windows" -ItemType Directory
 New-Item -Path "C:\CCDC\DNS" -ItemType Directory
 $ccdcPath = "C:\CCDC"
 $env:Path += ";C:\CCDC"
-
-# ## Clear persistence and document it ##
-
-# # Registry persistence
-# $startupRegistryPaths = @(
-#     "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run",
-#     "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce",
-#     "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run",
-#     "HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce",
-#     "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Run",
-#     "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\RunOnce",
-#     "HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer\Run",
-#     "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer\Run",
-#     "HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Windows\Run",
-#     "HKLM:\Software\Microsoft\Windows NT\CurrentVersion\Windows\Run"
-# )
-
-# foreach ($path in $startupRegistryPaths) {
-#     Write-Host "Clearing startup items from $path"
-#     $items = Get-ItemProperty -Path $path -ErrorAction SilentlyContinue
-#     if ($items) {
-#         $items.PSObject.Properties | ForEach-Object {
-#             if ($_.Name -ne "PSPath" -and $_.Name -ne "PSParentPath" -and $_.Name -ne "PSChildName" -and $_.Name -ne "PSDrive" -and $_.Name -ne "PSProvider") {
-#                 $items >> "C:\CCDC\persistence-registry.txt"
-#                 Remove-ItemProperty -Path $path -Name $_.Name -ErrorAction SilentlyContinue
-#             }
-#         }
-#     }
-# }
-
-# # Start menu persistence
-# $startupFolders = @(
-#     "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup",
-#     "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"
-# )
-
-# foreach ($folder in $startupFolders) {
-#     Write-Host "Clearing startup items from $folder"
-#     Get-ChildItem -Path $folder | ForEach-Object {
-#         $_.FullName >> "C:\CCDC\persistence-startup.txt"
-#         Remove-Item -Path $_.FullName -Force -ErrorAction SilentlyContinue
-#     }
-# }
-
-# # Clear scheduled tasks
-# Write-Host "Clearing scheduled tasks..."
-# Get-ScheduledTask | Where-Object { $_.TaskPath -notlike "\Microsoft\*" } | ForEach-Object {
-#     $_.TaskName >> "C:\CCDC\persistence-schtasks.txt"
-#     Unregister-ScheduledTask -TaskName $_.TaskName -Confirm:$false
-# }
 
 # Prompt for new administrator password and confirmation
 try {
@@ -125,35 +75,13 @@ try {
     Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
 }
 
-# Download the GPO script
-# We will uncomment this section once we find working GPOs
-# $scriptPath = "$toolsPath\GPOs.ps1"
-# Write-Host "Downloading GPO script..."
-# Invoke-WebRequest "https://github.com/$site/raw/refs/heads/master/windows/CCDL-Windows/GPOs.ps1" -OutFile $scriptPath
-# . $scriptPath
 
 # Download the install script
 $path = "$ccdcPath\Installs.ps1"
 Write-Host "Downloading install script..."
 Invoke-WebRequest "https://github.com/$site/raw/refs/heads/main/Installs.ps1" -OutFile $path
 
-# Set the installer script run on start
-$scriptPath = "$ccdcPath\Installs.ps1"
-$entryName = "MyStartupScript"
-Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name $entryName -Value "powershell.exe -File `"$scriptPath`""
 
-# Download the update script
-$path = "$ccdcPath\Win-Update.ps1"
-Write-Host "Downloading update script..."
-Invoke-WebRequest "https://github.com/$site/raw/refs/heads/main/update-windows.ps1" -OutFile $path
-
-# Check if PSWindowsUpdate is installed, if not, install it
-if (-not (Get-Module -ListAvailable -Name PSWindowsUpdate)) {
-    Write-Host "PSWindowsUpdate module not found. Installing..."
-    Install-Module -Name PSWindowsUpdate -Force -Scope CurrentUser
-}
-
-Import-Module -Name PSWindowsUpdate
 
 # Initialize the global jobs array
 $global:jobs = @()
@@ -206,70 +134,11 @@ Start-LoggedJob -JobName "Enable Windows Defender" -ScriptBlock {
     }
 }
 
-# Enable Windows Firewall with basic rules
-Start-LoggedJob -JobName "Configure Windows Firewall" -ScriptBlock {
-    try {
-        # Export existing Firewall rules using netsh
-        netsh advfirewall export "$ccdcPath\firewall.old"
-
-        # Enable Windows Firewall profiles
-        Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled True
-
-        # Block by default
-        Set-NetFirewallProfile -Profile Domain,Public,Private -DefaultInboundAction Block -DefaultOutboundAction Block
-        Set-NetFirewallProfile -Profile Domain,Public,Private -NotifyOnListen True
-
-        # Enable Logging
-        Set-NetFirewallProfile -Profile Domain,Public,Private -LogFileName "$ccdcPath\pfirewall.log" -LogMaxSizeKilobytes 8192 -LogAllowed True -LogBlocked True
-
-        # Disable existing on all profiles rules
-        Get-NetFirewallRule | Set-NetFirewallRule -Profile Domain -Enabled False
-        Get-NetFirewallRule | Set-NetFirewallRule -Profile Private -Enabled False
-        Get-NetFirewallRule | Set-NetFirewallRule -Profile Public -Enabled False
-
-        # Firewall inbound rules
-        New-NetFirewallRule -DisplayName "NTP in" -Direction Inbound -Action Allow -Enabled True -Profile Any -LocalPort 123 -Protocol UDP
-        New-NetFirewallRule -DisplayName "Allow Pings in" -Direction Inbound -Action Allow -Enabled True -Protocol ICMPv4 -IcmpType 8
-        New-NetFirewallRule -DisplayName "Splunk IN" -Direction Outbound -Action Allow -Enabled True -Profile Any -RemotePort 8000,8089,9997 -Protocol TCP
-        New-NetFirewallRule -DisplayName "DNS IN (UDP)" -Direction Inbound -Action Allow -Enabled True -Profile Any -LocalPort 53 -Protocol UDP
-        New-NetFirewallRule -DisplayName "DNS IN (TCP)" -Direction Inbound -Action Allow -Enabled True -Profile Any -LocalPort 53 -Protocol TCP
-        New-NetFirewallRule -DisplayName "LDAP TCP IN" -Direction Inbound -Action Allow -Program "C:\Windows\System32\lsass.exe" -Enabled True -Profile Any -LocalPort 389 -Protocol TCP
-        New-NetFirewallRule -DisplayName "LDAP UDP IN" -Direction Inbound -Action Allow -Program "C:\Windows\System32\lsass.exe" -Enabled True -Profile Any -LocalPort 389 -Protocol UDP
-        New-NetFirewallRule -DisplayName "LDAP Global Catalog IN" -Direction Inbound -Action Allow -Program "C:\Windows\System32\lsass.exe" -Enabled True -Profile Any -LocalPort 3268 -Protocol TCP
-        New-NetFirewallRule -DisplayName "NETBIOS Resolution IN" -Direction Inbound -Action Allow -Program "System" -Enabled True -Profile Any -LocalPort 138 -Protocol UDP
-        New-NetFirewallRule -DisplayName "Secure LDAP IN" -Direction Inbound -Action Allow -Program "C:\Windows\System32\lsass.exe" -Enabled True -Profile Any -LocalPort 636 -Protocol TCP
-        New-NetFirewallRule -DisplayName "Secure LDAP Global Catalog IN" -Direction Inbound -Action Allow -Program "C:\Windows\System32\lsass.exe" -Enabled True -Profile Any -LocalPort 3269 -Protocol TCP
-        New-NetFirewallRule -DisplayName "RPC IN" -Direction Inbound -Action Allow -Program "C:\Windows\System32\lsass.exe" -Enabled True -Profile Any -LocalPort RPC -Protocol TCP
-        #New-NetFirewallRule -DisplayName "RPC-EPMAP IN" -Direction Inbound -Action Allow -Program "C:\Windows\System32\svchost.exe" -Enabled True -Profile Any -LocalPort RPC-EPMap -Protocol TCP
-        New-NetFirewallRule -DisplayName "DHCP UDP IN" -Direction Inbound -Action Allow -Program "C:\Windows\System32\svchost.exe" -Enabled True -Profile Any -LocalPort 67,68 -Protocol UDP
-        New-NetFirewallRule -DisplayName "RPC for DNS IN" -Direction Inbound -Action Allow -Program "C:\Windows\System32\dns.exe" -Enabled True -Profile Any -LocalPort RPC -Protocol TCP
-
-        # Outbound rules
-        New-NetFirewallRule -DisplayName "Allow Pings out" -Direction Outbound -Action Allow -Enabled True -Protocol ICMPv4 -IcmpType 8
-        New-NetFirewallRule -DisplayName "Splunk OUT" -Direction Outbound -Action Allow -Enabled True -Profile Any -RemotePort 8000,8089,9997 -Protocol TCP
-        New-NetFirewallRule -DisplayName "Web OUT" -Direction Outbound -Action Allow -Enabled True -Profile Any -RemotePort 80,443 -Protocol TCP
-        New-NetFirewallRule -DisplayName "NTP OUT" -Direction Outbound -Action Allow -Enabled True -Profile Any -RemotePort 123 -Protocol UDP
-        New-NetFirewallRule -DisplayName "Active Directory TCP OUT" -Direction Outbound -Action Allow -Program "C:\Windows\System32\lsass.exe" -Enabled True -Profile Any -Protocol TCP
-        New-NetFirewallRule -DisplayName "Active Directory UDP OUT" -Direction Outbound -Action Allow -Program "C:\Windows\System32\lsass.exe" -Enabled True -Profile Any -Protocol UDP
-        New-NetFirewallRule -DisplayName "DNS TCP OUT" -Direction Outbound -Action Allow -Program "C:\Windows\System32\dns.exe" -Enabled True -Profile Any -Protocol TCP
-        New-NetFirewallRule -DisplayName "DNS UDP OUT" -Direction Outbound -Action Allow -Program "C:\Windows\System32\dns.exe" -Enabled True -Profile Any -Protocol UDP
-        New-NetFirewallRule -DisplayName "DNS OUT" -Direction Outbound -Action Allow -Enabled True -Profile Any -RemotePort 53 -Protocol UDP
-        New-NetFirewallRule -DisplayName "DHCP" -Direction Outbound -Action Allow -Program "C:\Windows\System32\svchost.exe" -Enabled True -Profile Any -LocalPort 68 -RemotePort 67 -Protocol UDP
-        
-        Write-Host "--------------------------------------------------------------------------------"
-        Write-Host "Windows Firewall configured with basic rules."
-        Write-Host "--------------------------------------------------------------------------------"
-    } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        Write-Host "An error occurred while configuring Windows Firewall: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-    }
-}
 
 # Configure Remote Desktop settings (disable if not needed)
 Start-LoggedJob -JobName "Disable Remote Desktop" -ScriptBlock {
     try {
-        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 1
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Ser\ver' -Name "fDenyTSConnections" -Value 1
         Write-Host "--------------------------------------------------------------------------------"
         Write-Host "Remote Desktop Protocol disabled."
         Write-Host "--------------------------------------------------------------------------------"
@@ -297,31 +166,37 @@ Start-LoggedJob -JobName "Set Account Lockout Policies" -ScriptBlock {
 #Enable audit policies for key events like login, account management, file system changes, and registry changes
 Start-LoggedJob -JobName "Enable Audit Policies" -ScriptBlock {
     try {
-        AuditPol.exe /set /subcategory:"Logon" /success:enable /failure:enable
-        AuditPol.exe /set /subcategory:"User Account Management" /success:enable /failure:enable
-        AuditPol.exe /set /subcategory:"File System" /success:enable /failure:enable
-        AuditPol.exe /set /subcategory:"Registry" /success:enable /failure:enable
+        AuditPol.exe /set /category:"System" /subcategory:"Security State Change" /success:enable /failure:enable
+        AuditPol.exe /set /category:"System" /subcategory:"System Integrity" /success:enable /failure:enable
+        AuditPol.exe /set /category:"System" /subcategory:"Other System Events" /success:enable /failure:enable
+        AuditPol.exe /set /category:"Logon/Logoff" /subcategory:"Logon" /success:enable /failure:enable
+        AuditPol.exe /set /category:"Logon/Logoff" /subcategory:"Account Lockout" /success:enable /failure:enable
+        AuditPol.exe /set /category:"Logon/Logoff" /subcategory:"Special Logon" /success:enable /failure:enable
+        AuditPol.exe /set /category:"Logon/Logoff" /subcategory:"Other Logon/Logoff Events" /success:enable /failure:enable
+        AuditPol.exe /set /category:"Logon/Logoff" /subcategory:"Group Membership" /success:enable /failure:enable
+        AuditPol.exe /set /category:"Logon/Logoff" /subcategory:"Access Rights" /success:enable /failure:enable
+        AuditPol.exe /set /category:"Object Access" /subcategory:"File System" /success:enable /failure:enable
+        AuditPol.exe /set /category:"Object Access" /subcategory:"Registry" /success:enable /failure:enable
+        AuditPol.exe /set /category:"Object Access" /subcategory:"SAM" /success:enable /failure:enable
+        AuditPol.exe /set /category:"Object Access" /subcategory:"File Share" /success:enable /failure:enable
+        AuditPol.exe /set /category:"Detailed Tracking" /subcategory:"Process Creation" /success:enable /failure:enable
+        AuditPol.exe /set /category:"Detailed Tracking" /subcategory:"Process Termination" /success:enable /failure:enable
+        AuditPol.exe /set /category:"Policy Change" /subcategory:"Audit Policy Change" /success:enable /failure:enable
+        AuditPol.exe /set /category:"Policy Change" /subcategory:"Authentication Policy Change" /success:enable /failure:enable
+        AuditPol.exe /set /category:"Policy Change" /subcategory:"Authorization Policy Change" /success:enable /failure:enable
+        AuditPol.exe /set /category:"Policy Change" /subcategory:"Filtering Platform Policy Change" /success:enable /failure:enable
+        AuditPol.exe /set /category:"Account Management" /subcategory:"User Account Management" /success:enable /failure:enable
+        AuditPol.exe /set /category:"Account Management" /subcategory:"Other Account Management Events" /success:enable /failure:enable
+        AuditPol.exe /set /category:"DS Access" /subcategory:"Directory Service Access" /success:enable /failure:enable
+        AuditPol.exe /set /category:"DS Access" /subcategory:"Directory Service Changes" /success:enable /failure:enable
+        AuditPol.exe /set /category:"Account Logon" /subcategory:"Credential Validation" /success:enable /failure:enable
+        AuditPol.exe /set /category:"Account Logon" /subcategory:"Kerberos Authentication" /success:enable /failure:enable
         Write-Host "--------------------------------------------------------------------------------"
         Write-Host "Audit policies for login, account management, file system changes, and registry changes enabled."
         Write-Host "--------------------------------------------------------------------------------"
     } catch {
         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
         Write-Host "An error occurred while enabling audit policies: $_"
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-    }
-}
-Start-LoggedJob -JobName "Remove Unnecessary Network Shares" -ScriptBlock {
-    try {
-        Get-SmbShare | Where-Object { $_.Name -ne "ADMIN$" -and $_.Name -ne "C$" -and $_.Name -ne "IPC$" -and $_.Name -ne "NETLOGON" -and $_.Name -ne "SYSVOL" } | ForEach-Object {
-            Write-Host "Removing share: $($_.Name)"
-            Remove-SmbShare -Name $_.Name -Force
-        }
-        Write-Host "--------------------------------------------------------------------------------"
-        Write-Host "Unnecessary network shares removed."
-        Write-Host "--------------------------------------------------------------------------------"
-    } catch {
-        Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        Write-Host "An error occurred while removing unnecessary network shares: $_"
         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
     }
 }
@@ -342,43 +217,6 @@ Start-LoggedJob -JobName "Remove Unnecessary Network Shares" -ScriptBlock {
 #     }
 # }
 
-# # Lockdown the CCDC folder
-# Start-LoggedJob -JobName "Lockdown CCDC Folder" -ScriptBlock {
-#     try {
-#         $ccdcPath = "C:\CCDC"
-#         $acl = Get-Acl $ccdcPath
-#         $acl.SetAccessRuleProtection($true, $false)
-        
-#         # Remove existing access rules
-#         $acl.Access | ForEach-Object { $acl.RemoveAccessRule($_) }
-        
-#         # Add full control for necessary system accounts
-#         $adminUser = [System.Security.Principal.NTAccount]"Administrator"
-#         $systemUser = [System.Security.Principal.NTAccount]"SYSTEM"
-#         $trustedInstaller = [System.Security.Principal.NTAccount]"NT SERVICE\TrustedInstaller"
-#         $currentUser = [System.Security.Principal.NTAccount]::new([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)
-        
-#         $adminRule = New-Object System.Security.AccessControl.FileSystemAccessRule($adminUser, "FullControl", "Allow")
-#         $systemRule = New-Object System.Security.AccessControl.FileSystemAccessRule($systemUser, "FullControl", "Allow")
-#         $trustedInstallerRule = New-Object System.Security.AccessControl.FileSystemAccessRule($trustedInstaller, "FullControl", "Allow")
-#         $currentUserRule = New-Object System.Security.AccessControl.FileSystemAccessRule($currentUser, "FullControl", "Allow")
-        
-#         $acl.AddAccessRule($adminRule)
-#         $acl.AddAccessRule($systemRule)
-#         $acl.AddAccessRule($trustedInstallerRule)
-#         $acl.AddAccessRule($currentUserRule)
-        
-#         # Apply the modified ACL to the CCDC folder
-#         Set-Acl -Path $ccdcPath -AclObject $acl
-#         Write-Host "--------------------------------------------------------------------------------"
-#         Write-Host "CCDC folder lockdown complete."
-#         Write-Host "--------------------------------------------------------------------------------"
-#     } catch {
-#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-#         Write-Host "An error occurred while locking down the CCDC folder: $_"
-#         Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-#     }
-# }
 
 # Block credential dumping
 # Start-LoggedJob -JobName "Block Credential Dumping" -ScriptBlock {
@@ -592,7 +430,7 @@ Start-LoggedJob -JobName "Patch DCSync Vulnerability" -ScriptBlock {
 }
 
 ## Make sure the only SMB allowed is SMBv2 (we hate SMBv1)
-Start-LoggedJob -JobName "Upgrade SMB" -ScriptBlock {
+Start-LoggedJob -JobName "Force the Good SMB" -ScriptBlock {
     try {
         Set-SmbServerConfiguration -EnableSMB1Protocol $false -Force
         Set-SmbServerConfiguration -EnableSMB2Protocol $true -Force
