@@ -349,35 +349,39 @@ set rulebase security rules DENYANYANY action deny from any to any source any de
 commands += f"""
 # ---------------------------------------------------------------------
 # Zone Protection Profile ("Slime Zone") - L3/L4 Flood & Anomaly Shield
+# Applied strictly to External Zone to protect perimeter without breaking internal AD/DNS.
 # ---------------------------------------------------------------------
 set network profiles zone-protection-profile "Slime Zone" flood tcp-syn enable yes
-set network profiles zone-protection-profile "Slime Zone" flood tcp-syn action red alarm-rate 100 activate-rate 100 maximal-rate 400
+set network profiles zone-protection-profile "Slime Zone" flood tcp-syn action red alarm-rate 1000 activate-rate 2000 maximal-rate 4000
 
 set network profiles zone-protection-profile "Slime Zone" flood icmp enable yes
-set network profiles zone-protection-profile "Slime Zone" flood icmp red alarm-rate 100 activate-rate 100 maximal-rate 400
+set network profiles zone-protection-profile "Slime Zone" flood icmp red alarm-rate 500 activate-rate 1000 maximal-rate 2000
 
+# UDP Flood tuned with generous thresholds so DNS/NTP are never prematurely RED-dropped
 set network profiles zone-protection-profile "Slime Zone" flood udp enable yes
-set network profiles zone-protection-profile "Slime Zone" flood udp red alarm-rate 100 activate-rate 100 maximal-rate 400
+set network profiles zone-protection-profile "Slime Zone" flood udp red alarm-rate 2000 activate-rate 4000 maximal-rate 8000
 
 set network profiles zone-protection-profile "Slime Zone" flood other-ip enable yes
-set network profiles zone-protection-profile "Slime Zone" flood other-ip red alarm-rate 100 activate-rate 100 maximal-rate 400
+set network profiles zone-protection-profile "Slime Zone" flood other-ip red alarm-rate 500 activate-rate 1000 maximal-rate 2000
 
-# Reconnaissance / Port Scan Protection (Automated IP block on aggressive scanners)
+# Reconnaissance / Port Scan Protection
+# TCP scans and Host sweeps trigger automated IP blocks; UDP scan uses 'alert' to prevent DNS blackholing
 set network profiles zone-protection-profile "Slime Zone" scan tcp-port-scan action block-ip
 set network profiles zone-protection-profile "Slime Zone" scan tcp-port-scan interval 5
 set network profiles zone-protection-profile "Slime Zone" scan tcp-port-scan threshold 20
 
-set network profiles zone-protection-profile "Slime Zone" scan udp-port-scan action block-ip
+set network profiles zone-protection-profile "Slime Zone" scan udp-port-scan action alert
 set network profiles zone-protection-profile "Slime Zone" scan udp-port-scan interval 5
-set network profiles zone-protection-profile "Slime Zone" scan udp-port-scan threshold 20
+set network profiles zone-protection-profile "Slime Zone" scan udp-port-scan threshold 100
 
 set network profiles zone-protection-profile "Slime Zone" scan host-sweep action block-ip
 set network profiles zone-protection-profile "Slime Zone" scan host-sweep interval 5
 set network profiles zone-protection-profile "Slime Zone" scan host-sweep threshold 20
 
 # Packet Discard Checks (Anti-Spoofing & Protocol Anomalies)
+# Note: discard-ip-frag is disabled to allow large AD DNS responses (>512 bytes) and Kerberos tickets
 set network profiles zone-protection-profile "Slime Zone" discard-ip-spoof yes
-set network profiles zone-protection-profile "Slime Zone" discard-ip-frag yes
+set network profiles zone-protection-profile "Slime Zone" discard-ip-frag no
 set network profiles zone-protection-profile "Slime Zone" strict-ip-check yes
 set network profiles zone-protection-profile "Slime Zone" discard-tcp-split-handshake yes
 set network profiles zone-protection-profile "Slime Zone" discard-tcp-syn-with-data yes
@@ -387,9 +391,8 @@ set network profiles zone-protection-profile "Slime Zone" discard-icmp-ping-zero
 set network profiles zone-protection-profile "Slime Zone" discard-icmp-frag yes
 set network profiles zone-protection-profile "Slime Zone" discard-icmp-large-packet yes
 
-# Bind Slime Zone profile to External and Internal Zones
+# Bind Slime Zone profile strictly to External Zone (perimeter defense only)
 set zone {ext_zone} network zone-protection-profile "Slime Zone"
-set zone {int_zone} network zone-protection-profile "Slime Zone"
 """
 
 # Optional DoS Protection Rules
