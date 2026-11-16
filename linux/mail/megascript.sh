@@ -3,7 +3,7 @@
 # megascript.sh - startup hardening for the 2026 mail service box (Ubuntu)
 #
 # Scored services (never removed): sshd, postfix, dovecot, roundcube, kerberos client.
-# Authentication is AD via LDAP or Kerberos. Those services are assumed to be
+# Authentication is AD via Kerberos. Those services are assumed to be
 # already configured and working, so this script only hardens, it does not configure.
 #
 # Usage: sudo ./megascript.sh [--no-apt]
@@ -86,7 +86,7 @@ SCRIPT_PID=$$
 # Private working directory on tmpfs (cleared on reboot). Holds logs and state.
 WORK_DIR=/run/megascript
 rm -rf "$WORK_DIR"
-mkdir -p "$WORK_DIR"
+mkdir -p "$WORK_DIR/verify-cache"
 chmod 700 "$WORK_DIR"
 export WORK_DIR   # the background upgrade script reads this
 
@@ -125,6 +125,34 @@ add_warning() {
   printf '%s\n' "$*" >> "$WARNINGS_FILE"
 }
 
+# warn_lines PREFIX
+#   Queue one warning per stdin line, as "PREFIX<line>".
+warn_lines() {
+  local line
+  while read -r line; do add_warning "$1$line"; done
+}
+
+# apt_capped SECONDS APT-GET-ARGS...
+#   apt-get with hard caps: lock wait 90 s, no retries, 15 s network timeouts, no
+#   needrestart hook (it can restart services, ssh included), stdin closed, SIGKILL
+#   after SECONDS.
+apt_capped() {
+  local seconds=$1; shift
+  NEEDRESTART_SUSPEND=1 timeout -k 10 "$seconds" apt-get \
+      -o DPkg::Lock::Timeout=90 -o Acquire::Retries=0 \
+      -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 "$@" < /dev/null
+}
+
+# shell_package_changes
+#   Files of bash/base-files that differ from dpkg, including the shell profile
+#   config files that verify_modified_files skips on purpose.
+shell_package_changes() {
+  {
+    verify_modified_files bash base-files
+    dpkg --verify bash base-files 2>/dev/null | grep -E ' c /etc/(profile|bash\.bashrc|skel/)'
+  } | sort -u
+}
+
 # report_only_note MESSAGE
 #   --no-apt mode: log what would have been installed, reinstalled or removed and
 #   queue it for the final report.
@@ -138,22 +166,43 @@ report_only_note() {
 #   merged-/usr prefix stripped (/usr/lib/x and /lib/x both become /lib/x). This
 #   avoids dpkg -S false negatives on usr-merged systems and is much faster.
 build_owned_path_index() {
-  sed 's#^/usr/#/#' /var/lib/dpkg/info/*.list 2>/dev/null \
-    | sort -u > "$OWNED_PATHS_INDEX.tmp"
+  sed 's#^/usr/#/#' /var/lib/dpkg/info/*.list 2>/dev/null > "$OWNED_PATHS_INDEX.tmp"
 
   # Atomic replace: steps running in parallel never see a half-written index.
   mv -f "$OWNED_PATHS_INDEX.tmp" "$OWNED_PATHS_INDEX"
+
+  # New generation id: every process notices the rebuild and reloads its in-memory copy.
+  echo "$BASHPID-$EPOCHSECONDS-$RANDOM" > "$OWNED_PATHS_INDEX.gen.tmp"
+  mv -f "$OWNED_PATHS_INDEX.gen.tmp" "$OWNED_PATHS_INDEX.gen"
 }
+
+declare -A OWNED_PATHS=()   # in-memory copy of the index (per process, loaded lazily)
+OWNED_LOADED_GEN=""
+OWNED_GREP_CALLS=0
 
 # is_package_owned PATH
 #   True if an installed package ships PATH (symlinks resolved, /usr merged).
+#   The first 150 calls in a process grep the index file; after that the index is
+#   loaded into an associative array (about 0.8 s) so each lookup is instant.
 is_package_owned() {
-  local resolved_path
+  local resolved_path current_gen
   resolved_path=$(readlink -f "$1")
 
   [[ $resolved_path == /usr/* ]] && resolved_path=${resolved_path#/usr}
 
-  grep -Fxq -- "$resolved_path" "$OWNED_PATHS_INDEX"
+  read -r current_gen < "$OWNED_PATHS_INDEX.gen" 2>/dev/null
+  if [[ $current_gen != "$OWNED_LOADED_GEN" ]]; then
+    if ((++OWNED_GREP_CALLS <= 150)); then
+      grep -Fxq -- "$resolved_path" "$OWNED_PATHS_INDEX"
+      return
+    fi
+    OWNED_PATHS=()
+    local owned_path
+    while IFS= read -r owned_path; do OWNED_PATHS["$owned_path"]=1; done < "$OWNED_PATHS_INDEX"
+    OWNED_LOADED_GEN=$current_gen
+  fi
+
+  [[ -n ${OWNED_PATHS["$resolved_path"]:-} ]]
 }
 
 # installed_packages_matching REGEX
@@ -184,7 +233,29 @@ verify_modified_files() {
 package_failed_verification() {
   verify_modified_files "$1" | grep -q .
 }
-export -f verify_modified_files package_failed_verification   # needed by the parallel workers below
+
+# package_failed_verification_cached PACKAGE
+#   Same answer, but each package is verified once per run (pre-flight and the
+#   integrity step overlap on sudo, login, PAM, openssh ...). Reinstalling a
+#   package must call forget_verification so it is checked again.
+package_failed_verification_cached() {
+  local cache_file="$WORK_DIR/verify-cache/${1//\//_}" state
+
+  if [[ -f $cache_file ]]; then
+    read -r state < "$cache_file"
+  else
+    package_failed_verification "$1" && state=1 || state=0
+    echo "$state" > "$cache_file"
+  fi
+  ((state))
+}
+
+# forget_verification PACKAGE...
+forget_verification() {
+  local package
+  for package in "$@"; do rm -f "$WORK_DIR/verify-cache/${package//\//_}"; done
+}
+export -f verify_modified_files package_failed_verification package_failed_verification_cached   # needed by the parallel workers below
 
 # find_tampered_packages PACKAGE...
 #   Verify packages in parallel (one worker per CPU, read-only) and print the
@@ -195,7 +266,7 @@ find_tampered_packages() {
   # shellcheck disable=SC2016  # the single-quoted script is meant for the child shell
   printf '%s\0' "$@" \
     | xargs -0 -n1 -P "$(nproc)" \
-        bash -c 'package_failed_verification "$1" && printf "%s\n" "$1"; exit 0' _ \
+        bash -c 'package_failed_verification_cached "$1" && printf "%s\n" "$1"; exit 0' _ \
     | sort
 }
 
@@ -321,8 +392,8 @@ NETSYSCTL_EOF
   chattr +i /etc/resolv.conf 2>/dev/null
   sed -i -E 's/^hosts:.*/hosts:          files dns/' /etc/nsswitch.conf
 
-  # --- /etc/hosts: pin the AD server. Names are read from the krb5, sssd and
-  # dovecot configs (KDC, realm, ad_server, ldap_uri ...). Any other hosts line that
+  # --- /etc/hosts: pin the AD server. Names are read from the krb5 and sssd
+  # configs (KDC, realm, ad_server ...). Any other hosts line that
   # maps one of those names elsewhere (poisoning) is removed and reported. ---
   local ad_ip=172.20.240.100
   local ad_extra_names="ccdc.net"   # DC FQDN, always pinned (config-derived names are added too)
@@ -332,9 +403,9 @@ NETSYSCTL_EOF
   mapfile -t ad_names < <(
     {
       printf '%s\n' $ad_extra_names $realm
-      grep -hEi '^[[:space:]]*(kdc|admin_server|master_kdc|default_domain|ad_domain|ad_server|ad_backup_server|krb5_server|ldap_uri|uris|hosts)[[:space:]]*=' \
+      grep -hEi '^[[:space:]]*(kdc|admin_server|master_kdc|default_domain|ad_domain|ad_server|ad_backup_server|krb5_server)[[:space:]]*=' \
           /etc/krb5.conf /etc/krb5.conf.d/* /etc/sssd/sssd.conf /etc/sssd/conf.d/* \
-          /etc/dovecot/dovecot-ldap.conf.ext /etc/dovecot/conf.d/*ldap* 2>/dev/null \
+          2>/dev/null \
         | cut -d= -f2- | tr ', ' '\n\n' | sed -E 's#^[A-Za-z]+://##; s#[:/].*$##'
     } | tr 'A-Z' 'a-z' \
       | grep -E '^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9-]+)+$' | grep -Ev '^[0-9.]+$' | sort -u
@@ -342,7 +413,7 @@ NETSYSCTL_EOF
 
   chattr -i /etc/hosts 2>/dev/null
   if ((${#ad_names[@]} == 0)); then
-    add_warning "NETWORK: no AD hostnames found in krb5/sssd/dovecot configs, /etc/hosts NOT pinned. Set ad_extra_names in step_fix_network."
+    add_warning "NETWORK: no AD hostnames found in krb5/sssd configs, /etc/hosts NOT pinned. Set ad_extra_names in step_fix_network."
   else
     sed -i '/# megascript AD begin/,/# megascript AD end/d' /etc/hosts
     for ad_name in "${ad_names[@]}"; do
@@ -358,9 +429,7 @@ NETSYSCTL_EOF
       || add_warning "NETWORK: hosts lookup of ${ad_names[0]} did not return $ad_ip"
   fi
 
-  grep -Ev '^\s*(#|$)|^(127\.|::1|ff0|fe00)' /etc/hosts 2>/dev/null | grep -v "^$ad_ip " | while read -r route_line; do
-    add_warning "NETWORK: /etc/hosts entry to verify: $route_line"
-  done
+  grep -Ev '^\s*(#|$)|^(127\.|::1|ff0|fe00)' /etc/hosts 2>/dev/null | grep -v "^$ad_ip " | warn_lines "NETWORK: /etc/hosts entry to verify: "
   chattr +i /etc/hosts 2>/dev/null
   timeout 5 getent hosts archive.ubuntu.com > /dev/null \
     || add_warning "NETWORK: DNS test via $want_dns failed (upstream blocked?)"
@@ -402,14 +471,10 @@ NETPLAN_EOF
   done
 
   grep -rIiH '^[^#]*proxy' /etc/apt/apt.conf /etc/apt/apt.conf.d /etc/environment \
-       /etc/profile.d /etc/wgetrc /etc/curlrc 2>/dev/null | while read -r route_line; do
-    add_warning "NETWORK: proxy setting: $route_line"
-  done
+       /etc/profile.d /etc/wgetrc /etc/curlrc 2>/dev/null | warn_lines "NETWORK: proxy setting: "
 
   grep -rhE --exclude=megascript-ubuntu.sources '^(deb |URIs:)' /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null \
-    | grep -Ev 'ubuntu\.com' | while read -r route_line; do
-        add_warning "NETWORK: non-Ubuntu apt source: $route_line"
-      done
+    | grep -Ev 'ubuntu\.com' | warn_lines "NETWORK: non-Ubuntu apt source: "
 
   return 0
 }
@@ -432,7 +497,8 @@ quiesce_background_apt_jobs
 MIRROR_SOURCES_FILE=/etc/apt/sources.list.d/megascript-ubuntu.sources
 APT_QUARANTINE_DIR=/root/megascript-apt-quarantine
 UBUNTU_KEYRING=/usr/share/keyrings/ubuntu-archive-keyring.gpg
-readonly MIRROR_SOURCES_FILE APT_QUARANTINE_DIR UBUNTU_KEYRING
+APT_LISTS_FRESH_FILE=$WORK_DIR/apt_lists_fresh   # exists once a signed update succeeded this run
+readonly MIRROR_SOURCES_FILE APT_QUARANTINE_DIR UBUNTU_KEYRING APT_LISTS_FRESH_FILE
 
 MIRROR_CANDIDATES=(
   http://archive.ubuntu.com/ubuntu
@@ -484,10 +550,7 @@ SOURCES_EOF
 apt_update_is_clean() {
   local log="$WORK_DIR/apt-update.log"
 
-  NEEDRESTART_SUSPEND=1 timeout -k 5 90 apt-get update \
-      -o DPkg::Lock::Timeout=90 -o APT::Update::Error-Mode=any \
-      -o Acquire::Retries=0 -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10 \
-      < /dev/null > "$log" 2>&1 || return 1
+  apt_capped 90 update -o APT::Update::Error-Mode=any > "$log" 2>&1 || return 1
   ! grep -Eq '^(Err:|E: )|NO_PUBKEY|is not signed|Failed to fetch' "$log"
 }
 
@@ -500,7 +563,7 @@ ensure_apt_mirrors() {
   # Report-only mode must not touch apt state (the lists feed the simulated upgrade).
   if ((NO_PACKAGE_CHANGES)); then
     grep -rIlE 'trusted=yes|AllowInsecure|AllowUnauthenticated|Verify-(Peer|Host)[^;]*false' /etc/apt 2>/dev/null \
-      | while read -r file; do add_warning "APT: insecure apt setting in $file (report-only, not changed)"; done
+      | warn_lines "APT: insecure apt setting in (report-only, not changed): "
     return 0
   fi
 
@@ -566,6 +629,7 @@ APT_SAFE_EOF
 
     write_mirror_sources "$codename" "$mirror" "$security_mirror"
     if apt_update_is_clean; then
+      : > "$APT_LISTS_FRESH_FILE"
       add_warning "APT: using mirror $mirror (security: $security_mirror), signed lists verified"
       return 0
     fi
@@ -606,38 +670,23 @@ reinstall_shell_packages() {
 
   # Refresh package lists first: --reinstall fetches the exact installed version,
   # which 404s if the lists are stale.
-  echo "[reset] $(date +%T) running apt-get update"
-  NEEDRESTART_SUSPEND=1 timeout -k 10 120 apt-get update \
-      -o DPkg::Lock::Timeout=90 \
-      -o Acquire::Retries=0 \
-      -o Acquire::http::Timeout=15 \
-      -o Acquire::https::Timeout=15 \
-      < /dev/null \
-    || add_warning "apt-get update failed in profile reset step (lock held or mirror unreachable; see $MAIN_LOG)"
+  if [[ -f $APT_LISTS_FRESH_FILE ]]; then
+    echo "[reset] $(date +%T) package lists already fresh from the mirror check, skipping apt-get update"
+  else
+    echo "[reset] $(date +%T) running apt-get update"
+    apt_capped 120 update \
+      || add_warning "apt-get update failed in profile reset step (lock held or mirror unreachable; see $MAIN_LOG)"
+  fi
 
   echo "[reset] $(date +%T) reinstalling bash and base-files with apt-get"
 
-  # Hard caps so this can never hang the run: 90 s waiting for the lock, 150 s total
-  # (then SIGKILL). No pty and no needrestart hook (it scans and can restart
-  # services, including ssh, mid-run), stdin closed so nothing can wait for input.
-  NEEDRESTART_SUSPEND=1 timeout -k 10 150 apt-get -y --reinstall \
-      -o Dpkg::Options::=--force-confnew \
-      -o DPkg::Lock::Timeout=90 \
-      -o Dpkg::Use-Pty=0 \
-      -o Acquire::Retries=0 \
-      -o Acquire::http::Timeout=15 \
-      -o Acquire::https::Timeout=15 \
-      install bash base-files < /dev/null \
+  apt_capped 150 -y --reinstall -o Dpkg::Options::=--force-confnew -o Dpkg::Use-Pty=0 \
+      install bash base-files \
     || add_warning "could not reinstall bash/base-files defaults (lock held, stale package lists or mirror unreachable; see $MAIN_LOG)"
 
   echo "[reset] $(date +%T) apt-get finished"
 
-  modified_files=$(
-    {
-      verify_modified_files bash base-files
-      dpkg --verify bash base-files 2>/dev/null | grep -E ' c /etc/(profile|bash\.bashrc|skel/)'
-    } | sort -u
-  )
+  modified_files=$(shell_package_changes)
   [[ -n $modified_files ]] \
     && add_warning "bash/base-files STILL modified after reinstall: $(head -5 <<< "$modified_files" | tr '\n' ';')"
 }
@@ -652,12 +701,7 @@ step_reset_shell_profiles() {
   # skips config files, so the ones that matter here (/etc/profile, bash.bashrc and
   # the /etc/skel dotfiles) are checked explicitly as well.
   echo "[reset] $(date +%T) scanning bash and base-files with dpkg --verify"
-  modified_files=$(
-    {
-      verify_modified_files bash base-files
-      dpkg --verify bash base-files 2>/dev/null | grep -E ' c /etc/(profile|bash\.bashrc|skel/)'
-    } | sort -u
-  )
+  modified_files=$(shell_package_changes)
 
   if [[ -z $modified_files ]]; then
     echo "[reset] $(date +%T) scan clean, skipping apt-get"
@@ -689,7 +733,7 @@ step_reset_shell_profiles() {
   sed -i '/PROMPT_COMMAND/d' /etc/profile.d/*.sh 2>/dev/null
 
   for account in root sysadmin; do
-    # Local accounts only: a plain getent would query sssd/LDAP and can stall.
+    # Local accounts only: a plain getent would query sssd and can stall.
     home_dir=$(getent -s files passwd "$account" | cut -d: -f6)
     [[ -d $home_dir ]] || continue
 
@@ -803,6 +847,7 @@ preflight_check_pam_and_login_binaries() {
       add_preflight_finding "tampered auth packages, reinstalling: ${tampered_packages[*]}"
       echo "  NOTICE: running apt-get --reinstall on tampered packages (may take a while, may wait for the dpkg lock)"
       apt-get "${APT_OPTIONS[@]}" --reinstall install "${tampered_packages[@]}" >> "$MAIN_LOG" 2>&1
+      forget_verification "${tampered_packages[@]}"
 
       for package in "${tampered_packages[@]}"; do
         if package_failed_verification "$package"; then
@@ -1006,7 +1051,7 @@ step_install_fish() {
       || report_only_note "fish not installed, would run: apt-get update; apt-get install fish"
     report_only_note "apt itself should be upgraded (CVE-2026-109518), installed: $(dpkg-query -W -f='${Version}' apt 2>/dev/null), fixed: 2.4.15ubuntu0.1 (22.04) / 2.8.4ubuntu0.1 (24.04)"
   else
-    apt-get update || add_warning "apt update failed"
+    [[ -f $APT_LISTS_FRESH_FILE ]] || apt-get update || add_warning "apt update failed"
     # Fix apt first (CVE-2026-109518), retries are already off via 99-no-retries.
     apt-get "${APT_OPTIONS[@]}" install --only-upgrade apt || add_warning "apt self-upgrade failed (CVE-2026-109518)"
     apt-get "${APT_OPTIONS[@]}" install fish || add_warning "fish install failed"
@@ -1120,7 +1165,7 @@ echo $$ > "$WORK_DIR/upgrade.pid"
 APT_OPTIONS=(-y -o DPkg::Lock::Timeout=1800 -o Dpkg::Options::=--force-confold
              -o Acquire::Retries=0 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
 
-threat_regex='^(linux-(image|modules|headers|generic)|openssh|openssl|libssl|sudo|polkit|pkexec|libpolkit|policykit|libc6|libc-bin|systemd|libsystemd|udev|libudev|dbus|libpam|libnss|libldap|libsasl2|libkrb5|krb5|libgssapi|sssd|postfix|dovecot|php|libapache2-mod-php|apache2|nginx|roundcube|mariadb|mysql|libsqlite|sqlite|libcurl|curl|libxml2|libexpat|zlib1g|libgnutls|gnutls|libgcrypt|gnupg|bash|util-linux|mount|libmount|login|passwd|libcap|libseccomp|git|python3|perl|libperl|vim|tar|cpio|needrestart|grub|shim|ca-certificates|apt|libapt)'
+threat_regex='^(linux-(image|modules|headers|generic)|openssh|openssl|libssl|sudo|polkit|pkexec|libpolkit|policykit|libc6|libc-bin|systemd|libsystemd|udev|libudev|dbus|libpam|libnss|libsasl2|libkrb5|krb5|libgssapi|sssd|postfix|dovecot|php|libapache2-mod-php|apache2|nginx|roundcube|mariadb|mysql|libsqlite|sqlite|libcurl|curl|libxml2|libexpat|zlib1g|libgnutls|gnutls|libgcrypt|gnupg|bash|util-linux|mount|libmount|login|passwd|libcap|libseccomp|git|python3|perl|libperl|vim|tar|cpio|needrestart|grub|shim|ca-certificates|apt|libapt)'
 
 # Every installed package with a pending update from a -security pocket
 security_packages=$(apt-get -s --with-new-pkgs upgrade 2>/dev/null | awk '/^Inst/ && /-security/ {print $2}')
@@ -1229,7 +1274,7 @@ table inet filter {
 
     ip protocol icmp accept
 
-    tcp dport { 22, 25, 143, 443 } ct state new accept
+    tcp dport { 22, 25, 80, 143, 443 } ct state new accept
   }
 
   chain forward {
@@ -1335,7 +1380,7 @@ step_remove_schedulers() {
   local scheduler_packages=() removals=() blocked=() extras=()
   local home_dir timer_file unit_name path job_id package binary_name binary_path
   local cron_entry_count timer_list
-  local scored_regex='postfix|dovecot|roundcube|ssh|krb5|kerberos|sssd|php|apache|nginx|mysql|mariadb|postgres|libpam|sudo|ldap|nftables|fish'
+  local scored_regex='postfix|dovecot|roundcube|ssh|krb5|kerberos|sssd|php|apache|nginx|mysql|mariadb|postgres|libpam|sudo|nftables|fish'
   local scheduler_package_regex='^(cron|cron-daemon-common|anacron|at|bcron|bcron-run|fcron|dcron|cronie|incron|systemd-cron|cron-apt)$'
 
   # Classic cron/at/incron/fcron files and spools (config, allow/deny, job data).
@@ -1348,7 +1393,7 @@ step_remove_schedulers() {
     /var/spool/cron /var/spool/at /var/spool/anacron /var/spool/incron /var/spool/fcron
   )
 
-  # Local accounts only, never query sssd/LDAP here.
+  # Local accounts only, never query sssd here.
   root_home=$(getent -s files passwd root | cut -d: -f6)
   root_home=${root_home:-/root}
 
@@ -1539,8 +1584,7 @@ step_fix_permissions() {
   chmod 700 /etc/sssd 2>/dev/null
 
   # --- dovecot ---
-  chmod 640 /etc/dovecot/dovecot-ldap.conf.ext /etc/dovecot/dovecot-sql.conf.ext 2>/dev/null
-  chown root:dovecot /etc/dovecot/dovecot-ldap.conf.ext 2>/dev/null
+  chmod 640 /etc/dovecot/dovecot-sql.conf.ext 2>/dev/null
 
   # --- roundcube (config holds credentials, web server group may read) ---
   if [[ -d /etc/roundcube ]]; then
@@ -1605,7 +1649,7 @@ step_fix_permissions() {
 # Verify key binaries (ssh, sudo, PAM, mail stack, libc, apt, ...) against dpkg
 # checksums and reinstall any that were modified.
 step_check_binary_integrity() {
-  local critical_package_regex='^(openssh-server|openssh-client|openssh-sftp-server|sudo|login|passwd|util-linux|coreutils|bash|libc6|apt|dpkg|libpam-modules|libpam-modules-bin|libpam-runtime|libpam0g|libpam-krb5|libpam-sss|libnss-sss|krb5-user|libkrb5-3|sssd|sssd-common|postfix|postfix-ldap|dovecot-core|dovecot-imapd|dovecot-pop3d|dovecot-ldap|systemd|openssl)$'
+  local critical_package_regex='^(openssh-server|openssh-client|openssh-sftp-server|sudo|login|passwd|util-linux|coreutils|bash|libc6|apt|dpkg|libpam-modules|libpam-modules-bin|libpam-runtime|libpam0g|libpam-krb5|libpam-sss|libnss-sss|krb5-user|libkrb5-3|sssd|sssd-common|postfix|dovecot-core|dovecot-imapd|dovecot-pop3d|systemd|openssl)$'
   local critical_packages=() tampered_packages=()
   local package changed_files
 
@@ -1624,6 +1668,7 @@ step_check_binary_integrity() {
 
   add_warning "binary integrity failed, reinstalling: ${tampered_packages[*]}"
   apt-get "${APT_OPTIONS[@]}" --reinstall install "${tampered_packages[@]}"
+  forget_verification "${tampered_packages[@]}"
 
   for package in "${tampered_packages[@]}"; do
     if package_failed_verification "$package"; then
