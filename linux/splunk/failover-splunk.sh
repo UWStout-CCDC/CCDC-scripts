@@ -632,7 +632,7 @@ summary() {
   local ip; ip=$(hostname -I 2>/dev/null | awk '{print $1}')
   echo
   echo -e "${GREEN}Splunk is set up.${NC}"
-  echo "  Web UI:        https://${ip:-<this-box>}:$WEB_PORT  (user: admin, self-signed cert)"
+  echo "  Web UI:        http://${ip:-<this-box>}:$WEB_PORT  (user: admin, self-signed cert)"
   echo "  Indexes:       web, mail, sql, os   (search with e.g. index=web)"
   echo "  Config app:    $APP_DIR/local"
   echo "  Service:       systemctl status Splunkd"
