@@ -15,6 +15,8 @@
 #
 # Layout:
 #   1. Bootstrap     : clean environment, shared variables and helpers
+#   (apt mirror check runs between 1 and 2: poisoned/missing mirrors are replaced
+#    by verified official ones, or the run falls back to report-only)
 #   2. Pre-flight    : keylogger checks, then password prompts
 #   3. Steps         : one function per hardening task
 #   4. Step table    : ordered list with time estimates
@@ -45,7 +47,7 @@ for argument in "$@"; do
     *) echo "Unknown option: $argument (try --help)" >&2; exit 1 ;;
   esac
 done
-readonly NO_PACKAGE_CHANGES
+# Not readonly: the mirror check below may force report-only if no mirror works.
 
 # Require sudo, then re-run this script inside an empty environment so no
 # aliases, functions, bash profile, BASH_ENV, LD_PRELOAD or other inherited
@@ -404,7 +406,7 @@ NETPLAN_EOF
     add_warning "NETWORK: proxy setting: $route_line"
   done
 
-  grep -rhE '^(deb |URIs:)' /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null \
+  grep -rhE --exclude=megascript-ubuntu.sources '^(deb |URIs:)' /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null \
     | grep -Ev 'ubuntu\.com' | while read -r route_line; do
         add_warning "NETWORK: non-Ubuntu apt source: $route_line"
       done
@@ -418,6 +420,171 @@ echo "  done."
 echo
 
 quiesce_background_apt_jobs
+
+# ---- APT mirrors: poisoned or missing -------------------------------------
+# Runs once, right after the network is fixed and before the first apt call.
+# Poisoned: every existing source, unpackaged key and unpackaged insecure/proxy
+# apt config is quarantined, stale lists are dropped, and a signed-by-Ubuntu-key
+# source file is written. Missing: official mirrors are tried in order (DNS
+# sanity check, then a real signed `apt-get update`) until one works. If none
+# does, the run switches to report-only so nothing stalls or trusts a bad mirror.
+
+MIRROR_SOURCES_FILE=/etc/apt/sources.list.d/megascript-ubuntu.sources
+APT_QUARANTINE_DIR=/root/megascript-apt-quarantine
+UBUNTU_KEYRING=/usr/share/keyrings/ubuntu-archive-keyring.gpg
+readonly MIRROR_SOURCES_FILE APT_QUARANTINE_DIR UBUNTU_KEYRING
+
+MIRROR_CANDIDATES=(
+  http://archive.ubuntu.com/ubuntu
+  http://us.archive.ubuntu.com/ubuntu
+  https://mirrors.edge.kernel.org/ubuntu
+  https://mirrors.mit.edu/ubuntu
+  https://mirror.math.princeton.edu/pub/ubuntu
+)
+PORTS_MIRROR_CANDIDATES=(http://ports.ubuntu.com/ubuntu-ports)
+readonly -a MIRROR_CANDIDATES PORTS_MIRROR_CANDIDATES
+
+# quarantine_apt_file FILE   (move aside, keep as evidence)
+quarantine_apt_file() {
+  local target="$APT_QUARANTINE_DIR/${1//\//_}"
+  mkdir -p "$APT_QUARANTINE_DIR" && chmod 700 "$APT_QUARANTINE_DIR"
+  mv -f -- "$1" "$target" && add_warning "APT: quarantined $1 -> $target"
+}
+
+# mirror_host_is_sane HOST
+#   False if HOST is pinned in /etc/hosts or resolves to a local/private address.
+mirror_host_is_sane() {
+  local address
+  [[ -z $(getent -s files hosts "$1") ]] || return 1
+  address=$(getent ahostsv4 "$1" | awk 'NR==1 {print $1}')
+  [[ -n $address ]] || return 1
+  [[ $address =~ ^(0\.|10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.) ]] && return 1
+  return 0
+}
+
+# write_mirror_sources CODENAME ARCHIVE_MIRROR SECURITY_MIRROR
+write_mirror_sources() {
+  cat > "$MIRROR_SOURCES_FILE" <<SOURCES_EOF
+Types: deb
+URIs: $2
+Suites: $1 $1-updates $1-backports
+Components: main restricted universe multiverse
+Signed-By: $UBUNTU_KEYRING
+
+Types: deb
+URIs: $3
+Suites: $1-security
+Components: main restricted universe multiverse
+Signed-By: $UBUNTU_KEYRING
+SOURCES_EOF
+}
+
+# apt_update_is_clean
+#   Signed update against the current sources. Any failed or unsigned source fails it.
+apt_update_is_clean() {
+  local log="$WORK_DIR/apt-update.log"
+
+  NEEDRESTART_SUSPEND=1 timeout -k 5 90 apt-get update \
+      -o DPkg::Lock::Timeout=90 -o APT::Update::Error-Mode=any \
+      -o Acquire::Retries=0 -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10 \
+      < /dev/null > "$log" 2>&1 || return 1
+  ! grep -Eq '^(Err:|E: )|NO_PUBKEY|is not signed|Failed to fetch' "$log"
+}
+
+# ensure_apt_mirrors
+#   Return 0 when apt has a working, verified mirror, 1 when none could be found.
+ensure_apt_mirrors() {
+  local codename arch mirror host security_mirror file
+  local -a candidates
+
+  # Report-only mode must not touch apt state (the lists feed the simulated upgrade).
+  if ((NO_PACKAGE_CHANGES)); then
+    grep -rIlE 'trusted=yes|AllowInsecure|AllowUnauthenticated|Verify-(Peer|Host)[^;]*false' /etc/apt 2>/dev/null \
+      | while read -r file; do add_warning "APT: insecure apt setting in $file (report-only, not changed)"; done
+    return 0
+  fi
+
+  # The keyring is the trust anchor. If it is gone or modified no mirror can be trusted.
+  if [[ ! -s $UBUNTU_KEYRING ]] || package_failed_verification ubuntu-keyring; then
+    add_warning "APT: Ubuntu archive keyring missing or modified, mirrors cannot be trusted"
+    return 1
+  fi
+
+  codename=$(awk -F= '$1=="VERSION_CODENAME" {gsub(/"/, "", $2); print $2}' /etc/os-release)
+  [[ $codename =~ ^[a-z]+$ ]] || { add_warning "APT: cannot read a sane release codename from /etc/os-release"; return 1; }
+
+  # 1. Quarantine every existing source and any unpackaged key.
+  for file in /etc/apt/sources.list /etc/apt/sources.list.d/*; do
+    [[ -f $file && $file != "$MIRROR_SOURCES_FILE" ]] && quarantine_apt_file "$file"
+  done
+  for file in /etc/apt/trusted.gpg /etc/apt/trusted.gpg.d/* /etc/apt/keyrings/*; do
+    [[ -f $file ]] && ! is_package_owned "$file" && quarantine_apt_file "$file"
+  done
+
+  # 2. Unpackaged apt config that disables verification, adds proxies or runs hooks.
+  for file in /etc/apt/apt.conf /etc/apt/apt.conf.d/*; do
+    [[ -f $file && $file != /etc/apt/apt.conf.d/99-no-retries && $file != /etc/apt/apt.conf.d/99zz-megascript-apt-safe ]] || continue
+    is_package_owned "$file" && continue
+    grep -qIE 'AllowUnauthenticated|AllowInsecure|Verify-(Peer|Host)|Proxy|Pre-Invoke|Post-Invoke|Pre-Install-Pkgs|Dpkg::(Pre|Post)' "$file" \
+      && quarantine_apt_file "$file"
+  done
+
+  # Last word on verification and proxies, even if a packaged file says otherwise.
+  cat > /etc/apt/apt.conf.d/99zz-megascript-apt-safe <<'APT_SAFE_EOF'
+Acquire::AllowInsecureRepositories "false";
+Acquire::AllowDowngradeToInsecureRepositories "false";
+APT::Get::AllowUnauthenticated "false";
+Acquire::https::Verify-Peer "true";
+Acquire::https::Verify-Host "true";
+Acquire::http::Proxy "DIRECT";
+Acquire::https::Proxy "DIRECT";
+Acquire::http::Proxy-Auto-Detect "";
+APT_SAFE_EOF
+
+  # 3. Poisoned package lists and cached debs from an earlier mirror are dropped.
+  rm -rf /var/lib/apt/lists/* 2>/dev/null
+  apt-get clean 2>/dev/null
+
+  # 4. Try the official mirrors until a signed update is clean.
+  arch=$(dpkg --print-architecture)
+  case $arch in
+    amd64|i386) candidates=("${MIRROR_CANDIDATES[@]}") ;;
+    *)          candidates=("${PORTS_MIRROR_CANDIDATES[@]}") ;;
+  esac
+
+  for mirror in "${candidates[@]}"; do
+    host=${mirror#*://}; host=${host%%/*}
+
+    if ! mirror_host_is_sane "$host"; then
+      add_warning "APT: mirror $host skipped (does not resolve, pinned in /etc/hosts, or private address)"
+      continue
+    fi
+
+    security_mirror=$mirror
+    [[ $host == *archive.ubuntu.com ]] && security_mirror=http://security.ubuntu.com/ubuntu
+    mirror_host_is_sane "${security_mirror#*://}" 2>/dev/null || security_mirror=$mirror
+
+    write_mirror_sources "$codename" "$mirror" "$security_mirror"
+    if apt_update_is_clean; then
+      add_warning "APT: using mirror $mirror (security: $security_mirror), signed lists verified"
+      return 0
+    fi
+    add_warning "APT: mirror $mirror failed a signed update (down, missing release or bad signature)"
+    rm -rf /var/lib/apt/lists/* 2>/dev/null
+  done
+
+  return 1
+}
+
+echo "Checking apt mirrors (poisoned or missing)"
+if ! ensure_apt_mirrors >> "$MAIN_LOG" 2>&1; then
+  NO_PACKAGE_CHANGES=1
+  add_warning "APT: no trusted mirror reachable, switched to REPORT-ONLY (no package changes this run)"
+  echo "  no trusted mirror, continuing in report-only mode."
+else
+  echo "  done."
+fi
+echo
 
 
 # =============================================================================
@@ -1062,7 +1229,7 @@ table inet filter {
 
     ip protocol icmp accept
 
-    tcp dport { 22, 25, 80, 110, 143 } ct state new accept
+    tcp dport { 22, 25, 143, 443 } ct state new accept
   }
 
   chain forward {
