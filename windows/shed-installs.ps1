@@ -3,14 +3,23 @@
 [CmdletBinding()]
 param()
 
+function Set-InstallConsoleColors {
+    # Write-Host defaults do not control native child-process console output.
+    try {
+        [Console]::BackgroundColor = [ConsoleColor]::Black
+        [Console]::ForegroundColor = [ConsoleColor]::White
+    } catch {}
+    try {
+        $Host.UI.RawUI.BackgroundColor = 'Black'
+        $Host.UI.RawUI.ForegroundColor = 'White'
+    } catch {}
+}
+
 # -----------------------------------------------------------------------------
 # Console Theme & Safety Initialization (Seamless pure-black styling)
 # -----------------------------------------------------------------------------
 try {
-    [Console]::BackgroundColor = [ConsoleColor]::Black
-    [Console]::ForegroundColor = [ConsoleColor]::White
-    $Host.UI.RawUI.BackgroundColor = 'Black'
-    $Host.UI.RawUI.ForegroundColor = 'White'
+    Set-InstallConsoleColors
     if ($Host.PrivateData) {
         $Host.PrivateData.WarningBackgroundColor = 'Black'
         $Host.PrivateData.WarningForegroundColor = 'Yellow'
@@ -20,6 +29,8 @@ try {
         $Host.PrivateData.VerboseForegroundColor = 'Cyan'
         $Host.PrivateData.DebugBackgroundColor   = 'Black'
         $Host.PrivateData.DebugForegroundColor   = 'DarkCyan'
+        $Host.PrivateData.ProgressBackgroundColor = 'Black'
+        $Host.PrivateData.ProgressForegroundColor = 'White'
     }
     $PSDefaultParameterValues['Write-Host:BackgroundColor'] = 'Black'
     Clear-Host
@@ -54,7 +65,7 @@ if (Test-Path variable:global:PSNativeCommandUseErrorActionPreference) {
     $global:PSNativeCommandUseErrorActionPreference = $false
 }
 $PSNativeCommandUseErrorActionPreference = $false
-# TLS 1.2 to "fix downloads" - claude
+# TLS 1.2 for REST/package-manager requests; BITS uses Windows networking settings.
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 $splash = @'
@@ -238,51 +249,60 @@ function Invoke-WithSpinner {
     }
 }
 
-function Invoke-FastDownload {
+function Invoke-BitsDownload {
     param(
         [Parameter(Mandatory=$true)][string]$Url,
         [Parameter(Mandatory=$true)][string]$OutFile,
         [string]$Description = (Split-Path -Leaf $OutFile)
     )
 
+    $jobName = "shed-installs-$([guid]::NewGuid())"
+    $partialPath = $null
     try {
-        Invoke-WithSpinner "Downloading $Description" "Downloaded $Description" {
-            # 1. Try curl.exe (fastest, lowest memory footprint ~4MB)
-            $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
-            if ($curl) {
-                try {
-                    $proc = Start-Process -FilePath $curl.Source -ArgumentList "-s", "-S", "-L", "--connect-timeout", "10", "--max-time", "120", "-o", "`"$OutFile`"", "`"$Url`"" -NoNewWindow -Wait -PassThru
-                    if ($proc.ExitCode -eq 0 -and (Test-Path $OutFile) -and (Get-Item $OutFile).Length -gt 0) {
-                        return
-                    }
-                } catch {}
-            }
-
-            # 2. In-process .NET WebClient with TLS 1.2 and explicit Dispose()
-            try {
-                [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-                $wc = New-Object System.Net.WebClient
-                try {
-                    $wc.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
-                    $wc.DownloadFile($Url, $OutFile)
-                } finally {
-                    $wc.Dispose()
-                }
-                if ((Test-Path $OutFile) -and (Get-Item $OutFile).Length -gt 0) {
-                    return
-                }
-            } catch {}
-
-            # 3. Fallback to Invoke-WebRequest
-            Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing -TimeoutSec 60 -ErrorAction Stop
-            if ((Test-Path $OutFile) -and (Get-Item $OutFile).Length -gt 0) {
-                return
-            }
-
-            throw "Download failed for $Description"
+        Import-Module BitsTransfer -ErrorAction Stop
+        $bits = Get-Service -Name BITS -ErrorAction Stop
+        if ($bits.StartType -eq 'Disabled') {
+            Write-Log 'BITS was disabled; enabling Manual startup for downloads.' 'INFO'
+            Set-Service -Name BITS -StartupType Manual -ErrorAction Stop
         }
+        if ($bits.Status -ne 'Running') { Start-Service -Name BITS -ErrorAction Stop }
+
+        $destination = [IO.Path]::GetFullPath($OutFile)
+        $parent = [IO.Path]::GetDirectoryName($destination)
+        if (-not (Test-Path -LiteralPath $parent -PathType Container)) {
+            New-Item -ItemType Directory -Path $parent -Force -ErrorAction Stop | Out-Null
+        }
+        $partialPath = Join-Path $parent (".$([IO.Path]::GetFileName($destination)).$([guid]::NewGuid()).partial")
+        Invoke-WithSpinner "Downloading $Description via BITS" "Downloaded $Description via BITS" {
+            param($source, $temporaryPath, $finalPath, $displayName, $label)
+            # Synchronous Foreground transfers complete before installation starts.
+            # Bound transient-error retries instead of using BITS' 14-day default.
+            Start-BitsTransfer -Source $source -Destination $temporaryPath -TransferType Download `
+                -Priority Foreground -DisplayName $displayName -Description $label `
+                -RetryInterval 60 -RetryTimeout 180 -ErrorAction Stop | Out-Null
+            if (-not (Test-Path -LiteralPath $temporaryPath -PathType Leaf) -or
+                (Get-Item -LiteralPath $temporaryPath -Force -ErrorAction Stop).Length -le 0) {
+                throw 'BITS did not produce a nonempty download.'
+            }
+            Move-Item -LiteralPath $temporaryPath -Destination $finalPath -Force -ErrorAction Stop
+        } @($Url, $partialPath, $destination, $jobName, $Description)
+        return $true
     } catch {
-        Write-Host "  [!] Failed to download $Description" -ForegroundColor Red -BackgroundColor Black
+        Write-Log "BITS download failed for $Description`: $($_.Exception.Message)" 'ERROR'
+        # A failed synchronous transfer may leave a queued job. Remove only this
+        # request's uniquely named job; other BITS jobs are never canceled.
+        try {
+            Get-BitsTransfer -ErrorAction Stop | Where-Object DisplayName -EQ $jobName |
+                Remove-BitsTransfer -ErrorAction Stop | Out-Null
+        } catch {
+            Write-Log "Could not check/clean up BITS job $jobName`: $($_.Exception.Message)" 'WARN'
+        }
+        return $false
+    } finally {
+        if ($partialPath -and (Test-Path -LiteralPath $partialPath)) {
+            try { Remove-Item -LiteralPath $partialPath -Force -ErrorAction Stop }
+            catch { Write-Log "Could not remove partial download $partialPath`: $_" 'WARN' }
+        }
     }
 }
 
@@ -317,17 +337,20 @@ function Expand-FastArchive {
 function Test-WingetExecutable {
     param([string]$Path)
     if (-not $Path -or -not (Test-Path $Path)) { return $false }
+    Set-InstallConsoleColors
     try {
-        $p = Start-Process -FilePath $Path -ArgumentList '--version' -NoNewWindow -Wait -PassThru -ErrorAction Stop
-        if ($p.ExitCode -eq 0) { return $true }
-    } catch {}
+        try {
+            $p = Start-Process -FilePath $Path -ArgumentList '--version', '--no-vt' -NoNewWindow -Wait -PassThru -ErrorAction Stop
+            if ($p.ExitCode -eq 0) { return $true }
+        } catch {}
 
-    try {
-        $out = & $Path --version 2>&1
-        if ($LASTEXITCODE -eq 0 -or ($out -match 'v\d+\.')) { return $true }
-    } catch {}
+        try {
+            $out = & $Path --version --no-vt 2>&1
+            if ($LASTEXITCODE -eq 0 -or ($out -match 'v\d+\.')) { return $true }
+        } catch {}
 
-    return $false
+        return $false
+    } finally { Set-InstallConsoleColors }
 }
 
 function Get-WingetPath {
@@ -399,10 +422,11 @@ function Install-WingetLocal {
     $hasVc = (Test-Path $vcKey) -and ((Get-ItemProperty -Path $vcKey -Name Installed -ErrorAction SilentlyContinue).Installed -eq 1)
     if (-not $hasVc) {
         $vc = "$DownloadsDir\vc_redist.x64.exe"
-        if (-not (Test-Path $vc)) {
-            Invoke-FastDownload 'https://aka.ms/vs/17/release/vc_redist.x64.exe' $vc 'VC++ Redistributable'
+        $vcAvailable = (Test-Path -LiteralPath $vc -PathType Leaf) -and (Get-Item -LiteralPath $vc).Length -gt 0
+        if (-not $vcAvailable) {
+            $vcAvailable = Invoke-BitsDownload 'https://aka.ms/vs/17/release/vc_redist.x64.exe' $vc 'VC++ Redistributable'
         }
-        if (Test-Path $vc) {
+        if ($vcAvailable) {
             Invoke-WithSpinner "Installing VC++ Redistributable" "Installed VC++ Redistributable" {
                 param($exe)
                 Start-Process $exe -ArgumentList '/install','/quiet','/norestart' -Wait
@@ -460,10 +484,10 @@ function Install-WingetLegacyBootstrap {
         } catch {}
 
         # Download packages
-        Invoke-FastDownload $depsUrl "$DownloadsDir\winget-deps.zip" 'winget-deps.zip'
-        Invoke-FastDownload $bundleUrl "$DownloadsDir\winget.msixbundle" 'winget.msixbundle'
-        if ($licenseUrl) {
-            Invoke-FastDownload $licenseUrl "$DownloadsDir\winget-license.xml" 'winget-license.xml'
+        if (-not (Invoke-BitsDownload $depsUrl "$DownloadsDir\winget-deps.zip" 'winget-deps.zip')) { throw 'BITS download failed for WinGet dependencies.' }
+        if (-not (Invoke-BitsDownload $bundleUrl "$DownloadsDir\winget.msixbundle" 'winget.msixbundle')) { throw 'BITS download failed for the WinGet bundle.' }
+        if ($licenseUrl -and -not (Invoke-BitsDownload $licenseUrl "$DownloadsDir\winget-license.xml" 'winget-license.xml')) {
+            throw 'BITS download failed for the WinGet license.'
         }
 
         # Extract dependencies
@@ -540,6 +564,17 @@ function Install-WingetLegacyBootstrap {
 }
 
 try {
+    # 0. Fetch the shed scripts before WinGet bootstrap or any tool installation.
+    Write-Host "`n[+] Preparing shed-hardening and shed-scraper in $InstallDir..." -ForegroundColor Cyan
+    $repo = "https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master/windows"
+    foreach ($script in @("shed-hardening.ps1", "shed-scraper.ps1")) {
+        $target = "$InstallDir\$script"
+        if (-not (Test-Path $target)) {
+            $downloadSucceeded = Invoke-BitsDownload "$repo/$script" $target
+            if (-not $downloadSucceeded) { Write-Warning "Could not fetch $script via BITS." }
+        }
+    }
+
     $wingetPath = Get-WingetPath
 
     if (-not $wingetPath) {
@@ -608,13 +643,14 @@ try {
         if ($wDir -and $env:Path -notlike "*$wDir*") { $env:Path = "$wDir;$env:Path" }
 
         try {
-            $null = & $wingetPath --version
+            Set-InstallConsoleColors
+            $null = & $wingetPath --version --no-vt
             # Initialize / update community source index
             Write-Host "[*] Initializing winget package source..." -ForegroundColor Cyan
-            & $wingetPath source update --disable-interactivity 2>&1 | Out-Null
+            & $wingetPath source update --disable-interactivity --no-vt 2>&1 | Out-Null
         } catch {
             Write-Warning "Could not execute winget version check: $($_.Exception.Message)"
-        }
+        } finally { Set-InstallConsoleColors }
     }
     else {
         Write-Host "[!] winget not available." -ForegroundColor Red
@@ -640,9 +676,9 @@ try {
         }
         $outFile = Join-Path $DownloadsDir $filename
 
-        Invoke-FastDownload $url $outFile "$name ($filename)"
+        $downloadSucceeded = Invoke-BitsDownload $url $outFile "$name ($filename)"
 
-        if ((Test-Path $outFile) -and (Get-Item $outFile).Length -gt 0) {
+        if ($downloadSucceeded -and (Test-Path -LiteralPath $outFile) -and (Get-Item -LiteralPath $outFile).Length -gt 0) {
             # Extract archive if zip
             if ($filename -like "*.zip") {
                 $extractPath = Join-Path $InstallDir $name
@@ -760,22 +796,26 @@ try {
                     $wingetArgs = @('install', '--id', $pkgId, '--exact', '--source', 'winget', '--silent', '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity')
                 }
                 
+                # WinGet's VT reset sequences can restore the console's original
+                # blue background. Plain native output retains our black theme.
+                $wingetArgs += '--no-vt'
+                Set-InstallConsoleColors
                 try {
                     $proc = Start-Process -FilePath $wingetPath -ArgumentList $wingetArgs -NoNewWindow -Wait -PassThru
                     $lastCode = $proc.ExitCode
                 } catch {
                     $lastCode = -1
-                }
+                } finally { Set-InstallConsoleColors }
 
                 if ($lastCode -in 0, 3010) {
                     # Validate installation via winget list
                     $isVerified = $false
                     try {
-                        $listOut = & $wingetPath list --id $pkgId --exact --disable-interactivity 2>&1
+                        $listOut = & $wingetPath list --id $pkgId --exact --disable-interactivity --no-vt 2>&1
                         if ($LASTEXITCODE -eq 0 -and "$listOut" -match [regex]::Escape($pkgId)) {
                             $isVerified = $true
                         }
-                    } catch {}
+                    } catch {} finally { Set-InstallConsoleColors }
 
                     if ($isVerified) {
                         Write-Host "[+] [$pkgId] Successfully installed and verified via winget list!" -ForegroundColor Green
@@ -806,8 +846,8 @@ try {
                 if ($pkgId -match 'Firefox') {
                     try {
                         $targetExe = Join-Path $DownloadsDir "FirefoxInstaller.exe"
-                        Invoke-FastDownload 'https://download.mozilla.org/?product=firefox-latest-ssl&os=win64&lang=en-US' $targetExe 'Firefox direct installer'
-                        if (Test-Path $targetExe) {
+                        $downloadSucceeded = Invoke-BitsDownload 'https://download.mozilla.org/?product=firefox-latest-ssl&os=win64&lang=en-US' $targetExe 'Firefox direct installer'
+                        if ($downloadSucceeded -and (Test-Path -LiteralPath $targetExe)) {
                             $proc = Start-Process -FilePath $targetExe -ArgumentList '/S' -Wait -PassThru
                             if ($proc.ExitCode -in 0, 3010) {
                                 Write-Host "[+] [$pkgId] Firefox installed directly via silent installer!" -ForegroundColor Green
@@ -826,8 +866,8 @@ try {
                 elseif ($pkgId -match '7zip') {
                     try {
                         $targetMsi = Join-Path $DownloadsDir "7z-x64.msi"
-                        Invoke-FastDownload 'https://github.com/ip7z/7zip/releases/download/26.06/7z2606-x64.msi' $targetMsi '7-Zip direct MSI'
-                        if (Test-Path $targetMsi) {
+                        $downloadSucceeded = Invoke-BitsDownload 'https://github.com/ip7z/7zip/releases/download/26.06/7z2606-x64.msi' $targetMsi '7-Zip direct MSI'
+                        if ($downloadSucceeded -and (Test-Path -LiteralPath $targetMsi)) {
                             $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList "/i `"$targetMsi`" /qn /norestart" -Wait -PassThru
                             if ($proc.ExitCode -in 0, 3010) {
                                 Write-Host "[+] [$pkgId] 7-Zip installed directly via MSI!" -ForegroundColor Green
@@ -846,8 +886,8 @@ try {
                 elseif ($pkgId -match 'WindowsFirewallControl') {
                     try {
                         $targetExe = Join-Path $DownloadsDir "wfc6setup.exe"
-                        Invoke-FastDownload 'https://binisoft.org/download/wfc6setup.exe' $targetExe 'Windows Firewall Control installer'
-                        if (Test-Path $targetExe) {
+                        $downloadSucceeded = Invoke-BitsDownload 'https://binisoft.org/download/wfc6setup.exe' $targetExe 'Windows Firewall Control installer'
+                        if ($downloadSucceeded -and (Test-Path -LiteralPath $targetExe)) {
                             $exitCode = 0
                             Invoke-WithSpinner "Installing Windows Firewall Control" "Windows Firewall Control installed successfully" {
                                 $proc = Start-Process -FilePath $targetExe -ArgumentList "-run -close -install" -Wait -PassThru
@@ -885,8 +925,8 @@ try {
         Write-Warning "[!] winget unavailable. Falling back to direct silent installers..."
         # Firefox Direct Fallback
         $targetExe = Join-Path $DownloadsDir "FirefoxInstaller.exe"
-        Invoke-FastDownload 'https://download.mozilla.org/?product=firefox-latest-ssl&os=win64&lang=en-US' $targetExe 'Firefox installer'
-        if (Test-Path $targetExe) {
+        $downloadSucceeded = Invoke-BitsDownload 'https://download.mozilla.org/?product=firefox-latest-ssl&os=win64&lang=en-US' $targetExe 'Firefox installer'
+        if ($downloadSucceeded -and (Test-Path -LiteralPath $targetExe)) {
             $proc = Start-Process -FilePath $targetExe -ArgumentList '/S' -Wait -PassThru
             if ($proc.ExitCode -in 0, 3010) {
                 Write-Host "[+] Firefox installed directly!" -ForegroundColor Green
@@ -903,12 +943,14 @@ try {
                     Details = "Exit code $($proc.ExitCode)"
                 })
             }
+        } else {
+            $jobResults.Add([PSCustomObject]@{ JobName = 'Firefox'; Status = 'Failed'; Details = 'BITS download failed' })
         }
 
         # Windows Firewall Control Direct Fallback
         $wfcExe = Join-Path $DownloadsDir "wfc6setup.exe"
-        Invoke-FastDownload 'https://binisoft.org/download/wfc6setup.exe' $wfcExe 'Windows Firewall Control installer'
-        if (Test-Path $wfcExe) {
+        $downloadSucceeded = Invoke-BitsDownload 'https://binisoft.org/download/wfc6setup.exe' $wfcExe 'Windows Firewall Control installer'
+        if ($downloadSucceeded -and (Test-Path -LiteralPath $wfcExe)) {
             $proc = Start-Process -FilePath $wfcExe -ArgumentList "-run -close -install" -Wait -PassThru
             if ($proc.ExitCode -in 0, 3010) {
                 Write-Host "[+] Windows Firewall Control installed directly!" -ForegroundColor Green
@@ -917,7 +959,11 @@ try {
                     Status  = "Success"
                     Details = "Installed via direct installer"
                 })
+            } else {
+                $jobResults.Add([PSCustomObject]@{ JobName = 'BiniSoft.WindowsFirewallControl'; Status = 'Failed'; Details = "Exit code $($proc.ExitCode)" })
             }
+        } else {
+            $jobResults.Add([PSCustomObject]@{ JobName = 'BiniSoft.WindowsFirewallControl'; Status = 'Failed'; Details = 'BITS download failed' })
         }
     }
 
@@ -964,15 +1010,6 @@ try {
             Write-Host "[+] System PATH updated with $InstallDir" -ForegroundColor Green
         }
     } catch {}
-
-    # Download shed-hardening and shed-scraper from GitHub
-    $repo = "https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master/windows"
-    foreach ($script in @("shed-hardening.ps1", "shed-scraper.ps1")) {
-        $target = "$InstallDir\$script"
-        if (-not (Test-Path $target)) {
-            Invoke-FastDownload "$repo/$script" $target
-        }
-    }
 
     Write-Host "[+] Done." -ForegroundColor Green
 }

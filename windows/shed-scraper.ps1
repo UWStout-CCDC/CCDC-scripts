@@ -1,591 +1,481 @@
-# filesystem scraper:
-#   recursively search entire system for
-#   .ps1 files, .exe files, secret harmful third options
-#       !!! LOG ALL OF THESE FOR IRs !!!
-#       prompt user to delete? maybe run this a few times on a VM to find .exes that need to stay
-#   maybe scrape IE downloads history and/or wget if available
-#   check scheduled tasks
-#       !!! LOG ALL OF THESE FOR IRs !!!
-#   check startup/run/runOnce folders
-#   look into WMI event subscriptions
-
 #Requires -RunAsAdministrator
-
-[CmdletBinding()]
-param(
-    [switch]$FullScan,
-    [switch]$NonInteractive,
-    [switch]$QuarantineAll,
-    [string]$TargetDrive = "C:"
-)
-
-# -----------------------------------------------------------------------------
-# Console Theme & Safety Initialization (Seamless pure-black styling)
-# -----------------------------------------------------------------------------
-try {
-    [Console]::BackgroundColor = [ConsoleColor]::Black
-    [Console]::ForegroundColor = [ConsoleColor]::White
-    $Host.UI.RawUI.BackgroundColor = 'Black'
-    $Host.UI.RawUI.ForegroundColor = 'White'
-    if ($Host.PrivateData) {
-        $Host.PrivateData.WarningBackgroundColor = 'Black'
-        $Host.PrivateData.WarningForegroundColor = 'Yellow'
-        $Host.PrivateData.ErrorBackgroundColor   = 'Black'
-        $Host.PrivateData.ErrorForegroundColor   = 'Red'
-        $Host.PrivateData.VerboseBackgroundColor = 'Black'
-        $Host.PrivateData.VerboseForegroundColor = 'Cyan'
-        $Host.PrivateData.DebugBackgroundColor   = 'Black'
-        $Host.PrivateData.DebugForegroundColor   = 'DarkCyan'
-    }
-    $PSDefaultParameterValues['Write-Host:BackgroundColor'] = 'Black'
-    Clear-Host
-} catch {}
-
-# -----------------------------------------------------------------------------
-# 0. Privileges, Directories, & Logging Setup
-# -----------------------------------------------------------------------------
-$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-if (-not $isAdmin) {
-    Write-Host "`n[!] ERROR: Script must be run as Administrator!" -ForegroundColor Red -BackgroundColor Black
-    Write-Host "" -BackgroundColor Black
-    Read-Host "Press Enter to exit..."
-    exit 1
-}
-
-# Trap terminating errors
-trap {
-    Write-Host "`n[FATAL ERROR] $($_.Exception.Message)" -ForegroundColor Red -BackgroundColor Black
-    Write-Host $_.ScriptStackTrace -ForegroundColor DarkGray -BackgroundColor Black
-    Write-Host "" -BackgroundColor Black
-    Read-Host "Press Enter to exit..."
-    break
+<#
+.SYNOPSIS
+Interactive, audit-first inventory of files and Windows persistence points.
+.DESCRIPTION
+Run without arguments. Collection never deletes files, changes startup entries,
+removes WMI subscriptions, disables tasks, or stops processes/services. Reports
+are saved before an optional review menu. Blank answers keep everything.
+Shortcuts, images, links, Windows/application files, validly signed files, and
+files referenced by processes/services/autoruns/tasks are not quarantined.
+Quarantine and task disablement require separate, exact confirmations and backups.
+.EXAMPLE
+.\shed-scraper.ps1
+#>
+if ($args.Count -gt 0) {
+    throw 'Run .\shed-scraper.ps1 without arguments and answer the prompts. Automatic/bulk quarantine is not supported.'
 }
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
-$ToolsDir      = "C:\Tools"
-$LogsDir       = "$ToolsDir\logs"
-$QuarantineDir = "$ToolsDir\Quarantine"
-New-Item -ItemType Directory -Force -Path $ToolsDir, $LogsDir, $QuarantineDir | Out-Null
-Set-Location -Path $ToolsDir
-[System.IO.Directory]::SetCurrentDirectory($ToolsDir)
-
-$timestamp     = Get-Date -Format "yyyyMMdd-HHmmss"
-$IRReportFile  = "$LogsDir\IR-Report-$timestamp.txt"
-$IRCsvFile     = "$LogsDir\IR-Findings-$timestamp.csv"
-
-# Global findings collection for structured IR reporting
-$script:Findings = [System.Collections.Generic.List[PSCustomObject]]::new()
-
-function Write-Log {
-    param(
-        [string]$Message,
-        [ValidateSet("INFO", "WARN", "ERROR", "SUCCESS", "ALERT")]$Level = "INFO"
-    )
-    $timeStr = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $colors = @{
-        "INFO"    = "Cyan"
-        "WARN"    = "Yellow"
-        "ERROR"   = "Red"
-        "SUCCESS" = "Green"
-        "ALERT"   = "Magenta"
-    }
-    Write-Host "[$timeStr] [$Level] $Message" -ForegroundColor $colors[$Level] -BackgroundColor Black
-    "[$timeStr] [$Level] $Message" | Out-File -FilePath $IRReportFile -Append -Encoding ascii
+function Write-ScraperLog {
+    param([string]$Message, [ValidateSet('INFO', 'WARN', 'ERROR', 'SUCCESS')][string]$Level = 'INFO')
+    $line = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] [$Level] $Message"
+    Write-Host $line
+    Add-Content -LiteralPath $script:ReportLog -Value $line -Encoding UTF8 -ErrorAction Stop
+    if ($Level -in @('WARN', 'ERROR')) { $script:ReadOrActionErrors++ }
 }
 
-function Add-IRFinding {
-    param(
-        [string]$Category,
-        [string]$ItemName,
-        [string]$Path,
-        [string]$Details,
-        [string]$Hash = "N/A",
-        [string]$Severity = "SUSPICIOUS"
-    )
+function Read-ScraperChoice {
+    param([string]$Prompt, [string[]]$Choices, [string]$Default)
+    while ($true) {
+        $answer = (Read-Host $Prompt).Trim()
+        if (-not $answer) { $answer = $Default }
+        if ($answer -in $Choices) { return $answer }
+        Write-Host "Enter one of: $($Choices -join ', ')."
+    }
+}
+
+function Add-ScraperFinding {
+    param([string]$Category, [string]$Name, [string]$Path, [string]$Details,
+        [string]$Severity = 'INFO', [string]$Hash = '', [string]$Signature = '', [string]$Signer = '')
     $finding = [PSCustomObject]@{
-        Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-        Category  = $Category
-        ItemName  = $ItemName
-        Path      = $Path
-        Hash      = $Hash
-        Severity  = $Severity
-        Details   = $Details
+        ID = $script:Findings.Count + 1; Timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+        Category = $Category; Severity = $Severity; Name = $Name; Path = $Path
+        Hash = $Hash; Signature = $Signature; Signer = $Signer; Details = $Details; Action = 'Reported only'
     }
     $script:Findings.Add($finding)
-    Write-Log "[IR FINDING] [$Category] $ItemName ($Path) | $Details" "ALERT"
+    return $finding
 }
 
-function Invoke-QuarantineFile {
-    param(
-        [string]$FilePath,
-        [string]$Reason
-    )
+function Save-ScraperReports {
+    $script:Findings | Export-Csv -LiteralPath $script:FindingsCsv -NoTypeInformation -Encoding UTF8 -ErrorAction Stop
+    $script:Findings | Export-Clixml -LiteralPath $script:FindingsXml -ErrorAction Stop
+}
+
+function Add-ScraperAction {
+    param([string]$Kind, [string]$Status, [object]$Data)
+    [PSCustomObject]@{
+        Timestamp = Get-Date -Format o; Kind = $Kind; Status = $Status; Data = $Data
+    } | ConvertTo-Json -Depth 6 -Compress | Add-Content -LiteralPath $script:ActionsFile -Encoding UTF8 -ErrorAction Stop
+}
+
+function Get-ScraperPathKey {
+    param([string]$Path)
+    [Environment]::ExpandEnvironmentVariables($Path).Replace('/', '\').TrimEnd('\').ToLowerInvariant()
+}
+
+function Test-ScraperPathWithin {
+    param([string]$Path, [string]$Root)
+    if (-not $Root) { return $false }
+    $pathKey = Get-ScraperPathKey $Path
+    $rootKey = Get-ScraperPathKey $Root
+    return $pathKey -eq $rootKey -or $pathKey.StartsWith($rootKey + '\', [StringComparison]::OrdinalIgnoreCase)
+}
+
+function Test-ScraperLinkedPath {
+    param([string]$Path)
+    # Check every ancestor, not just the file: never walk through a junction.
+    $current = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+    while ($null -ne $current) {
+        if (($current.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $current.LinkType) { return $true }
+        $current = if ($current -is [IO.DirectoryInfo]) { $current.Parent } else { $current.Directory }
+    }
+    return $false
+}
+
+function Get-ScraperFileEvidence {
+    param([string]$Path)
+    $hash = (Get-FileHash -LiteralPath $Path -Algorithm SHA256 -ErrorAction Stop).Hash
+    $signature = 'Unknown'
+    $signer = ''
     try {
-        if (-not (Test-Path -LiteralPath $FilePath)) { return }
-        $fileName = Split-Path -Leaf $FilePath
-        $destPath = "$QuarantineDir\$timestamp`_$fileName.quarantine"
-        Move-Item -LiteralPath $FilePath -Destination $destPath -Force -ErrorAction Stop
-        Write-Log "QUARANTINED: $FilePath -> $destPath (Reason: $Reason)" "SUCCESS"
+        $sig = Get-AuthenticodeSignature -LiteralPath $Path -ErrorAction Stop
+        if ($sig) {
+            $signature = [string]$sig.Status
+            if ($sig.SignerCertificate) { $signer = $sig.SignerCertificate.Subject }
+        }
+    } catch { Write-ScraperLog "Could not read signature for $Path`: $_" 'WARN' }
+    [PSCustomObject]@{ Hash = $hash; Signature = $signature; Signer = $signer }
+}
+
+function Update-ScraperDependencies {
+    param($Context)
+    # Refresh immediately around a reviewed action. Old references are retained
+    # conservatively, even if an observed task/process has since disappeared.
+    try {
+        foreach ($class in @('Win32_Process', 'Win32_Service')) {
+            foreach ($item in @(Get-CimInstance -ClassName $class -ErrorAction Stop)) {
+                foreach ($reference in @($item.ExecutablePath, $item.CommandLine, $item.PathName)) {
+                    if ($reference) { $Context.References.Add([Environment]::ExpandEnvironmentVariables($reference)) }
+                }
+            }
+        }
+        foreach ($task in @(Get-ScheduledTask -ErrorAction Stop)) {
+            foreach ($action in $task.Actions) { $Context.References.Add("$($action.Execute) $($action.Arguments)") }
+        }
+        foreach ($key in $Context.RegistryKeys) {
+            if (-not (Test-Path -LiteralPath $key)) { continue }
+            $properties = Get-ItemProperty -LiteralPath $key -ErrorAction Stop
+            foreach ($property in $properties.PSObject.Properties) {
+                if ($property.Name -notin @('PSPath', 'PSParentPath', 'PSChildName', 'PSDrive', 'PSProvider')) {
+                    $Context.References.Add([Environment]::ExpandEnvironmentVariables([string]$property.Value))
+                }
+            }
+        }
+        foreach ($class in @('CommandLineEventConsumer', 'ActiveScriptEventConsumer')) {
+            foreach ($item in @(Get-CimInstance -Namespace root\subscription -ClassName $class -ErrorAction Stop)) {
+                foreach ($reference in @($item.ExecutablePath, $item.CommandLineTemplate, $item.ScriptText)) {
+                    if ($reference) { $Context.References.Add([Environment]::ExpandEnvironmentVariables([string]$reference)) }
+                }
+            }
+        }
     } catch {
-        Write-Log "Failed to quarantine ${FilePath}: $_" "ERROR"
+        $Context.DependenciesComplete = $false
+        Write-ScraperLog "Dependency refresh failed: $_. File quarantine is blocked." 'WARN'
     }
 }
 
-$splash = @'
-
-            ___                    +--------------------------------------------+
-    `=/~~~~~   ~\                  |             shed-scraper.ps1               |
-     | ,      ,_ `\_/~\-           |      made for MWCCDC 2026-27' regionals    |
-     >/'>/ ~|||`\( ,~\-            |                                            |
-     |  |   `||   \;               |                                            |
-\\\\//\\\/TX\\//\\\\|//            |  <------------ that's kayne                |
-                                   +--------------------------------------------+
-'@
-Write-Host $splash -ForegroundColor Red -BackgroundColor Black
-
-Write-Log "Starting incident response audit on $(hostname)" "INFO"
-Write-Log "IR Report Destination: $IRReportFile" "INFO"
-Write-Log "Quarantine Directory : $QuarantineDir" "INFO"
-
-# -----------------------------------------------------------------------------
-# 1. Scrape Download History, Wget/Curl, & PowerShell History
-# -----------------------------------------------------------------------------
-Write-Host "`n================================================================================"
-Write-Host " [1/5] Scraping Download History, Web Artifacts & Command Lines"
-Write-Host "================================================================================"
-
-# A. PowerShell Console History (inspect for curl, wget, IEX, certutil, reverse shells)
-Write-Log "Checking PowerShell history across all user profiles..." "INFO"
-$historySuspiciousPatterns = @(
-    "wget", "curl", "Invoke-WebRequest", "iwr", "certutil", "bitsadmin",
-    "downloadstring", "iex", "frombase64string", "encodedcommand", "-enc",
-    "reverse", "tcpclient", "nc.exe", "ncat", "socat", "mimikatz",
-    "chisel", "ngrok", "ligolo", "cobaltstrike", "meterpreter"
-)
-
-Get-ChildItem -Path "C:\Users\*\AppData\Roaming\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt" -ErrorAction SilentlyContinue | ForEach-Object {
-    $userPath = $_.FullName
-    $lines = Get-Content -LiteralPath $userPath -ErrorAction SilentlyContinue
-    $lineNum = 0
-    foreach ($line in $lines) {
-        $lineNum++
-        foreach ($pattern in $historySuspiciousPatterns) {
-            if ($line -match [regex]::Escape($pattern)) {
-                Add-IRFinding -Category "PSHistory" -ItemName "Suspicious Command Line" -Path "$userPath : Line $lineNum" -Details $line -Severity "HIGH"
+function Get-ScraperQuarantineDecision {
+    param($Finding, $Context)
+    $reason = ''
+    try {
+        if ($Finding.Category -ne 'Filesystem') { $reason = 'Only reviewed filesystem findings can be quarantined.' }
+        $file = Get-Item -LiteralPath $Finding.Path -Force -ErrorAction Stop
+        # An execution extension alone is not evidence of malware. This list only
+        # limits which explicitly reviewed files can be moved; images/shortcuts/data cannot.
+        $allowed = @('.exe', '.ps1', '.bat', '.cmd', '.vbs', '.vbe', '.js', '.jse', '.wsf', '.hta', '.scr', '.jar', '.py')
+        if ($file.PSIsContainer -or $file.Extension.ToLowerInvariant() -notin $allowed) { $reason = 'Shortcuts, images, modules, and other non-executable data are report-only.' }
+        if (Test-ScraperLinkedPath $file.FullName) { $reason = 'Link, junction, or linked ancestor: report-only.' }
+        foreach ($root in $Context.ProtectedRoots) {
+            if (Test-ScraperPathWithin $file.FullName $root) { $reason = "Protected system/application/startup/report directory: $root"; break }
+        }
+        if ((Get-ScraperPathKey $file.FullName) -eq (Get-ScraperPathKey $Context.ScriptPath)) { $reason = 'The running scraper is protected.' }
+        if (-not $Context.DependenciesComplete) { $reason = 'Dependency inventory is incomplete; file quarantine is blocked for this run.' }
+        $fileKey = Get-ScraperPathKey $file.FullName
+        $namePattern = '(?i)(?<![\w.])' + [regex]::Escape($file.Name) + '(?=$|[\s"'';,])'
+        foreach ($reference in $Context.References) {
+            $referenceKey = Get-ScraperPathKey $reference
+            if ($referenceKey.Contains($fileKey) -or $reference -match $namePattern) {
+                $reason = 'Referenced by a process, service, task, startup entry, or WMI subscription; investigate separately.'
                 break
             }
         }
-    }
+        if (-not $Finding.Hash -or $Finding.Signature -eq 'Unknown') { $reason = 'Original hash/signature evidence is unavailable.' }
+        if ($Finding.Signature -eq 'Valid') { $reason = 'Validly signed file: report-only.' }
+        if ($reason) { return [PSCustomObject]@{ Allowed = $false; Reason = $reason } }
+        $evidence = Get-ScraperFileEvidence $file.FullName
+        if ($evidence.Hash -ne $Finding.Hash) { $reason = 'File changed since collection; rescan before taking action.' }
+        elseif ($evidence.Signature -in @('Valid', 'Unknown')) { $reason = 'Current signature is valid or cannot be verified; report-only.' }
+    } catch { $reason = "Cannot safely inspect file: $($_.Exception.Message)" }
+    [PSCustomObject]@{ Allowed = (-not [bool]$reason); Reason = $reason }
 }
 
-# B. Internet Explorer / Legacy Edge Typed URLs
-Write-Log "Scraping Internet Explorer / Windows TypedURLs registry keys..." "INFO"
-$typedUrlPaths = @(
-    "HKCU:\Software\Microsoft\Internet Explorer\TypedURLs",
-    "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\TypedPaths"
-)
-foreach ($regKey in $typedUrlPaths) {
-    if (Test-Path $regKey) {
-        $props = Get-ItemProperty -Path $regKey -ErrorAction SilentlyContinue
-        if ($props) {
-            $props.PSObject.Properties | Where-Object { $_.Name -match '^url\d+|^path\d+' } | ForEach-Object {
-                Add-IRFinding -Category "BrowserHistory" -ItemName "TypedURL" -Path "$regKey\$($_.Name)" -Details "$($_.Value)" -Severity "INFO"
-            }
-        }
-    }
-}
-
-# C. Zone.Identifier Alternate Data Streams (ADS) in User Downloads (identifies URL origins of downloaded tools)
-Write-Log "Auditing downloaded files and Zone.Identifier provenance (HostUrl)..." "INFO"
-Get-ChildItem -Path "C:\Users\*\Downloads" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 500 | ForEach-Object {
-    $filePath = $_.FullName
+function Invoke-ScraperQuarantine {
+    param($Finding, $Context, [string]$QuarantineDirectory)
+    Update-ScraperDependencies $Context
+    $decision = Get-ScraperQuarantineDecision $Finding $Context
+    if (-not $decision.Allowed) { Write-ScraperLog "Kept $($Finding.Path): $($decision.Reason)" 'WARN'; return }
+    $Finding | Format-List ID, Name, Path, Hash, Signature, Signer, Details | Out-String | Write-Host
+    if ((Read-Host "Type QUARANTINE $($Finding.ID) to move ONLY this file; Enter keeps it") -cne "QUARANTINE $($Finding.ID)") { return }
+    $data = $null
     try {
-        $zoneContent = Get-Content -LiteralPath "${filePath}:Zone.Identifier" -ErrorAction SilentlyContinue
-        if ($zoneContent) {
-            $hostUrl = ($zoneContent | Select-String -Pattern "HostUrl=(.*)").Matches.Groups[1].Value
-            $referrer = ($zoneContent | Select-String -Pattern "ReferrerUrl=(.*)").Matches.Groups[1].Value
-            $hash = (Get-FileHash -LiteralPath $filePath -Algorithm SHA256 -ErrorAction SilentlyContinue).Hash
-            Add-IRFinding -Category "DownloadedFile" -ItemName $_.Name -Path $filePath -Hash $hash -Details "Origin Host: $hostUrl | Referrer: $referrer" -Severity "SUSPICIOUS"
-        }
-    } catch {}
-}
-
-# -----------------------------------------------------------------------------
-# 2. Check Startup Folders, Run, & RunOnce Registry Persistence
-# -----------------------------------------------------------------------------
-Write-Host "`n================================================================================"
-Write-Host " [2/5] Checking Startup Folders & Registry Run / RunOnce Keys"
-Write-Host "================================================================================"
-
-$startupRegistryPaths = @(
-    "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run",
-    "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce",
-    "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run",
-    "HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce",
-    "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Run",
-    "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\RunOnce",
-    "HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer\Run",
-    "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer\Run",
-    "HKLM:\Software\Microsoft\Windows NT\CurrentVersion\Terminal Server\Install\Software\Microsoft\Windows\CurrentVersion\Run",
-    "HKLM:\Software\Microsoft\Windows NT\CurrentVersion\Terminal Server\Install\Software\Microsoft\Windows\CurrentVersion\RunOnce"
-)
-
-foreach ($regPath in $startupRegistryPaths) {
-    if (Test-Path $regPath) {
-        $props = Get-ItemProperty -Path $regPath -ErrorAction SilentlyContinue
-        if ($props) {
-            $props.PSObject.Properties | ForEach-Object {
-                if ($_.Name -notmatch '^PS.*') {
-                    $val = "$($_.Value)"
-                    $targetPath = $val
-                    if ($val -match '"([^"]+)"') { $targetPath = $matches[1] }
-                    elseif ($val -match '^([^\s]+)') { $targetPath = $matches[1] }
-                    
-                    $hash = "N/A"
-                    if (Test-Path -LiteralPath $targetPath) {
-                        $hash = (Get-FileHash -LiteralPath $targetPath -Algorithm SHA256 -ErrorAction SilentlyContinue).Hash
-                    }
-
-                    # Classify severity: filter out common standard system/tray processes
-                    $knownGoodPatterns = @(
-                        'SecurityHealthSystray.exe',
-                        'OneDrive.exe',
-                        'vmtoolsd.exe',
-                        'VBoxTray.exe'
-                    )
-                    $isKnownGood = $false
-                    foreach ($good in $knownGoodPatterns) {
-                        if ($val -like "*$good*") {
-                            $isKnownGood = $true
-                            break
-                        }
-                    }
-
-                    $severity = if ($isKnownGood) { "INFO" } else { "HIGH" }
-                    Add-IRFinding -Category "RegistryStartup" -ItemName $_.Name -Path "$regPath -> $val" -Hash $hash -Details "Entry in $regPath" -Severity $severity
-
-                    if (-not $NonInteractive -and -not $isKnownGood) {
-                        $action = Read-Host "Unrecognized Registry Run item found: '$($_.Name)' ($val). Remove registry entry? (y/N)"
-                        if ($action -eq 'y' -or $action -eq 'Y') {
-                            Remove-ItemProperty -Path $regPath -Name $_.Name -Force -ErrorAction SilentlyContinue
-                            Write-Log "Removed registry startup entry: $($_.Name) from $regPath" "SUCCESS"
-                        }
-                    }
-                }
-            }
-        }
+        # Recheck after the operator has had time to review the evidence.
+        Update-ScraperDependencies $Context
+        $decision = Get-ScraperQuarantineDecision $Finding $Context
+        if (-not $decision.Allowed) { throw $decision.Reason }
+        $dest = Join-Path $QuarantineDirectory ("$([guid]::NewGuid())-$([IO.Path]::GetFileName($Finding.Path)).quarantine")
+        $backup = "$dest.backup"
+        [IO.File]::Copy($Finding.Path, $backup, $false)
+        if ((Get-FileHash -LiteralPath $backup -Algorithm SHA256 -ErrorAction Stop).Hash -ne $Finding.Hash) { throw 'Recovery-copy hash does not match the collected file.' }
+        $data = [PSCustomObject]@{ ID = $Finding.ID; OriginalPath = $Finding.Path; QuarantinePath = $dest; RecoveryCopy = $backup; Hash = $Finding.Hash }
+        # A verified recovery copy and its original path must be recorded first.
+        Add-ScraperAction 'Quarantine' 'Prepared' $data
+        Update-ScraperDependencies $Context
+        $decision = Get-ScraperQuarantineDecision $Finding $Context
+        if (-not $decision.Allowed) { throw $decision.Reason }
+        Move-Item -LiteralPath $Finding.Path -Destination $dest -ErrorAction Stop
+        if ((Get-FileHash -LiteralPath $dest -Algorithm SHA256 -ErrorAction Stop).Hash -ne $Finding.Hash) { throw 'Moved-file verification failed; retain both recovery files for investigation.' }
+        $Finding.Action = 'Quarantined (recovery copy retained)'
+        Add-ScraperAction 'Quarantine' 'Completed' $data
+        Write-ScraperLog "Quarantined ONLY $($Finding.Path). Original path and recovery files: $script:ActionsFile" 'SUCCESS'
+    } catch {
+        $Finding.Action = "Action needs review: $($_.Exception.Message)"
+        if ($data) { Add-ScraperAction 'Quarantine' 'Failed' ([PSCustomObject]@{ Operation = $data; Error = $_.Exception.Message }) }
+        Write-ScraperLog "Quarantine incomplete for $($Finding.Path): $_" 'ERROR'
     }
 }
 
-# Winlogon Shell & Userinit hijacking checks
-$winlogonPath = "HKLM:\Software\Microsoft\Windows NT\CurrentVersion\Winlogon"
-if (Test-Path $winlogonPath) {
-    $wl = Get-ItemProperty -Path $winlogonPath -ErrorAction SilentlyContinue
-    if ($wl) {
-        if ($wl.Shell -and $wl.Shell.Trim().ToLower() -ne "explorer.exe") {
-            Add-IRFinding -Category "WinlogonHijack" -ItemName "Shell" -Path "$winlogonPath\Shell" -Details "Abnormal Shell: $($wl.Shell)" -Severity "CRITICAL"
-        }
-        if ($wl.Userinit -and $wl.Userinit.Trim().ToLower() -notmatch '^c:\\windows\\system32\\userinit\.exe,?$') {
-            Add-IRFinding -Category "WinlogonHijack" -ItemName "Userinit" -Path "$winlogonPath\Userinit" -Details "Abnormal Userinit: $($wl.Userinit)" -Severity "CRITICAL"
-        }
+function Get-ScraperExactTask {
+    param([string]$Name, [string]$Path)
+    # Match literal properties; wildcard-capable task-path queries are unsuitable
+    # when an operator has selected exactly one finding.
+    $tasks = @(Get-ScheduledTask -ErrorAction Stop | Where-Object { $_.TaskName -eq $Name -and $_.TaskPath -eq $Path })
+    if ($tasks.Count -ne 1) { throw 'The selected task no longer resolves to exactly one task. Rescan before taking action.' }
+    return $tasks[0]
+}
+
+function Invoke-ScraperTaskDisable {
+    param($Finding, [string]$BackupDirectory)
+    if ($Finding.Category -ne 'ScheduledTask') { Write-ScraperLog 'Select a scheduled-task finding.' 'WARN'; return }
+    $task = $script:TaskTargets[$Finding.ID]
+    if (-not $task -or $task.TaskPath -like '\Microsoft\*') {
+        Write-ScraperLog 'Platform tasks and unavailable task definitions are report-only.' 'WARN'; return
+    }
+    $Finding | Format-List ID, Name, Path, Details | Out-String | Write-Host
+    if ((Read-Host "Type DISABLE $($Finding.ID) to disable ONLY this task; Enter keeps it") -cne "DISABLE $($Finding.ID)") { return }
+    $data = $null
+    try {
+        $current = Get-ScraperExactTask $task.TaskName $task.TaskPath
+        $xml = Export-ScheduledTask -InputObject $current -ErrorAction Stop
+        if (-not $task.Definition -or $xml -cne $task.Definition) { throw 'Task definition changed or its original XML was unavailable; rescan before taking action.' }
+        $backupPath = Join-Path $BackupDirectory "task-$($Finding.ID)-$([guid]::NewGuid()).xml"
+        Set-Content -LiteralPath $backupPath -Value $xml -Encoding Unicode -ErrorAction Stop
+        $null = [xml](Get-Content -LiteralPath $backupPath -Raw -ErrorAction Stop)
+        $data = [PSCustomObject]@{ ID = $Finding.ID; TaskName = $task.TaskName; TaskPath = $task.TaskPath; PreviousState = [string]$current.State; DefinitionBackup = $backupPath }
+        Add-ScraperAction 'DisableTask' 'Prepared' $data
+        Disable-ScheduledTask -InputObject $current -ErrorAction Stop | Out-Null
+        $after = Get-ScraperExactTask $task.TaskName $task.TaskPath
+        if ([string]$after.State -ne 'Disabled') { throw "Observed task state: $($after.State)" }
+        $Finding.Action = 'Task disabled (definition retained)'
+        Add-ScraperAction 'DisableTask' 'Completed' $data
+        Write-ScraperLog "Disabled ONLY $($task.TaskPath)$($task.TaskName); XML backup: $backupPath" 'SUCCESS'
+    } catch {
+        $Finding.Action = "Action needs review: $($_.Exception.Message)"
+        if ($data) { Add-ScraperAction 'DisableTask' 'Failed' ([PSCustomObject]@{ Operation = $data; Error = $_.Exception.Message }) }
+        Write-ScraperLog "Task disablement incomplete: $_" 'ERROR'
     }
 }
 
-# Startup folders
-$startupFolders = @(
-    "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Startup",
-    "C:\Users\*\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup"
-)
-
-Get-ChildItem -Path $startupFolders -File -ErrorAction SilentlyContinue | ForEach-Object {
-    $filePath = $_.FullName
-    $hash = (Get-FileHash -LiteralPath $filePath -Algorithm SHA256 -ErrorAction SilentlyContinue).Hash
-    Add-IRFinding -Category "StartupFolder" -ItemName $_.Name -Path $filePath -Hash $hash -Details "File residing in Startup Folder" -Severity "HIGH"
-    
-    if (-not $NonInteractive) {
-        $prompt = Read-Host "Startup file found: '$($_.Name)'. [Q] Quarantine, [D] Delete, [S] Skip (Default: Q)"
-        if ($prompt -eq 'd' -or $prompt -eq 'D') {
-            Remove-Item -LiteralPath $filePath -Force -ErrorAction SilentlyContinue
-            Write-Log "Deleted startup file: $filePath" "SUCCESS"
-        } elseif ($prompt -ne 's' -and $prompt -ne 'S') {
-            Invoke-QuarantineFile -FilePath $filePath -Reason "Startup folder persistence"
-        }
-    } elseif ($QuarantineAll) {
-        Invoke-QuarantineFile -FilePath $filePath -Reason "Startup folder persistence (Auto)"
-    }
-}
-
-# -----------------------------------------------------------------------------
-# 3. Check Scheduled Tasks Persistence
-# -----------------------------------------------------------------------------
-Write-Host "`n================================================================================"
-Write-Host " [3/5] Checking Scheduled Tasks for Persistence"
-Write-Host "================================================================================"
-
-Write-Log "Auditing non-Microsoft scheduled tasks..." "INFO"
-try {
-    $allTasks = Get-ScheduledTask -ErrorAction SilentlyContinue
-    # Filter out core Microsoft built-in tasks
-    $suspiciousTasks = $allTasks | Where-Object {
-        $_.TaskPath -notmatch '^\\Microsoft\\Windows\\' -and
-        $_.TaskName -notmatch '^Microsoft' -and
-        $_.TaskPath -notmatch '^\\Microsoft\\Office\\'
-    }
-
-    foreach ($task in $suspiciousTasks) {
-        $actions = $task.Actions | ForEach-Object { "$($_.Execute) $($_.Arguments)".Trim() }
-        $actionStr = $actions -join " | "
-        
-        $targetExe = ($task.Actions | Select-Object -First 1).Execute
-        $hash = "N/A"
-        if ($targetExe -and (Test-Path -LiteralPath $targetExe)) {
-            $hash = (Get-FileHash -LiteralPath $targetExe -Algorithm SHA256 -ErrorAction SilentlyContinue).Hash
-        }
-
-        Add-IRFinding -Category "ScheduledTask" -ItemName $task.TaskName -Path $task.TaskPath -Hash $hash -Details "Action: $actionStr | State: $($task.State)" -Severity "HIGH"
-
-        if (-not $NonInteractive) {
-            $taskAction = Read-Host "Non-standard task '$($task.TaskName)' detected. [D] Disable, [R] Remove, [S] Skip (Default: D)"
-            if ($taskAction -eq 'r' -or $taskAction -eq 'R') {
-                Unregister-ScheduledTask -TaskName $task.TaskName -Confirm:$false -ErrorAction SilentlyContinue
-                Write-Log "Unregistered task: $($task.TaskName)" "SUCCESS"
-            } elseif ($taskAction -ne 's' -and $taskAction -ne 'S') {
-                Disable-ScheduledTask -TaskName $task.TaskName -ErrorAction SilentlyContinue | Out-Null
-                Write-Log "Disabled task: $($task.TaskName)" "SUCCESS"
-            }
-        }
-    }
-} catch {
-    Write-Log "Could not audit scheduled tasks: $_" "WARN"
-}
-
-# -----------------------------------------------------------------------------
-# 4. Check WMI Event Subscriptions (Advanced Red Team Persistence)
-# -----------------------------------------------------------------------------
-Write-Host "`n================================================================================"
-Write-Host " [4/5] Checking WMI Event Subscriptions"
-Write-Host "================================================================================"
-
-Write-Log "Querying root\subscription for WMI Event Consumers and Filters..." "INFO"
-try {
-    # CommandLineEventConsumers
-    $cmdConsumers = Get-CimInstance -Namespace root\subscription -ClassName CommandLineEventConsumer -ErrorAction SilentlyContinue
-    foreach ($c in $cmdConsumers) {
-        Add-IRFinding -Category "WMIConsumer" -ItemName $c.Name -Path "root\subscription:CommandLineEventConsumer" -Details "Command: $($c.CommandLineTemplate) | Executable: $($c.ExecutablePath)" -Severity "CRITICAL"
-        if (-not $NonInteractive) {
-            $prompt = Read-Host "Suspicious CommandLineEventConsumer '$($c.Name)' found. Remove? (y/N)"
-            if ($prompt -eq 'y' -or $prompt -eq 'Y') {
-                Remove-CimInstance -InputObject $c -ErrorAction SilentlyContinue
-                Write-Log "Removed WMI CommandLineEventConsumer: $($c.Name)" "SUCCESS"
-            }
-        }
-    }
-
-    # ActiveScriptEventConsumers
-    $scriptConsumers = Get-CimInstance -Namespace root\subscription -ClassName ActiveScriptEventConsumer -ErrorAction SilentlyContinue
-    foreach ($sc in $scriptConsumers) {
-        Add-IRFinding -Category "WMIConsumer" -ItemName $sc.Name -Path "root\subscription:ActiveScriptEventConsumer" -Details "ScriptType: $($sc.ScriptingEngine) | Code: $($sc.ScriptText)" -Severity "CRITICAL"
-        if (-not $NonInteractive) {
-            $prompt = Read-Host "Suspicious ActiveScriptEventConsumer '$($sc.Name)' found. Remove? (y/N)"
-            if ($prompt -eq 'y' -or $prompt -eq 'Y') {
-                Remove-CimInstance -InputObject $sc -ErrorAction SilentlyContinue
-                Write-Log "Removed WMI ActiveScriptEventConsumer: $($sc.Name)" "SUCCESS"
-            }
-        }
-    }
-
-    # Event Filters & Bindings
-    $bindings = Get-CimInstance -Namespace root\subscription -ClassName __FilterToConsumerBinding -ErrorAction SilentlyContinue
-    foreach ($b in $bindings) {
-        $filterRef   = "$($b.Filter)"
-        $consumerRef = "$($b.Consumer)"
-        if ($filterRef -notmatch 'SCM Event Log Filter' -and $consumerRef -notmatch 'SCM Event Log Consumer') {
-            Add-IRFinding -Category "WMIBinding" -ItemName "FilterToConsumerBinding" -Path "root\subscription" -Details "Filter: $filterRef -> Consumer: $consumerRef" -Severity "HIGH"
-        }
-    }
-} catch {
-    Write-Log "Could not query WMI subscriptions: $_" "WARN"
-}
-
-# -----------------------------------------------------------------------------
-# 5. Recursive Filesystem Scraper (.ps1, .exe, & Secret Harmful 3rd Options)
-# -----------------------------------------------------------------------------
-Write-Host "`n================================================================================"
-Write-Host " [5/5] Recursive Filesystem Scraper (Scripts, Binaries & Secret Third Options)"
-Write-Host "================================================================================"
-
-# "secret harmful third options": batch, vbs, hta, scr, js, ws, dlls in userland, elf, python, jar
-$targetExtensions = @(
-    "*.ps1", "*.psm1", "*.exe", "*.bat", "*.cmd",
-    "*.vbs", "*.vbe", "*.js", "*.jse", "*.wsf",
-    "*.hta", "*.scr", "*.elf", "*.bin", "*.jar", "*.py"
-)
-
-# Common Red Team drop hotspots vs Full Drive Scan
-$searchPaths = @(
-    "C:\Users\*\AppData\Local\Temp",
-    "C:\Users\*\AppData\Roaming",
-    "C:\Users\*\AppData\Local",
-    "C:\Windows\Temp",
-    "C:\Temp",
-    "C:\PerfLogs",
-    "C:\Users\Public",
-    "C:\ProgramData",
-    "C:\Windows\System32\Tasks",
-    "C:\Windows\Debug",
-    "C:\Users\*\Desktop",
-    "C:\Users\*\Downloads"
-)
-
-if ($FullScan) {
-    Write-Log "FullScan enabled. Expanding search to entire $TargetDrive drive (excluding Windows Component Store)..." "WARN"
-    $searchPaths = @("$TargetDrive\")
-} else {
-    Write-Log "Targeting high-probability malware drop directories (Hotspots)..." "INFO"
-}
-
-# Folders to explicitly skip during recursive traversal (legitimate high-density OS folders)
-$excludeDirs = @(
-    "*\Windows\WinSxS*",
-    "*\Windows\servicing*",
-    "*\Windows\Installer*",
-    "*\Microsoft.NET*",
-    "*\Windows\assembly*"
-)
-
-$scannedFiles = [System.Collections.Generic.List[System.IO.FileInfo]]::new()
-
-foreach ($pathPattern in $searchPaths) {
-    # Resolve wildcards in paths
-    $resolvedPaths = Resolve-Path $pathPattern -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Path
-    foreach ($rPath in $resolvedPaths) {
-        Write-Log "Scanning directory: $rPath" "INFO"
+function Get-ScraperFiles {
+    param([string[]]$Roots, [string[]]$ExcludedRoots, [string[]]$Extensions)
+    $visited = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $pending = [Collections.Generic.Stack[string]]::new()
+    foreach ($root in $Roots) { $pending.Push($root) }
+    while ($pending.Count) {
+        $directory = $pending.Pop()
+        if (-not $visited.Add((Get-ScraperPathKey $directory))) { continue }
+        if (@($ExcludedRoots | Where-Object { Test-ScraperPathWithin $directory $_ }).Count) { continue }
         try {
-            Get-ChildItem -LiteralPath $rPath -Include $targetExtensions -File -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
-                $item = $_
-                $skip = $false
-                foreach ($ex in $excludeDirs) {
-                    if ($item.FullName -like $ex) { $skip = $true; break }
-                }
-                if (-not $skip) {
-                    $scannedFiles.Add($item)
-                }
-            }
-        } catch {}
+            if (Test-ScraperLinkedPath $directory) { Write-ScraperLog "Skipped linked directory: $directory"; continue }
+            $children = @(Get-ChildItem -LiteralPath $directory -Force -ErrorAction Stop)
+        } catch { Write-ScraperLog "Could not enumerate $directory`: $_" 'WARN'; continue }
+        foreach ($item in $children) {
+            if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $item.LinkType) { continue }
+            if ($item.PSIsContainer) { $pending.Push($item.FullName) }
+            elseif ($item.Extension.ToLowerInvariant() -in $Extensions) { $item }
+        }
     }
 }
 
-Write-Log "Total candidate files discovered: $($scannedFiles.Count)" "INFO"
+function Start-ScraperReview {
+    param($Context, [string]$QuarantineDirectory, [string]$TaskBackupDirectory)
+    while ($true) {
+        $choice = Read-ScraperChoice -Prompt '[L] List findings, [Q] Review one file for quarantine, [T] Review one task for disablement, [F] Finish (default F)' -Choices @('L', 'Q', 'T', 'F') -Default 'F'
+        if ($choice -eq 'F') { return }
+        if ($choice -eq 'L') { $script:Findings | Format-Table ID, Category, Severity, Name, Path -AutoSize | Out-String | Write-Host; continue }
+        $idInput = Read-Host 'Exact finding ID (blank cancels)'
+        $id = 0
+        if (-not [int]::TryParse($idInput, [ref]$id)) { continue }
+        $finding = $script:Findings | Where-Object ID -EQ $id | Select-Object -First 1
+        if (-not $finding) { Write-Host 'No finding has that ID.'; continue }
+        if ($choice -eq 'Q') { Invoke-ScraperQuarantine $finding $Context $QuarantineDirectory }
+        else { Invoke-ScraperTaskDisable $finding $TaskBackupDirectory }
+        Save-ScraperReports
+    }
+}
 
-# Analyze each candidate file
-$suspiciousFiles = [System.Collections.Generic.List[PSCustomObject]]::new()
+# Startup and all collection below are read-only with respect to audited items.
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin) { throw 'Run in an elevated Windows PowerShell session.' }
+$toolsDirectory = Join-Path $env:SystemDrive 'Tools'
+$runName = "scraper-$(Get-Date -Format yyyyMMdd-HHmmss)-$([guid]::NewGuid().ToString('N').Substring(0,8))"
+$reportDirectory = Join-Path (Join-Path $toolsDirectory 'logs') $runName
+$quarantineDirectory = Join-Path (Join-Path $toolsDirectory 'Quarantine') $runName
+$taskBackupDirectory = Join-Path $reportDirectory 'task-backups'
+New-Item -ItemType Directory -Path $reportDirectory, $quarantineDirectory, $taskBackupDirectory -Force | Out-Null
+$script:ReportLog = Join-Path $reportDirectory 'audit.log'
+$script:FindingsCsv = Join-Path $reportDirectory 'findings.csv'
+$script:FindingsXml = Join-Path $reportDirectory 'findings.xml'
+$script:ActionsFile = Join-Path $reportDirectory 'actions.jsonl'
+$null = New-Item -ItemType File -Path $script:ActionsFile
+$script:Findings = [Collections.Generic.List[object]]::new()
+$script:TaskTargets = @{}
+$script:ReadOrActionErrors = 0
+$context = [PSCustomObject]@{
+    ScriptPath = $PSCommandPath; DependenciesComplete = $true; RegistryKeys = @()
+    References = [Collections.Generic.List[string]]::new()
+    ProtectedRoots = @($env:SystemRoot, $env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:ProgramW6432, $env:ProgramData, $toolsDirectory) + @($env:PSModulePath -split ';') | Where-Object { $_ }
+}
+Write-ScraperLog 'Audit-first collection. Unknown, unsigned, downloaded, or startup items are not automatically malicious.'
+Write-ScraperLog "Reports: $reportDirectory. No audited items change unless explicitly selected and confirmed later."
 
-foreach ($file in $scannedFiles) {
+# 1. Capture live dependency references; never stop processes or services.
+foreach ($class in @('Win32_Process', 'Win32_Service')) {
     try {
-        $filePath = $file.FullName
-        $ext = $file.Extension.ToLower()
-
-        # Check digital signature for binaries (.exe, .dll) and scripts (.ps1)
-        $sigStatus = "Unsigned"
-        if ($ext -in @(".exe", ".dll", ".ps1")) {
-            $sig = Get-AuthenticodeSignature -LiteralPath $filePath -ErrorAction SilentlyContinue
-            if ($sig -and $sig.Status -eq "Valid") {
-                # Skip trusted Microsoft / Windows signed binaries located in standard Program Files / System32
-                if ($sig.SignerCertificate.Subject -match "Microsoft" -and ($filePath -like "C:\Program Files*" -or $filePath -like "C:\Windows\System32*")) {
-                    continue
-                }
-                $sigStatus = "Valid: $($sig.SignerCertificate.Subject)"
-            }
+        $instances = @(Get-CimInstance -ClassName $class -ErrorAction Stop)
+        foreach ($item in $instances) {
+            $references = if ($class -eq 'Win32_Process') { @($item.ExecutablePath, $item.CommandLine) } else { @($item.PathName) }
+            foreach ($reference in $references) { if ($reference) { $context.References.Add([Environment]::ExpandEnvironmentVariables($reference)) } }
         }
-
-        # Check SHA256 Hash
-        $hashObj = Get-FileHash -LiteralPath $filePath -Algorithm SHA256 -ErrorAction SilentlyContinue
-        $hash = if ($hashObj) { $hashObj.Hash } else { "N/A" }
-
-        # Flag reasons
-        $reason = @()
-        if ($ext -in @(".bat", ".cmd", ".vbs", ".hta", ".scr", ".js")) {
-            $reason += "Scripting/Execution Format ($ext)"
-        }
-        if ($filePath -match 'AppData|Temp|PerfLogs|Public|ProgramData') {
-            $reason += "Writable Hotspot Location"
-        }
-        if ($sigStatus -eq "Unsigned" -and $ext -in @(".exe", ".ps1")) {
-            $reason += "Unsigned Binary/Script"
-        }
-
-        $reasonStr = if ($reason.Count -gt 0) { $reason -join ", " } else { "General Audit" }
-
-        Add-IRFinding -Category "Filesystem" -ItemName $file.Name -Path $filePath -Hash $hash -Details "Size: $($file.Length) bytes | Sig: $sigStatus | Flags: $reasonStr" -Severity "SUSPICIOUS"
-
-        $suspiciousFiles.Add([PSCustomObject]@{
-            File    = $file
-            Hash    = $hash
-            Reason  = $reasonStr
-            Sig     = $sigStatus
-        })
-    } catch {}
+    } catch { $context.DependenciesComplete = $false; Write-ScraperLog "Dependency inventory failed for $class`: $_. File quarantine will be blocked." 'WARN' }
 }
 
-# Triage & Remediation for Suspicious Files
-if ($suspiciousFiles.Count -gt 0) {
-    Write-Host "`n--------------------------------------------------------------------------------"
-    Write-Host "Suspicious Files Discovered: $($suspiciousFiles.Count)" -ForegroundColor Yellow
-    Write-Host "--------------------------------------------------------------------------------"
-
-    if (-not $NonInteractive) {
-        $actionChoice = Read-Host "Action for discovered files: [Q] Quarantine suspicious files, [I] Interactively review each, [S] Skip / Keep all (Default: Q)"
-        if ([string]::IsNullOrWhiteSpace($actionChoice)) { $actionChoice = "Q" }
-
-        if ($actionChoice -eq 'Q' -or $actionChoice -eq 'q') {
-            foreach ($s in $suspiciousFiles) {
-                Invoke-QuarantineFile -FilePath $s.File.FullName -Reason $s.Reason
+# 2. Collect command history and download provenance; do not modify either.
+Write-ScraperLog 'Collecting command history and download provenance...'
+$historyPattern = '(?i)\b(wget|curl|Invoke-WebRequest|iwr|certutil|bitsadmin|downloadstring|iex|frombase64string|encodedcommand|tcpclient|ncat|socat|mimikatz|chisel|ngrok|ligolo|meterpreter)\b|(?:^|\s)-enc(?:odedcommand)?\b'
+$usersRoot = Join-Path $env:SystemDrive 'Users'
+$profiles = @(Get-ChildItem -LiteralPath $usersRoot -Directory -Force -ErrorAction SilentlyContinue | Where-Object { -not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) })
+foreach ($profile in $profiles) {
+    $historyPath = Join-Path $profile.FullName 'AppData\Roaming\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt'
+    if (Test-Path -LiteralPath $historyPath) {
+        try {
+            $lineNumber = 0
+            foreach ($line in @(Get-Content -LiteralPath $historyPath -ErrorAction Stop)) {
+                $lineNumber++
+                if ($line -match $historyPattern) { $null = Add-ScraperFinding 'PSHistory' $profile.Name "$historyPath : $lineNumber" "Command needs context: $line" 'REVIEW' }
             }
-        } elseif ($actionChoice -eq 'I' -or $actionChoice -eq 'i') {
-            foreach ($s in $suspiciousFiles) {
-                Write-Host "`nFile: $($s.File.FullName)" -ForegroundColor Cyan
-                Write-Host "Size: $($s.File.Length) bytes | Hash: $($s.Hash)" -ForegroundColor DarkCyan
-                Write-Host "Flags: $($s.Reason)" -ForegroundColor Yellow
-                $userAction = Read-Host "[Q] Quarantine, [D] Delete permanently, [S] Skip (Default: Q)"
-                if ($userAction -eq 'd' -or $userAction -eq 'D') {
-                    Remove-Item -LiteralPath $s.File.FullName -Force -ErrorAction SilentlyContinue
-                    Write-Log "Deleted file: $($s.File.FullName)" "SUCCESS"
-                } elseif ($userAction -ne 's' -and $userAction -ne 'S') {
-                    Invoke-QuarantineFile -FilePath $s.File.FullName -Reason $s.Reason
-                }
-            }
-        }
-    } elseif ($QuarantineAll) {
-        foreach ($s in $suspiciousFiles) {
-            Invoke-QuarantineFile -FilePath $s.File.FullName -Reason "$($s.Reason) (Auto)"
+        } catch { Write-ScraperLog "Could not read history $historyPath`: $_" 'WARN' }
+    }
+    $downloads = Join-Path $profile.FullName 'Downloads'
+    if (Test-Path -LiteralPath $downloads) {
+        foreach ($file in @(Get-ScraperFiles @($downloads) @() @('.exe', '.ps1', '.bat', '.cmd', '.lnk', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.ico'))) {
+            try {
+                $zone = Get-Content -LiteralPath $file.FullName -Stream Zone.Identifier -ErrorAction Stop
+                $null = Add-ScraperFinding 'DownloadProvenance' $file.Name $file.FullName ($zone -join ' | ')
+            } catch { } # Most local files have no Zone.Identifier stream.
         }
     }
 }
-
-# -----------------------------------------------------------------------------
-# 6. Export Structured IR Reports & Final Summary
-# -----------------------------------------------------------------------------
-Write-Host "`n================================================================================"
-Write-Host " Incident Response Audit Summary"
-Write-Host "================================================================================"
-
-# Export findings to CSV for easy parsing by IR teams
-try {
-    $script:Findings | Export-Csv -Path $IRCsvFile -NoTypeInformation -Encoding ascii
-    Write-Log "Structured CSV findings exported to $IRCsvFile" "SUCCESS"
-} catch {
-    Write-Log "Could not export CSV findings: $_" "WARN"
+foreach ($key in @('HKCU:\Software\Microsoft\Internet Explorer\TypedURLs', 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\TypedPaths')) {
+    if (-not (Test-Path -LiteralPath $key)) { continue }
+    try {
+        $properties = Get-ItemProperty -LiteralPath $key -ErrorAction Stop
+        foreach ($property in $properties.PSObject.Properties) {
+            if ($property.Name -match '^(url\d+|path\d+)$') {
+                $null = Add-ScraperFinding 'BrowserHistory' $property.Name $key ([string]$property.Value)
+            }
+        }
+    } catch { Write-ScraperLog "Could not read browser/path history $key`: $_" 'WARN' }
 }
+Save-ScraperReports
 
-Write-Host "--------------------------------------------------------------------------------" -ForegroundColor DarkGray
-Write-Host " Total Suspicious Findings Logged: $($script:Findings.Count)" -ForegroundColor Yellow
-Write-Host " Full Text IR Report Log        : $IRReportFile" -ForegroundColor Cyan
-Write-Host " Structured CSV Findings File   : $IRCsvFile" -ForegroundColor Cyan
-Write-Host " Quarantine Safe Folder         : $QuarantineDir" -ForegroundColor Cyan
-Write-Host "--------------------------------------------------------------------------------" -ForegroundColor DarkGray
+# 3. Inventory registry/startup items; all remain in place, including .lnk/images.
+Write-ScraperLog 'Inventorying startup entries and files (report-only)...'
+$startupKeys = @(
+    'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run', 'HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce',
+    'HKLM:\Software\Microsoft\Windows\CurrentVersion\Run', 'HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce',
+    'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Run', 'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\RunOnce',
+    'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer\Run', 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer\Run',
+    'HKLM:\Software\Microsoft\Windows NT\CurrentVersion\Winlogon',
+    'HKLM:\Software\Microsoft\Windows NT\CurrentVersion\Terminal Server\Install\Software\Microsoft\Windows\CurrentVersion\Run',
+    'HKLM:\Software\Microsoft\Windows NT\CurrentVersion\Terminal Server\Install\Software\Microsoft\Windows\CurrentVersion\RunOnce'
+)
+$context.RegistryKeys = $startupKeys
+foreach ($key in $startupKeys) {
+    if (-not (Test-Path -LiteralPath $key)) { continue }
+    try {
+        $properties = Get-ItemProperty -LiteralPath $key -ErrorAction Stop
+        foreach ($property in $properties.PSObject.Properties) {
+            if ($property.Name -in @('PSPath', 'PSParentPath', 'PSChildName', 'PSDrive', 'PSProvider')) { continue }
+            if ($key -like '*\Winlogon' -and $property.Name -notin @('Shell', 'Userinit')) { continue }
+            $context.References.Add([Environment]::ExpandEnvironmentVariables([string]$property.Value))
+            $null = Add-ScraperFinding 'RegistryStartup' $property.Name $key ([string]$property.Value) 'REVIEW'
+        }
+    } catch { $context.DependenciesComplete = $false; Write-ScraperLog "Could not read startup key $key`: $_" 'WARN' }
+}
+$startupDirectories = @((Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\Startup')) + @($profiles | ForEach-Object { Join-Path $_.FullName 'AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup' })
+$context.ProtectedRoots += $startupDirectories
+foreach ($directory in $startupDirectories) {
+    if (-not (Test-Path -LiteralPath $directory)) { continue }
+    try {
+        foreach ($file in @(Get-ChildItem -LiteralPath $directory -File -Force -ErrorAction Stop)) {
+            $context.References.Add($file.FullName)
+            if ($file.Extension -eq '.lnk') {
+                # Read an existing shortcut as metadata; never call Save or Run.
+                $shell = $null
+                $shortcut = $null
+                try {
+                    $shell = New-Object -ComObject WScript.Shell -ErrorAction Stop
+                    $shortcut = $shell.CreateShortcut($file.FullName)
+                    $context.References.Add("$($shortcut.TargetPath) $($shortcut.Arguments)")
+                } catch {
+                    $context.DependenciesComplete = $false
+                    Write-ScraperLog "Could not read startup shortcut target $($file.FullName): $_. File quarantine is blocked." 'WARN'
+                } finally {
+                    if ($shortcut -and [Runtime.InteropServices.Marshal]::IsComObject($shortcut)) { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($shortcut) }
+                    if ($shell -and [Runtime.InteropServices.Marshal]::IsComObject($shell)) { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($shell) }
+                }
+            }
+            $null = Add-ScraperFinding 'StartupFolder' $file.Name $file.FullName 'Startup presence is inventory only. Shortcuts/images are retained.'
+        }
+    } catch { $context.DependenciesComplete = $false; Write-ScraperLog "Could not read startup folder $directory`: $_" 'WARN' }
+}
+Save-ScraperReports
 
-Write-Log "Filesystem and persistence scraper finished successfully." "SUCCESS"
-Write-Host "`n[+] Scraping complete. Review $IRReportFile for competition IR submissions." -ForegroundColor Green
-if (-not $NonInteractive) { Read-Host "Press Enter to exit..." }
+# 4. Inventory ALL task paths. Names such as Microsoft are not proof of trust.
+Write-ScraperLog 'Inventorying scheduled tasks (no tasks disabled during collection)...'
+try {
+    foreach ($task in @(Get-ScheduledTask -ErrorAction Stop)) {
+        $actions = @($task.Actions | ForEach-Object { "$($_.Execute) $($_.Arguments)".Trim() })
+        foreach ($action in $actions) { if ($action) { $context.References.Add($action) } }
+        $details = "State: $($task.State); Principal: $($task.Principal.UserId); Actions: $($actions -join ' | ')"
+        $severity = if (($actions -join ' ') -match $historyPattern -or $task.TaskPath -notlike '\Microsoft\*') { 'REVIEW' } else { 'INFO' }
+        $finding = Add-ScraperFinding 'ScheduledTask' $task.TaskName "$($task.TaskPath)$($task.TaskName)" $details $severity
+        $definition = $null
+        try { $definition = Export-ScheduledTask -InputObject $task -ErrorAction Stop }
+        catch { Write-ScraperLog "Could not snapshot XML for $($finding.Path): $_. This task cannot be disabled through review." 'WARN' }
+        $script:TaskTargets[$finding.ID] = [PSCustomObject]@{ TaskName = $task.TaskName; TaskPath = $task.TaskPath; Definition = $definition }
+    }
+} catch { $context.DependenciesComplete = $false; Write-ScraperLog "Could not fully inventory tasks: $_" 'WARN' }
+
+# 5. WMI subscriptions are report-only. Legitimate management tools use these too.
+foreach ($class in @('CommandLineEventConsumer', 'ActiveScriptEventConsumer', '__EventFilter', '__FilterToConsumerBinding')) {
+    try {
+        foreach ($item in @(Get-CimInstance -Namespace root\subscription -ClassName $class -ErrorAction Stop)) {
+            $details = $item | Select-Object Name, ExecutablePath, CommandLineTemplate, ScriptingEngine, ScriptText, Query, Filter, Consumer | ConvertTo-Json -Compress -Depth 4
+            foreach ($reference in @($item.ExecutablePath, $item.CommandLineTemplate, $item.ScriptText, $item.Query)) {
+                if ($reference) { $context.References.Add([Environment]::ExpandEnvironmentVariables([string]$reference)) }
+            }
+            $null = Add-ScraperFinding 'WMI' ([string]$item.Name) "root\subscription:$class" $details 'REVIEW'
+        }
+    } catch { $context.DependenciesComplete = $false; Write-ScraperLog "Could not inventory WMI $class`: $_" 'WARN' }
+}
+Save-ScraperReports
+
+# 6. Walk selected locations without following links or collecting the same file twice.
+$scope = Read-ScraperChoice -Prompt 'File inventory: [H] User/temp hotspots, [F] Full system drive, [C] Custom folder, [S] Skip (default H; collection changes nothing)' -Choices @('H', 'F', 'C', 'S') -Default 'H'
+$roots = @()
+if ($scope -eq 'F') { $roots = @("$env:SystemDrive\") }
+elseif ($scope -eq 'C') {
+    $custom = Read-Host 'Full path to one folder (blank skips file inventory)'
+    if ($custom) { $roots = @((Get-Item -LiteralPath $custom -Force -ErrorAction Stop).FullName) }
+} elseif ($scope -eq 'H') {
+    $roots = @((Join-Path $env:SystemRoot 'Temp'), (Join-Path $env:SystemDrive 'Temp'), (Join-Path $env:SystemDrive 'PerfLogs'), $env:ProgramData)
+    foreach ($profile in $profiles) {
+        $roots += @('Desktop', 'Downloads', 'AppData\Local', 'AppData\Roaming') | ForEach-Object { Join-Path $profile.FullName $_ }
+    }
+}
+$roots = @($roots | Where-Object { Test-Path -LiteralPath $_ -PathType Container })
+$excluded = @($toolsDirectory, (Join-Path $env:SystemRoot 'WinSxS'), (Join-Path $env:SystemRoot 'servicing'), (Join-Path $env:SystemRoot 'Installer'))
+$extensions = @('.exe', '.ps1', '.psm1', '.psd1', '.bat', '.cmd', '.vbs', '.vbe', '.js', '.jse', '.wsf', '.hta', '.scr', '.jar', '.py')
+$fileCount = 0
+foreach ($file in Get-ScraperFiles $roots $excluded $extensions) {
+    try {
+        $evidence = Get-ScraperFileEvidence $file.FullName
+        $severity = if ($evidence.Signature -eq 'Valid') { 'INFO' } else { 'REVIEW' }
+        $null = Add-ScraperFinding 'Filesystem' $file.Name $file.FullName "Size: $($file.Length); signature is context, not a malware verdict." $severity $evidence.Hash $evidence.Signature $evidence.Signer
+        $fileCount++
+        if ($fileCount % 250 -eq 0) { Write-ScraperLog "Inventoried $fileCount executable/script files..." }
+    } catch { Write-ScraperLog "Could not inspect file $($file.FullName): $_" 'WARN' }
+}
+Save-ScraperReports
+Write-ScraperLog "Collection complete: $($script:Findings.Count) findings. Reports saved before any review actions."
+$script:Findings | Group-Object Category | Select-Object Name, Count | Format-Table -AutoSize | Out-String | Write-Host
+Write-Host 'No audited files, shortcuts, images, registry entries, tasks, processes, services, or WMI objects have been changed.'
+$review = Read-ScraperChoice -Prompt '[F] Finish audit, [R] Open optional per-item review (default F)' -Choices @('F', 'R') -Default 'F'
+if ($review -eq 'R') { Start-ScraperReview $context $quarantineDirectory $taskBackupDirectory }
+Save-ScraperReports
+Write-ScraperLog "Finished with $script:ReadOrActionErrors read/action warning(s). Findings: $script:FindingsCsv; actions/recovery paths: $script:ActionsFile"
+Read-Host 'Press Enter to exit'
