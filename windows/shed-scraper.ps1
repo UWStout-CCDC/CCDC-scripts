@@ -9,6 +9,33 @@ are saved before an optional review menu. Blank answers keep everything.
 Shortcuts, images, links, Windows/application files, validly signed files, and
 files referenced by processes/services/autoruns/tasks are not quarantined.
 Quarantine and task disablement require separate, exact confirmations and backups.
+.NOTES
+READING GUIDE
+  Helpers below handle logging, path/evidence checks, dependency refresh, and the
+  optional action menu. Main execution starts at the elevation/directory setup.
+  Collection stages 1-6 inventory dependencies, history/downloads, startup,
+  tasks, WMI, and selected filesystem locations. Reports are saved along the way.
+
+DEFAULTS AND ACTIONS
+  Collection is read-only with respect to audited items, but creates report and
+  recovery directories. File scope defaults to user/temp hotspots; final menus
+  default to Finish. Choosing REVIEW or seeing a REVIEW label changes nothing.
+  Each eligible file/task needs its ID plus QUARANTINE <ID> or DISABLE <ID>.
+  Shortcuts/images are not quarantine candidates; registry/WMI stay report-only.
+
+REPORTS AND RECOVERY
+  C:\Tools\logs\scraper-<run> holds audit.log, findings.csv/findings.xml,
+  actions.jsonl, and task XML backups. C:\Tools\Quarantine\scraper-<run> holds
+  moved files and verified recovery copies. The JSON-lines manifest records the
+  original path, recovery paths, hash, and action outcome. There is no automatic
+  purge or restore. Old quarantine folders are not scanned or rewritten.
+
+INTERPRETING RESULTS
+  Unsigned, downloaded, or unfamiliar is not the same as malicious. References
+  and signatures are point-in-time guardrails, not proof a file is never needed.
+  Reports may contain full commands/history/WMI script text for IR review.
+  New report/recovery directories allow Administrators and SYSTEM only. Linked
+  workspace paths or directories owned by an untrusted principal stop startup.
 .EXAMPLE
 .\shed-scraper.ps1
 #>
@@ -19,6 +46,8 @@ if ($args.Count -gt 0) {
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
+# Write status to both the console and audit.log; count read/action warning messages.
+# Findings themselves are stored separately so a large inventory need not flood the console.
 function Write-ScraperLog {
     param([string]$Message, [ValidateSet('INFO', 'WARN', 'ERROR', 'SUCCESS')][string]$Level = 'INFO')
     $line = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] [$Level] $Message"
@@ -27,6 +56,8 @@ function Write-ScraperLog {
     if ($Level -in @('WARN', 'ERROR')) { $script:ReadOrActionErrors++ }
 }
 
+# Return one validated menu answer, using the displayed default for Enter.
+# Unknown answers reprompt and never implicitly select a destructive operation.
 function Read-ScraperChoice {
     param([string]$Prompt, [string[]]$Choices, [string]$Default)
     while ($true) {
@@ -37,9 +68,13 @@ function Read-ScraperChoice {
     }
 }
 
+# Append an inventory record with a run-local ID and return that record.
+# Severity is a review label, not an instruction to quarantine or disable anything.
 function Add-ScraperFinding {
     param([string]$Category, [string]$Name, [string]$Path, [string]$Details,
         [string]$Severity = 'INFO', [string]$Hash = '', [string]$Signature = '', [string]$Signer = '')
+    # IDs are generated once for this run and remain attached to their original
+    # record. Callers use $null when they do not need the returned object.
     $finding = [PSCustomObject]@{
         ID = $script:Findings.Count + 1; Timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
         Category = $Category; Severity = $Severity; Name = $Name; Path = $Path
@@ -49,11 +84,15 @@ function Add-ScraperFinding {
     return $finding
 }
 
+# Checkpoint the full finding list to CSV and CLIXML, including action outcomes.
+# These writes affect report files only, not the audited items.
 function Save-ScraperReports {
     $script:Findings | Export-Csv -LiteralPath $script:FindingsCsv -NoTypeInformation -Encoding UTF8 -ErrorAction Stop
     $script:Findings | Export-Clixml -LiteralPath $script:FindingsXml -ErrorAction Stop
 }
 
+# Append one JSON-lines recovery/audit event: Prepared, Completed, or Failed.
+# Prepared records are written before mutation so recovery paths survive an interruption.
 function Add-ScraperAction {
     param([string]$Kind, [string]$Status, [object]$Data)
     [PSCustomObject]@{
@@ -61,11 +100,15 @@ function Add-ScraperAction {
     } | ConvertTo-Json -Depth 6 -Compress | Add-Content -LiteralPath $script:ActionsFile -Encoding UTF8 -ErrorAction Stop
 }
 
+# Normalize a path/reference for conservative Windows-style comparisons.
+# This expands environment variables and normalizes case/slashes; it does not open/execute a target.
 function Get-ScraperPathKey {
     param([string]$Path)
     [Environment]::ExpandEnvironmentVariables($Path).Replace('/', '\').TrimEnd('\').ToLowerInvariant()
 }
 
+# Check a directory boundary, not just a text prefix, so C:\WindowsBackup
+# is not mistaken for C:\Windows. Used for protected roots and scan exclusions.
 function Test-ScraperPathWithin {
     param([string]$Path, [string]$Root)
     if (-not $Root) { return $false }
@@ -74,6 +117,8 @@ function Test-ScraperPathWithin {
     return $pathKey -eq $rootKey -or $pathKey.StartsWith($rootKey + '\', [StringComparison]::OrdinalIgnoreCase)
 }
 
+# Read the file/directory and its ancestor attributes to detect link traversal.
+# Return true for reparse points or provider-reported links; do not follow or alter them.
 function Test-ScraperLinkedPath {
     param([string]$Path)
     # Check every ancestor, not just the file: never walk through a junction.
@@ -85,6 +130,8 @@ function Test-ScraperLinkedPath {
     return $false
 }
 
+# Read SHA-256 and Authenticode metadata without executing the file.
+# An unavailable signature becomes Unknown, which blocks later quarantine.
 function Get-ScraperFileEvidence {
     param([string]$Path)
     $hash = (Get-FileHash -LiteralPath $Path -Algorithm SHA256 -ErrorAction Stop).Hash
@@ -100,10 +147,61 @@ function Get-ScraperFileEvidence {
     [PSCustomObject]@{ Hash = $hash; Signature = $signature; Signer = $signer }
 }
 
+# Re-enumerate profiles and startup folders because shortcuts can change while
+# an operator is reviewing a file. Only the initial pass writes findings.
+function Update-ScraperStartupReferences {
+    param($Context, [switch]$CollectFindings)
+    try {
+        $profileDirs = Get-ChildItem -LiteralPath $Context.UsersRoot -Directory -Force -ErrorAction Stop |
+            Where-Object { -not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) }
+        $directories = @($Context.CommonStartup) + @($profileDirs | ForEach-Object {
+            Join-Path $_.FullName 'AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup'
+        })
+        foreach ($directory in $directories) {
+            if ($directory -notin $Context.ProtectedRoots) { $Context.ProtectedRoots += $directory }
+            try { $files = @(Get-ChildItem -LiteralPath $directory -File -Force -ErrorAction Stop) }
+            catch [System.Management.Automation.ItemNotFoundException] { continue }
+            catch {
+                $Context.DependenciesComplete = $false
+                Write-ScraperLog "Could not inventory startup folder ${directory}: $_. File quarantine is blocked." 'WARN'
+                continue
+            }
+            foreach ($file in $files) {
+                $Context.References.Add($file.FullName)
+                if ($file.Extension -eq '.lnk') {
+                    $shell = $null
+                    $shortcut = $null
+                    try {
+                        $shell = New-Object -ComObject WScript.Shell -ErrorAction Stop
+                        $shortcut = $shell.CreateShortcut($file.FullName)
+                        if ([string]::IsNullOrWhiteSpace($shortcut.TargetPath)) { throw "Unresolved target: $($file.FullName)" }
+                        $Context.References.Add([Environment]::ExpandEnvironmentVariables("$($shortcut.TargetPath) $($shortcut.Arguments)"))
+                    } catch {
+                        $Context.DependenciesComplete = $false
+                        Write-ScraperLog "Could not read startup shortcut $($file.FullName): $_. File quarantine is blocked." 'WARN'
+                    } finally {
+                        if ($shortcut -and [Runtime.InteropServices.Marshal]::IsComObject($shortcut)) { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($shortcut) }
+                        if ($shell -and [Runtime.InteropServices.Marshal]::IsComObject($shell)) { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($shell) }
+                    }
+                }
+                if ($CollectFindings) {
+                    $null = Add-ScraperFinding 'StartupFolder' $file.Name $file.FullName 'Startup entry (report only).'
+                }
+            }
+        }
+    } catch {
+        $Context.DependenciesComplete = $false
+        Write-ScraperLog "Startup dependency check incomplete: $_. File quarantine is blocked." 'WARN'
+    }
+}
+
+# Refresh process/service/task/startup/WMI references around a selected action.
+# Retain old references conservatively; any refresh error leaves quarantine blocked for this run.
 function Update-ScraperDependencies {
     param($Context)
     # Refresh immediately around a reviewed action. Old references are retained
     # conservatively, even if an observed task/process has since disappeared.
+    Update-ScraperStartupReferences $Context
     try {
         foreach ($class in @('Win32_Process', 'Win32_Service')) {
             foreach ($item in @(Get-CimInstance -ClassName $class -ErrorAction Stop)) {
@@ -137,6 +235,8 @@ function Update-ScraperDependencies {
     }
 }
 
+# Return Allowed/Reason after checking category, extension, paths, links,
+# dependency references, signatures, and the collected hash. This function never moves a file.
 function Get-ScraperQuarantineDecision {
     param($Finding, $Context)
     $reason = ''
@@ -145,6 +245,8 @@ function Get-ScraperQuarantineDecision {
         $file = Get-Item -LiteralPath $Finding.Path -Force -ErrorAction Stop
         # An execution extension alone is not evidence of malware. This list only
         # limits which explicitly reviewed files can be moved; images/shortcuts/data cannot.
+        # This is an action allowlist, not a malware detection list. A file
+        # passing this gate still requires all protections and explicit confirmation.
         $allowed = @('.exe', '.ps1', '.bat', '.cmd', '.vbs', '.vbe', '.js', '.jse', '.wsf', '.hta', '.scr', '.jar', '.py')
         if ($file.PSIsContainer -or $file.Extension.ToLowerInvariant() -notin $allowed) { $reason = 'Shortcuts, images, modules, and other non-executable data are report-only.' }
         if (Test-ScraperLinkedPath $file.FullName) { $reason = 'Link, junction, or linked ancestor: report-only.' }
@@ -155,6 +257,8 @@ function Get-ScraperQuarantineDecision {
         if (-not $Context.DependenciesComplete) { $reason = 'Dependency inventory is incomplete; file quarantine is blocked for this run.' }
         $fileKey = Get-ScraperPathKey $file.FullName
         $namePattern = '(?i)(?<![\w.])' + [regex]::Escape($file.Name) + '(?=$|[\s"'';,])'
+        # Full paths and filename-only commands both protect the file. This may
+        # block an unrelated same-named item, which is preferable to removing a dependency.
         foreach ($reference in $Context.References) {
             $referenceKey = Get-ScraperPathKey $reference
             if ($referenceKey.Contains($fileKey) -or $reference -match $namePattern) {
@@ -163,6 +267,8 @@ function Get-ScraperQuarantineDecision {
             }
         }
         if (-not $Finding.Hash -or $Finding.Signature -eq 'Unknown') { $reason = 'Original hash/signature evidence is unavailable.' }
+        # A valid signature is not proof of benign behavior. This tool simply
+        # leaves signed files to manual investigation rather than risking removal.
         if ($Finding.Signature -eq 'Valid') { $reason = 'Validly signed file: report-only.' }
         if ($reason) { return [PSCustomObject]@{ Allowed = $false; Reason = $reason } }
         $evidence = Get-ScraperFileEvidence $file.FullName
@@ -172,6 +278,8 @@ function Get-ScraperQuarantineDecision {
     [PSCustomObject]@{ Allowed = (-not [bool]$reason); Reason = $reason }
 }
 
+# Move one eligible file only after exact ID confirmation and fresh checks.
+# Create/hash a recovery copy, save its manifest, then move/hash the original under a unique name.
 function Invoke-ScraperQuarantine {
     param($Finding, $Context, [string]$QuarantineDirectory)
     Update-ScraperDependencies $Context
@@ -185,6 +293,8 @@ function Invoke-ScraperQuarantine {
         Update-ScraperDependencies $Context
         $decision = Get-ScraperQuarantineDecision $Finding $Context
         if (-not $decision.Allowed) { throw $decision.Reason }
+        # Two recovery files are intentional: a verified copy exists before the
+        # original is moved. GUID names prevent same-name files overwriting each other.
         $dest = Join-Path $QuarantineDirectory ("$([guid]::NewGuid())-$([IO.Path]::GetFileName($Finding.Path)).quarantine")
         $backup = "$dest.backup"
         [IO.File]::Copy($Finding.Path, $backup, $false)
@@ -207,6 +317,8 @@ function Invoke-ScraperQuarantine {
     }
 }
 
+# Resolve a task by literal name AND folder, not a wildcard-capable name query.
+# Fail if it no longer resolves uniquely, preventing accidental changes to another task.
 function Get-ScraperExactTask {
     param([string]$Name, [string]$Path)
     # Match literal properties; wildcard-capable task-path queries are unsuitable
@@ -216,6 +328,8 @@ function Get-ScraperExactTask {
     return $tasks[0]
 }
 
+# For one confirmed non-platform task, require unchanged XML and a validated
+# definition backup before disabling it. Keep the task definition; never unregister or stop it.
 function Invoke-ScraperTaskDisable {
     param($Finding, [string]$BackupDirectory)
     if ($Finding.Category -ne 'ScheduledTask') { Write-ScraperLog 'Select a scheduled-task finding.' 'WARN'; return }
@@ -228,6 +342,8 @@ function Invoke-ScraperTaskDisable {
     $data = $null
     try {
         $current = Get-ScraperExactTask $task.TaskName $task.TaskPath
+        # Compare the current definition with the collected one after the user
+        # has reviewed it; do not act on an entry changed in the meantime.
         $xml = Export-ScheduledTask -InputObject $current -ErrorAction Stop
         if (-not $task.Definition -or $xml -cne $task.Definition) { throw 'Task definition changed or its original XML was unavailable; rescan before taking action.' }
         $backupPath = Join-Path $BackupDirectory "task-$($Finding.ID)-$([guid]::NewGuid()).xml"
@@ -235,6 +351,8 @@ function Invoke-ScraperTaskDisable {
         $null = [xml](Get-Content -LiteralPath $backupPath -Raw -ErrorAction Stop)
         $data = [PSCustomObject]@{ ID = $Finding.ID; TaskName = $task.TaskName; TaskPath = $task.TaskPath; PreviousState = [string]$current.State; DefinitionBackup = $backupPath }
         Add-ScraperAction 'DisableTask' 'Prepared' $data
+        # Disable future scheduling only; do not unregister the task or terminate
+        # any already-running instance. Read back its state before reporting success.
         Disable-ScheduledTask -InputObject $current -ErrorAction Stop | Out-Null
         $after = Get-ScraperExactTask $task.TaskName $task.TaskPath
         if ([string]$after.State -ne 'Disabled') { throw "Observed task state: $($after.State)" }
@@ -248,9 +366,13 @@ function Invoke-ScraperTaskDisable {
     }
 }
 
+# Walk requested roots iteratively, pruning exclusions and skipping linked paths.
+# Yield only requested extensions and visit overlapping directories once; no files are changed.
 function Get-ScraperFiles {
     param([string[]]$Roots, [string[]]$ExcludedRoots, [string[]]$Extensions)
     $visited = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    # A stack avoids recursive function calls. The visited set deduplicates
+    # parents/children reached through overlapping requested scan roots.
     $pending = [Collections.Generic.Stack[string]]::new()
     foreach ($root in $Roots) { $pending.Push($root) }
     while ($pending.Count) {
@@ -269,6 +391,8 @@ function Get-ScraperFiles {
     }
 }
 
+# Run optional per-item review after reports are saved. Enter finishes.
+# Q/T require one numeric finding ID and then a separate exact action confirmation.
 function Start-ScraperReview {
     param($Context, [string]$QuarantineDirectory, [string]$TaskBackupDirectory)
     while ($true) {
@@ -286,15 +410,113 @@ function Start-ScraperReview {
     }
 }
 
+# Kept in each standalone script so downloaded copies need no companion module.
+function Get-TrustedOwnerSids {
+    @('S-1-5-18', 'S-1-5-32-544',
+        'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464',
+        [Security.Principal.WindowsIdentity]::GetCurrent().User.Value)
+}
+
+# Check ownership, write permissions, and every ancestor without following links.
+# A trusted signature alone cannot prevent DLL loading from a writable directory.
+function Test-TrustedPath {
+    param([string]$Path, [switch]$Recurse)
+    try {
+        $trusted = @(Get-TrustedOwnerSids)
+        $writeRights = [Security.AccessControl.FileSystemRights]'Write,Delete,DeleteSubdirectoriesAndFiles,ChangePermissions,TakeOwnership'
+        $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+        $pending = [Collections.Generic.Stack[object]]::new()
+        $pending.Push($item)
+        if ($Recurse -and $item.PSIsContainer) {
+            # Enumerate manually: do not recurse through a junction before checking it.
+            $directories = [Collections.Generic.Stack[object]]::new()
+            $directories.Push($item)
+            while ($directories.Count) {
+                foreach ($child in @(Get-ChildItem -LiteralPath $directories.Pop().FullName -Force -ErrorAction Stop)) {
+                    if ($child.Attributes -band [IO.FileAttributes]::ReparsePoint) { return $false }
+                    $pending.Push($child)
+                    if ($child.PSIsContainer) { $directories.Push($child) }
+                }
+            }
+        }
+        $parent = if ($item.PSIsContainer) { $item.Parent } else { $item.Directory }
+        # Drive-root create-folder permissions do not grant access to existing
+        # protected children. Check every directory below the drive root.
+        while ($parent -and $parent.Parent) { $pending.Push($parent); $parent = $parent.Parent }
+        while ($pending.Count) {
+            $current = $pending.Pop()
+            if ($current.Attributes -band [IO.FileAttributes]::ReparsePoint) { return $false }
+            $acl = Get-Acl -LiteralPath $current.FullName -ErrorAction Stop
+            if ($acl.GetOwner([Security.Principal.SecurityIdentifier]).Value -notin $trusted) { return $false }
+            foreach ($rule in $acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])) {
+                if ($rule.AccessControlType -eq 'Allow' -and
+                    ($rule.FileSystemRights -band $writeRights) -and $rule.IdentityReference.Value -notin $trusted) { return $false }
+            }
+        }
+        return $true
+    } catch { return $false }
+}
+
+# Create a directory with an explicit ACL before writing tools or sensitive reports.
+# Reject linked paths/foreign ownership; retain existing directory contents.
+function Initialize-Directory {
+    param([string]$Path, [switch]$Private)
+    $fullPath = [IO.Path]::GetFullPath($Path)
+    $parent = [IO.DirectoryInfo]::new($fullPath)
+    $trustedOwners = @(Get-TrustedOwnerSids)
+    while ($parent -and $parent.Parent) {
+        if (Test-Path -LiteralPath $parent.FullName) {
+            $existing = Get-Item -LiteralPath $parent.FullName -Force -ErrorAction Stop
+            if (-not $existing.PSIsContainer -or ($existing.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                throw "Refusing linked/non-directory workspace: $($parent.FullName)"
+            }
+            $owner = (Get-Acl -LiteralPath $parent.FullName -ErrorAction Stop).GetOwner([Security.Principal.SecurityIdentifier]).Value
+            if ($owner -notin $trustedOwners) { throw "Untrusted workspace owner at $($parent.FullName). Use a clean Administrator-owned directory." }
+        }
+        $parent = $parent.Parent
+    }
+    $null = New-Item -ItemType Directory -Path $fullPath -Force -ErrorAction Stop
+    $security = [Security.AccessControl.DirectorySecurity]::new()
+    $security.SetAccessRuleProtection($true, $false)
+    $security.SetOwner([Security.Principal.SecurityIdentifier]::new('S-1-5-32-544'))
+    foreach ($sid in @('S-1-5-32-544', 'S-1-5-18')) {
+        $security.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+            [Security.Principal.SecurityIdentifier]::new($sid), 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow'))
+    }
+    if (-not $Private) {
+        $security.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+            [Security.Principal.SecurityIdentifier]::new('S-1-5-32-545'), 'ReadAndExecute', 'ContainerInherit,ObjectInherit', 'None', 'Allow'))
+    }
+    Set-Acl -LiteralPath $fullPath -AclObject $security -ErrorAction Stop
+    if (-not (Test-TrustedPath $fullPath)) { throw "Workspace permission verification failed: $fullPath" }
+    $verified = Get-Acl -LiteralPath $fullPath -ErrorAction Stop
+    if (-not $verified.AreAccessRulesProtected) { throw "Workspace still inherits permissions: $fullPath" }
+    if ($Private) {
+        foreach ($rule in $verified.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])) {
+            if ($rule.AccessControlType -eq 'Allow' -and $rule.IdentityReference.Value -notin @('S-1-5-18', 'S-1-5-32-544')) {
+                throw "Private workspace has unexpected access: $fullPath"
+            }
+        }
+    }
+}
+
 # Startup and all collection below are read-only with respect to audited items.
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin) { throw 'Run in an elevated Windows PowerShell session.' }
+# MAIN EXECUTION: all action helpers are defined, but none are invoked during
+# collection. New directories/files below are the reports and recovery workspace.
 $toolsDirectory = Join-Path $env:SystemDrive 'Tools'
 $runName = "scraper-$(Get-Date -Format yyyyMMdd-HHmmss)-$([guid]::NewGuid().ToString('N').Substring(0,8))"
 $reportDirectory = Join-Path (Join-Path $toolsDirectory 'logs') $runName
 $quarantineDirectory = Join-Path (Join-Path $toolsDirectory 'Quarantine') $runName
 $taskBackupDirectory = Join-Path $reportDirectory 'task-backups'
-New-Item -ItemType Directory -Path $reportDirectory, $quarantineDirectory, $taskBackupDirectory -Force | Out-Null
+# Protect evidence before collecting full command lines or making recovery copies.
+Initialize-Directory $toolsDirectory
+Initialize-Directory (Split-Path $reportDirectory -Parent) -Private
+Initialize-Directory (Split-Path $quarantineDirectory -Parent) -Private
+foreach ($directory in @($reportDirectory, $quarantineDirectory, $taskBackupDirectory)) {
+    Initialize-Directory $directory -Private
+}
 $script:ReportLog = Join-Path $reportDirectory 'audit.log'
 $script:FindingsCsv = Join-Path $reportDirectory 'findings.csv'
 $script:FindingsXml = Join-Path $reportDirectory 'findings.xml'
@@ -303,7 +525,11 @@ $null = New-Item -ItemType File -Path $script:ActionsFile
 $script:Findings = [Collections.Generic.List[object]]::new()
 $script:TaskTargets = @{}
 $script:ReadOrActionErrors = 0
+# Context carries the protected directories and observed dependency references.
+# DependenciesComplete is a sticky safety flag: a failed dependency read blocks quarantine.
 $context = [PSCustomObject]@{
+    UsersRoot = Join-Path $env:SystemDrive 'Users'
+    CommonStartup = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\Startup'
     ScriptPath = $PSCommandPath; DependenciesComplete = $true; RegistryKeys = @()
     References = [Collections.Generic.List[string]]::new()
     ProtectedRoots = @($env:SystemRoot, $env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:ProgramW6432, $env:ProgramData, $toolsDirectory) + @($env:PSModulePath -split ';') | Where-Object { $_ }
@@ -324,6 +550,8 @@ foreach ($class in @('Win32_Process', 'Win32_Service')) {
 
 # 2. Collect command history and download provenance; do not modify either.
 Write-ScraperLog 'Collecting command history and download provenance...'
+# These keyword matches find commands worth reading, including legitimate
+# administration/downloads. Matches are never executed or removed from history.
 $historyPattern = '(?i)\b(wget|curl|Invoke-WebRequest|iwr|certutil|bitsadmin|downloadstring|iex|frombase64string|encodedcommand|tcpclient|ncat|socat|mimikatz|chisel|ngrok|ligolo|meterpreter)\b|(?:^|\s)-enc(?:odedcommand)?\b'
 $usersRoot = Join-Path $env:SystemDrive 'Users'
 $profiles = @(Get-ChildItem -LiteralPath $usersRoot -Directory -Force -ErrorAction SilentlyContinue | Where-Object { -not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) })
@@ -342,6 +570,8 @@ foreach ($profile in $profiles) {
     if (Test-Path -LiteralPath $downloads) {
         foreach ($file in @(Get-ScraperFiles @($downloads) @() @('.exe', '.ps1', '.bat', '.cmd', '.lnk', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.ico'))) {
             try {
+                # Zone.Identifier is optional NTFS download-origin metadata.
+                # Its presence says where a file came from, not whether it is malicious.
                 $zone = Get-Content -LiteralPath $file.FullName -Stream Zone.Identifier -ErrorAction Stop
                 $null = Add-ScraperFinding 'DownloadProvenance' $file.Name $file.FullName ($zone -join ' | ')
             } catch { } # Most local files have no Zone.Identifier stream.
@@ -363,6 +593,8 @@ Save-ScraperReports
 
 # 3. Inventory registry/startup items; all remain in place, including .lnk/images.
 Write-ScraperLog 'Inventorying startup entries and files (report-only)...'
+# Inspect machine and current-user autoruns, including 32-bit application keys
+# and login shell settings. Other users' registry hives are not mounted here.
 $startupKeys = @(
     'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run', 'HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce',
     'HKLM:\Software\Microsoft\Windows\CurrentVersion\Run', 'HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce',
@@ -385,33 +617,7 @@ foreach ($key in $startupKeys) {
         }
     } catch { $context.DependenciesComplete = $false; Write-ScraperLog "Could not read startup key $key`: $_" 'WARN' }
 }
-$startupDirectories = @((Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\Startup')) + @($profiles | ForEach-Object { Join-Path $_.FullName 'AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup' })
-$context.ProtectedRoots += $startupDirectories
-foreach ($directory in $startupDirectories) {
-    if (-not (Test-Path -LiteralPath $directory)) { continue }
-    try {
-        foreach ($file in @(Get-ChildItem -LiteralPath $directory -File -Force -ErrorAction Stop)) {
-            $context.References.Add($file.FullName)
-            if ($file.Extension -eq '.lnk') {
-                # Read an existing shortcut as metadata; never call Save or Run.
-                $shell = $null
-                $shortcut = $null
-                try {
-                    $shell = New-Object -ComObject WScript.Shell -ErrorAction Stop
-                    $shortcut = $shell.CreateShortcut($file.FullName)
-                    $context.References.Add("$($shortcut.TargetPath) $($shortcut.Arguments)")
-                } catch {
-                    $context.DependenciesComplete = $false
-                    Write-ScraperLog "Could not read startup shortcut target $($file.FullName): $_. File quarantine is blocked." 'WARN'
-                } finally {
-                    if ($shortcut -and [Runtime.InteropServices.Marshal]::IsComObject($shortcut)) { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($shortcut) }
-                    if ($shell -and [Runtime.InteropServices.Marshal]::IsComObject($shell)) { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($shell) }
-                }
-            }
-            $null = Add-ScraperFinding 'StartupFolder' $file.Name $file.FullName 'Startup presence is inventory only. Shortcuts/images are retained.'
-        }
-    } catch { $context.DependenciesComplete = $false; Write-ScraperLog "Could not read startup folder $directory`: $_" 'WARN' }
-}
+Update-ScraperStartupReferences $context -CollectFindings
 Save-ScraperReports
 
 # 4. Inventory ALL task paths. Names such as Microsoft are not proof of trust.
@@ -421,6 +627,8 @@ try {
         $actions = @($task.Actions | ForEach-Object { "$($_.Execute) $($_.Arguments)".Trim() })
         foreach ($action in $actions) { if ($action) { $context.References.Add($action) } }
         $details = "State: $($task.State); Principal: $($task.Principal.UserId); Actions: $($actions -join ' | ')"
+        # Microsoft-folder tasks are still inventoried. The folder is used only
+        # as a conservative optional-action boundary, not as proof the task is trustworthy.
         $severity = if (($actions -join ' ') -match $historyPattern -or $task.TaskPath -notlike '\Microsoft\*') { 'REVIEW' } else { 'INFO' }
         $finding = Add-ScraperFinding 'ScheduledTask' $task.TaskName "$($task.TaskPath)$($task.TaskName)" $details $severity
         $definition = $null
@@ -431,6 +639,8 @@ try {
 } catch { $context.DependenciesComplete = $false; Write-ScraperLog "Could not fully inventory tasks: $_" 'WARN' }
 
 # 5. WMI subscriptions are report-only. Legitimate management tools use these too.
+# Consumers are the action, filters describe the event, and bindings connect
+# them. Record all three kinds so an IR review can reconstruct the subscription.
 foreach ($class in @('CommandLineEventConsumer', 'ActiveScriptEventConsumer', '__EventFilter', '__FilterToConsumerBinding')) {
     try {
         foreach ($item in @(Get-CimInstance -Namespace root\subscription -ClassName $class -ErrorAction Stop)) {
@@ -445,6 +655,8 @@ foreach ($class in @('CommandLineEventConsumer', 'ActiveScriptEventConsumer', '_
 Save-ScraperReports
 
 # 6. Walk selected locations without following links or collecting the same file twice.
+# File-scope selection affects the final filesystem walk only; history,
+# provenance, startup, task, and WMI collection above has already completed.
 $scope = Read-ScraperChoice -Prompt 'File inventory: [H] User/temp hotspots, [F] Full system drive, [C] Custom folder, [S] Skip (default H; collection changes nothing)' -Choices @('H', 'F', 'C', 'S') -Default 'H'
 $roots = @()
 if ($scope -eq 'F') { $roots = @("$env:SystemDrive\") }
@@ -458,12 +670,16 @@ elseif ($scope -eq 'C') {
     }
 }
 $roots = @($roots | Where-Object { Test-Path -LiteralPath $_ -PathType Container })
+# Prune bulky OS stores and the tools/report/quarantine tree before descent.
+# Files outside these exclusions may still be protected from any later quarantine.
 $excluded = @($toolsDirectory, (Join-Path $env:SystemRoot 'WinSxS'), (Join-Path $env:SystemRoot 'servicing'), (Join-Path $env:SystemRoot 'Installer'))
 $extensions = @('.exe', '.ps1', '.psm1', '.psd1', '.bat', '.cmd', '.vbs', '.vbe', '.js', '.jse', '.wsf', '.hta', '.scr', '.jar', '.py')
 $fileCount = 0
 foreach ($file in Get-ScraperFiles $roots $excluded $extensions) {
     try {
         $evidence = Get-ScraperFileEvidence $file.FullName
+        # REVIEW only changes report categorization. It never automatically
+        # selects this file for quarantine or bypasses the protection checks.
         $severity = if ($evidence.Signature -eq 'Valid') { 'INFO' } else { 'REVIEW' }
         $null = Add-ScraperFinding 'Filesystem' $file.Name $file.FullName "Size: $($file.Length); signature is context, not a malware verdict." $severity $evidence.Hash $evidence.Signature $evidence.Signer
         $fileCount++
@@ -474,6 +690,8 @@ Save-ScraperReports
 Write-ScraperLog "Collection complete: $($script:Findings.Count) findings. Reports saved before any review actions."
 $script:Findings | Group-Object Category | Select-Object Name, Count | Format-Table -AutoSize | Out-String | Write-Host
 Write-Host 'No audited files, shortcuts, images, registry entries, tasks, processes, services, or WMI objects have been changed.'
+# OPTIONAL ACTION PHASE: all inventory reports are already on disk. Finish
+# (the default) exits without modifying audited files, registry entries, or tasks.
 $review = Read-ScraperChoice -Prompt '[F] Finish audit, [R] Open optional per-item review (default F)' -Choices @('F', 'R') -Default 'F'
 if ($review -eq 'R') { Start-ScraperReview $context $quarantineDirectory $taskBackupDirectory }
 Save-ScraperReports

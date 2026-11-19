@@ -1,8 +1,48 @@
 #Requires -RunAsAdministrator
 
+<#
+.SYNOPSIS
+Download the shed scripts, prepare WinGet, and install the competition tool set.
+.DESCRIPTION
+Run elevated in Windows PowerShell. Setup prepares C:\Tools and a transcript;
+helper functions are defined before main installation begins.
+
+MAIN FLOW
+  Step 0 downloads missing shed-hardening.ps1, shed-scraper.ps1, and shed-dns.ps1 first.
+  WinGet setup then reuses an existing copy or tries modern/legacy bootstrapping.
+  Step 1 downloads standalone tools and extracts/runs their payloads.
+  Step 2 installs the WinGet package list, with selected direct-download fallbacks.
+  Step 3 prints recorded results, accepts Sysinternals EULAs, and updates PATH.
+
+WHAT CHANGES
+  This script performs installations; it is not a download-only audit. MSI/EXE
+  installers run locally. MSSQL operators can opt into Docker with reboots deferred. Malwarebytes
+  is intentionally interactive. Bootstrap may install modules/providers, mark
+  PSGallery trusted, stage AppX packages, and install the VC++ runtime. Tools,
+  permissions, machine PATH, and EULA registry settings can persist after exit.
+
+DOWNLOADS AND OUTPUT
+  Direct URL payloads use foreground BITS; package managers use their own network
+  mechanisms. Downloads are kept in C:\Tools\downloads; installed/copied tools
+  use C:\Tools. Logs are in C:\Tools\logs\install-<timestamp>.log. BITS success
+  means a completed nonempty file, not an independent malware/signature verdict.
+  WinGet uses --no-vt and console color resets to preserve the black background.
+  WinGet candidates require a valid Microsoft signature and trusted owners/ACLs
+  before version probes. Unsafe existing portable trees are left unused; a clean
+  directory is used for bootstrap. Manual bootstrap downloads must match the SHA-256
+  digests from the Microsoft WinGet release. Logs/downloads allow Administrators and SYSTEM.
+
+FAILURES
+  There is no automatic rollback. Results are tracked per tool/package; some
+  setup/post-install errors are handled separately and are not rows in that table.
+.EXAMPLE
+.\shed-installs.ps1
+#>
 [CmdletBinding()]
 param()
 
+# Apply black/white colors to both .NET Console and the PowerShell host.
+# Native programs do not inherit Write-Host parameter defaults as rendering rules.
 function Set-InstallConsoleColors {
     # Write-Host defaults do not control native child-process console output.
     try {
@@ -16,7 +56,7 @@ function Set-InstallConsoleColors {
 }
 
 # -----------------------------------------------------------------------------
-# Console Theme & Safety Initialization (Seamless pure-black styling)
+# Console appearance and native-process color defaults
 # -----------------------------------------------------------------------------
 try {
     Set-InstallConsoleColors
@@ -36,6 +76,8 @@ try {
     Clear-Host
 } catch {}
 
+# Installation, machine PATH/ACL changes, and AppX provisioning require elevation.
+# Keep early errors visible in the console rather than attempting partial setup.
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin) {
     Write-Host "`n[!] ERROR: script must be run as Administrator!" -ForegroundColor Red -BackgroundColor Black
@@ -53,6 +95,8 @@ trap {
     break
 }
 
+# Keep scripts/tool copies, cached payloads, and transcripts in separate
+# subdirectories. Changing the working directory also avoids network-share cwd issues.
 $InstallDir = "C:\Tools"
 $DownloadsDir = "$InstallDir\downloads"
 $LogsDir = "$InstallDir\logs"
@@ -72,7 +116,7 @@ $splash = @'
 
             ___                    +--------------------------------------------+
     `=/~~~~~   ~\                  |             shed-installs.ps1              |
-     | ,      ,_ `\_/~\-           |   made for MWCCDC 2026-27' invitationals   |
+     | ,      ,_ `\_/~\-           |    made for MWCCDC 2026-27' qualifiers     |
      >/'>/ ~|||`\( ,~\-            |                                            |
      |  |   `||   \;               |                                            |
 \\\\//\\\/TX\\//\\\\|//            |  <------------ that's kayne                |
@@ -80,20 +124,125 @@ $splash = @'
 '@
 Write-Host $splash -ForegroundColor Red -BackgroundColor Black
 
+# Kept in each standalone script so downloaded copies need no companion module.
+function Get-TrustedOwnerSids {
+    @('S-1-5-18', 'S-1-5-32-544',
+        'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464',
+        [Security.Principal.WindowsIdentity]::GetCurrent().User.Value)
+}
+
+# Check ownership, write permissions, and every ancestor without following links.
+# A trusted signature alone cannot prevent DLL loading from a writable directory.
+function Test-TrustedPath {
+    param([string]$Path, [switch]$Recurse)
+    try {
+        $trusted = @(Get-TrustedOwnerSids)
+        $writeRights = [Security.AccessControl.FileSystemRights]'Write,Delete,DeleteSubdirectoriesAndFiles,ChangePermissions,TakeOwnership'
+        $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+        $pending = [Collections.Generic.Stack[object]]::new()
+        $pending.Push($item)
+        if ($Recurse -and $item.PSIsContainer) {
+            # Enumerate manually: do not recurse through a junction before checking it.
+            $directories = [Collections.Generic.Stack[object]]::new()
+            $directories.Push($item)
+            while ($directories.Count) {
+                foreach ($child in @(Get-ChildItem -LiteralPath $directories.Pop().FullName -Force -ErrorAction Stop)) {
+                    if ($child.Attributes -band [IO.FileAttributes]::ReparsePoint) { return $false }
+                    $pending.Push($child)
+                    if ($child.PSIsContainer) { $directories.Push($child) }
+                }
+            }
+        }
+        $parent = if ($item.PSIsContainer) { $item.Parent } else { $item.Directory }
+        # Drive-root create-folder permissions do not grant access to existing
+        # protected children. Check every directory below the drive root.
+        while ($parent -and $parent.Parent) { $pending.Push($parent); $parent = $parent.Parent }
+        while ($pending.Count) {
+            $current = $pending.Pop()
+            if ($current.Attributes -band [IO.FileAttributes]::ReparsePoint) { return $false }
+            $acl = Get-Acl -LiteralPath $current.FullName -ErrorAction Stop
+            if ($acl.GetOwner([Security.Principal.SecurityIdentifier]).Value -notin $trusted) { return $false }
+            foreach ($rule in $acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])) {
+                if ($rule.AccessControlType -eq 'Allow' -and
+                    ($rule.FileSystemRights -band $writeRights) -and $rule.IdentityReference.Value -notin $trusted) { return $false }
+            }
+        }
+        return $true
+    } catch { return $false }
+}
+
+# Create a directory with an explicit ACL before writing tools or sensitive reports.
+# Reject linked paths/foreign ownership; retain existing directory contents.
+function Initialize-Directory {
+    param([string]$Path, [switch]$Private)
+    $fullPath = [IO.Path]::GetFullPath($Path)
+    $parent = [IO.DirectoryInfo]::new($fullPath)
+    $trustedOwners = @(Get-TrustedOwnerSids)
+    while ($parent -and $parent.Parent) {
+        if (Test-Path -LiteralPath $parent.FullName) {
+            $existing = Get-Item -LiteralPath $parent.FullName -Force -ErrorAction Stop
+            if (-not $existing.PSIsContainer -or ($existing.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                throw "Refusing linked/non-directory workspace: $($parent.FullName)"
+            }
+            $owner = (Get-Acl -LiteralPath $parent.FullName -ErrorAction Stop).GetOwner([Security.Principal.SecurityIdentifier]).Value
+            if ($owner -notin $trustedOwners) { throw "Untrusted workspace owner at $($parent.FullName). Use a clean Administrator-owned directory." }
+        }
+        $parent = $parent.Parent
+    }
+    $null = New-Item -ItemType Directory -Path $fullPath -Force -ErrorAction Stop
+    $security = [Security.AccessControl.DirectorySecurity]::new()
+    $security.SetAccessRuleProtection($true, $false)
+    $security.SetOwner([Security.Principal.SecurityIdentifier]::new('S-1-5-32-544'))
+    foreach ($sid in @('S-1-5-32-544', 'S-1-5-18')) {
+        $security.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+            [Security.Principal.SecurityIdentifier]::new($sid), 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow'))
+    }
+    if (-not $Private) {
+        $security.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+            [Security.Principal.SecurityIdentifier]::new('S-1-5-32-545'), 'ReadAndExecute', 'ContainerInherit,ObjectInherit', 'None', 'Allow'))
+    }
+    Set-Acl -LiteralPath $fullPath -AclObject $security -ErrorAction Stop
+    if (-not (Test-TrustedPath $fullPath)) { throw "Workspace permission verification failed: $fullPath" }
+    $verified = Get-Acl -LiteralPath $fullPath -ErrorAction Stop
+    if (-not $verified.AreAccessRulesProtected) { throw "Workspace still inherits permissions: $fullPath" }
+    if ($Private) {
+        foreach ($rule in $verified.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])) {
+            if ($rule.AccessControlType -eq 'Allow' -and $rule.IdentityReference.Value -notin @('S-1-5-18', 'S-1-5-32-544')) {
+                throw "Private workspace has unexpected access: $fullPath"
+            }
+        }
+    }
+}
+
 # Create install directory for tools
 Write-Host "[+] Creating install directory at $InstallDir" -ForegroundColor Green -BackgroundColor Black
-New-Item -ItemType Directory -Force -Path $InstallDir, $LogsDir, $DownloadsDir | Out-Null
+# Check the old tree BEFORE tightening its parent ACL. Fixing permissions does
+# not make binaries previously writable by another user trustworthy.
+$script:PortableWingetDirectory = Join-Path $InstallDir 'winget'
+$script:RejectedWingetDirectories = @()
+if ((Test-Path -LiteralPath $script:PortableWingetDirectory) -and
+    -not (Test-TrustedPath $script:PortableWingetDirectory -Recurse)) {
+    $script:RejectedWingetDirectories += $script:PortableWingetDirectory
+    Write-Warning "Existing portable WinGet tree is untrusted; leaving it unused: $script:PortableWingetDirectory"
+    $script:PortableWingetDirectory = Join-Path $InstallDir "winget-clean-$([guid]::NewGuid().ToString('N'))"
+}
+$env:Path = (@($env:Path -split ';' | Where-Object { $_ -and $_.TrimEnd('\') -notin $script:RejectedWingetDirectories }) -join ';')
+Initialize-Directory $InstallDir
+Initialize-Directory $LogsDir -Private
+Initialize-Directory $DownloadsDir -Private
 Set-Location -Path $InstallDir
 [System.IO.Directory]::SetCurrentDirectory($InstallDir)
 
 # Log everything from CLI to file (safely ignore if a transcript is already running)
-$script:TranscriptPath = "$LogsDir\install-$(Get-Date -f yyyyMMdd-HHmmss).log"
+$script:TranscriptPath = "$LogsDir\install-$(Get-Date -f yyyyMMdd-HHmmss)-$([guid]::NewGuid().ToString('N')).log"
 try {
     Start-Transcript -Path $script:TranscriptPath -ErrorAction Stop
 } catch {
     Write-Warning "Could not start transcript (an existing transcript may already be active): $($_.Exception.Message)"
 }
 
+# Write a timestamped, colored status line; the transcript captures it.
+# This helper reports progress but does not itself decide whether an install succeeded.
 function Write-Log {
     param(
         [string]$Message,
@@ -130,6 +279,8 @@ $isMSSQL = [bool]$foundSqlSvc -or [bool](Get-Process -Name sqlservr -ErrorAction
 
 Write-Host "[*] Host Role Analysis -> Domain Controller: $isDC | MSSQL Server: $isMSSQL" -ForegroundColor Cyan
 
+# Build the standalone download queue now; these entries do not download or
+# execute until the main installation flow reaches the standalone-tools loop.
 $Downloads = [System.Collections.Generic.List[hashtable]]::new()
 
 # Sysinternals Suite is always directly downloaded & extracted to C:\Tools\Sysinternals
@@ -140,26 +291,21 @@ $Downloads.Add(@{
 })
 
 Write-Host "[+] Queuing Npcap installer for download and silent installation." -ForegroundColor Green
+# This is a pinned installer URL, unlike endpoints that redirect to a latest release.
+# InstallArgs are later passed to the downloaded executable for unattended setup.
 $Downloads.Add(@{
     Name        = 'Npcap'
     Url         = 'https://npcap.com/dist/npcap-1.90.exe'
     InstallArgs = '/S /winpcap_mode=yes'
 })
 
-if ($isMSSQL) {
-    Write-Host "[+] MSSQL Server detected. Queuing Docker CE installer script." -ForegroundColor Green
-    $Downloads.Add(@{
-        Name = 'Docker'
-        Url  = 'https://raw.githubusercontent.com/microsoft/Windows-Containers/Main/helpful_tools/Install-DockerCE/install-docker-ce.ps1'
-    })
-} else {
-    Write-Host "[*] Host is not an MSSQL Server. Skipping Docker CE." -ForegroundColor Yellow
-}
-
 # -----------------------------------------------------------------------------
 # Background Animated Spinner Engine
 # -----------------------------------------------------------------------------
 try {
+# Compile a small console-only helper: Run paints frames on a background
+    # thread; Stop joins that thread and prints a result; Dispose stops drawing.
+    # The real download/install remains on the main PowerShell thread.
     Add-Type -TypeDefinition @"
 using System;
 using System.Threading;
@@ -211,6 +357,8 @@ public class ConsoleSpinner : IDisposable {
 "@ -ErrorAction SilentlyContinue
 } catch {}
 
+# Run the supplied operation synchronously while the C# thread draws a spinner.
+# Always stop the spinner; propagate operation failures to the caller.
 function Invoke-WithSpinner {
     param(
         [Parameter(Mandatory=$true)][string]$StatusText,
@@ -249,6 +397,8 @@ function Invoke-WithSpinner {
     }
 }
 
+# Download one URL through BITS and return exactly true/false to the caller.
+# Publish a nonempty staged file only on success; cleanup is limited to this job/temp path.
 function Invoke-BitsDownload {
     param(
         [Parameter(Mandatory=$true)][string]$Url,
@@ -256,9 +406,13 @@ function Invoke-BitsDownload {
         [string]$Description = (Split-Path -Leaf $OutFile)
     )
 
+    # Unique names prevent cleanup from canceling another application's BITS
+    # job or overwriting its partial download. Existing final files survive a failed transfer.
     $jobName = "shed-installs-$([guid]::NewGuid())"
     $partialPath = $null
     try {
+        # BITS is a Windows service. Enable Manual startup only if disabled,
+        # then start it if needed; do not restart a service that is already running.
         Import-Module BitsTransfer -ErrorAction Stop
         $bits = Get-Service -Name BITS -ErrorAction Stop
         if ($bits.StartType -eq 'Disabled') {
@@ -267,6 +421,8 @@ function Invoke-BitsDownload {
         }
         if ($bits.Status -ne 'Running') { Start-Service -Name BITS -ErrorAction Stop }
 
+        # Download beside the final destination under a unique temporary name.
+        # Callers must honor the Boolean result before executing/extracting the final path.
         $destination = [IO.Path]::GetFullPath($OutFile)
         $parent = [IO.Path]::GetDirectoryName($destination)
         if (-not (Test-Path -LiteralPath $parent -PathType Container)) {
@@ -306,6 +462,8 @@ function Invoke-BitsDownload {
     }
 }
 
+# Extract an archive, preferring installed 7-Zip and falling back to Expand-Archive.
+# Extraction writes into the requested destination; callers choose whether/how to install it.
 function Expand-FastArchive {
     param(
         [Parameter(Mandatory=$true)][string]$Path,
@@ -334,9 +492,29 @@ function Expand-FastArchive {
     [System.GC]::Collect()
 }
 
+# Validate Microsoft Authenticode identity without executing the candidate.
+function Test-MicrosoftSignedBinary {
+    param([string]$Path)
+    try {
+        $signature = Get-AuthenticodeSignature -LiteralPath $Path -ErrorAction Stop
+        return ($signature.Status -eq 'Valid' -and $signature.SignerCertificate -and
+            $signature.SignerCertificate.Subject -match '(?:^|,\s*)O=Microsoft Corporation(?:,|$)')
+    } catch { return $false }
+}
+
+# Check ACLs/owner throughout the binary directory and reject earlier unsafe
+# trees, then verify Microsoft's signature BEFORE running even --version.
 function Test-WingetExecutable {
     param([string]$Path)
-    if (-not $Path -or -not (Test-Path $Path)) { return $false }
+    if (-not $Path -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $false }
+    foreach ($rejected in $script:RejectedWingetDirectories) {
+        if ([IO.Path]::GetFullPath($Path).StartsWith($rejected.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) { return $false }
+    }
+    if (-not (Test-TrustedPath (Split-Path $Path -Parent) -Recurse) -or
+        -not (Test-MicrosoftSignedBinary $Path)) {
+        Write-Warning "Skipping untrusted or non-Microsoft WinGet candidate: $Path"
+        return $false
+    }
     Set-InstallConsoleColors
     try {
         try {
@@ -346,20 +524,23 @@ function Test-WingetExecutable {
 
         try {
             $out = & $Path --version --no-vt 2>&1
-            if ($LASTEXITCODE -eq 0 -or ($out -match 'v\d+\.')) { return $true }
+            if ($LASTEXITCODE -eq 0) { return $true }
         } catch {}
 
         return $false
     } finally { Set-InstallConsoleColors }
 }
 
+# Search standard, app-alias, staged-package, and local portable locations in order.
+# Return the first candidate passing the version check, or no path when none works.
 function Get-WingetPath {
     # 1. In existing PATH
-    $cmd = Get-Command winget -ErrorAction SilentlyContinue
-    if ($cmd -and (Test-WingetExecutable $cmd.Source)) { return $cmd.Source }
+    foreach ($cmd in @(Get-Command winget -CommandType Application -All -ErrorAction SilentlyContinue)) {
+        if (Test-WingetExecutable $cmd.Source) { return $cmd.Source }
+    }
 
     # 2. Local tool installation
-    $local = "$InstallDir\winget\winget.exe"
+    $local = Join-Path $script:PortableWingetDirectory 'winget.exe'
     if (Test-WingetExecutable $local) { return $local }
 
     # 3. User app execution alias
@@ -393,11 +574,13 @@ function Get-WingetPath {
     return $null
 }
 
+# Copy staged WinGet files into C:\Tools\winget, ensure the VC++ runtime is available,
+# and set permissions for elevated use. The caller adds a verified executable to PATH.
 function Install-WingetLocal {
     param([string]$SourceDir)
 
-    $dest = "$InstallDir\winget"
-    if (-not (Test-Path $dest)) { New-Item -ItemType Directory -Path $dest -Force | Out-Null }
+    $dest = $script:PortableWingetDirectory
+    Initialize-Directory $dest -Private
 
     if (-not $SourceDir) {
         $pkg = Get-AppxPackage -AllUsers Microsoft.DesktopAppInstaller -ErrorAction SilentlyContinue |
@@ -413,8 +596,11 @@ function Install-WingetLocal {
     }
 
     if ($SourceDir -and (Test-Path $SourceDir)) {
+        # Read from WindowsApps using backup-mode copy instead of taking
+        # ownership/changing the installed package's original directory permissions.
         # Robocopy with /B (backup operator mode to safely copy without modifying WindowsApps ACLs)
         robocopy $SourceDir $dest /B /E /MT:2 /R:1 /W:1 /NFL /NDL /NJH /NJS | Out-Null
+        if ($LASTEXITCODE -ge 8) { throw "WinGet copy failed (robocopy exit $LASTEXITCODE)." }
     }
 
     # Ensure VC++ Redistributable is installed (required by standalone winget runtime)
@@ -422,11 +608,14 @@ function Install-WingetLocal {
     $hasVc = (Test-Path $vcKey) -and ((Get-ItemProperty -Path $vcKey -Name Installed -ErrorAction SilentlyContinue).Installed -eq 1)
     if (-not $hasVc) {
         $vc = "$DownloadsDir\vc_redist.x64.exe"
-        $vcAvailable = (Test-Path -LiteralPath $vc -PathType Leaf) -and (Get-Item -LiteralPath $vc).Length -gt 0
+        $vcAvailable = (Test-TrustedPath $vc) -and (Test-MicrosoftSignedBinary $vc)
         if (-not $vcAvailable) {
             $vcAvailable = Invoke-BitsDownload 'https://aka.ms/vs/17/release/vc_redist.x64.exe' $vc 'VC++ Redistributable'
         }
         if ($vcAvailable) {
+            if (-not (Test-TrustedPath $vc) -or -not (Test-MicrosoftSignedBinary $vc)) {
+                throw 'VC++ runtime installer failed trust/signature verification.'
+            }
             Invoke-WithSpinner "Installing VC++ Redistributable" "Installed VC++ Redistributable" {
                 param($exe)
                 Start-Process $exe -ArgumentList '/install','/quiet','/norestart' -Wait
@@ -434,17 +623,55 @@ function Install-WingetLocal {
         }
     }
 
-    try {
-        icacls $dest /inheritance:r /grant '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-545:(OI)(CI)RX' /q | Out-Null
-    } catch {}
+    if (-not (Test-TrustedPath $dest -Recurse)) { throw 'Portable WinGet directory failed permission verification.' }
 
-    if ($env:Path -notlike "*$dest*") {
-        $env:Path = "$dest;$env:Path"
-    }
+    # The caller locates and verifies winget.exe before adding it to PATH.
 }
 
+function Save-WingetReleaseAsset {
+    param($Asset, [string]$Destination)
+    if (@($Asset).Count -ne 1 -or $Asset.digest -notmatch '^sha256:[0-9a-f]{64}$' -or
+        $Asset.browser_download_url -notlike 'https://github.com/microsoft/winget-cli/releases/download/*') {
+        throw "Missing verified WinGet release metadata for $Destination."
+    }
+    if (-not (Invoke-BitsDownload $Asset.browser_download_url $Destination $Asset.name)) { throw "Download failed: $($Asset.name)" }
+    $hash = (Get-FileHash -LiteralPath $Destination -Algorithm SHA256 -ErrorAction Stop).Hash
+    if ("sha256:$hash" -ne $Asset.digest) { throw "SHA-256 mismatch: $($Asset.name)" }
+}
+
+function Publish-PortableWinget {
+    param([string]$Bundle, [string[]]$Dependencies, [string]$Work, [string]$Destination)
+    $unpacked = Join-Path $Work 'bundle'
+    $staged = Join-Path $Work 'portable'
+    [IO.Compression.ZipFile]::ExtractToDirectory($Bundle, $unpacked)
+    $engine = @(Get-ChildItem -LiteralPath $unpacked -File -Filter '*x64*.msix' | Where-Object Name -NotMatch 'stub')
+    if ($engine.Count -ne 1) { throw 'Cannot identify one x64 WinGet engine package.' }
+    [IO.Compression.ZipFile]::ExtractToDirectory($engine[0].FullName, $staged)
+    foreach ($dependency in $Dependencies) {
+        # Each AppX has its own manifest and metadata. Merge missing runtime
+        # files only after that dependency has fully extracted.
+        $expanded = Join-Path $Work ([guid]::NewGuid().ToString('N'))
+        [IO.Compression.ZipFile]::ExtractToDirectory($dependency, $expanded)
+        foreach ($file in Get-ChildItem -LiteralPath $expanded -Recurse -File) {
+            $target = Join-Path $staged $file.FullName.Substring($expanded.Length + 1)
+            if ([IO.File]::Exists($target)) { continue }
+            $null = [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($target))
+            [IO.File]::Copy($file.FullName, $target)
+        }
+    }
+    if (-not (Test-WingetExecutable (Join-Path $staged 'winget.exe'))) { throw 'Staged WinGet failed its permissions, signature or version check.' }
+    # Both paths are under C:\Tools. Directory.Move publishes the complete
+    # tree in one rename and refuses to overwrite an existing installation.
+    [IO.Directory]::Move($staged, $Destination)
+    $script:PortableWingetDirectory = $Destination
+    return (Join-Path $Destination 'winget.exe')
+}
+
+# Download a WinGet bundle/dependencies/license, try AppX provisioning/registration,
+# and fall back to portable extraction. Return a working WinGet path or null on failure.
 function Install-WingetLegacyBootstrap {
     Write-Host "[*] Bootstrapping WinGet for Windows Server 2019 (manual bundle & DISM extraction)..." -ForegroundColor Cyan
+    $work = $null
     try {
         # Check if DesktopAppInstaller is already staged on the system
         $existingPkg = Get-AppxPackage -AllUsers Microsoft.DesktopAppInstaller -ErrorAction SilentlyContinue |
@@ -468,39 +695,28 @@ function Install-WingetLegacyBootstrap {
             if ($wPath) { return $wPath }
         }
 
-        # Determine URLs dynamically from latest GitHub release with fallback to official endpoints
-        $bundleUrl  = 'https://aka.ms/getwinget'
-        $depsUrl    = 'https://github.com/microsoft/winget-cli/releases/latest/download/DesktopAppInstaller_Dependencies.zip'
-        $licenseUrl = $null
+        # Every attempt owns its downloads and extraction directories, including
+        # dependencies. Verify the release hashes before registering or unpacking.
+        $attempt = [guid]::NewGuid().ToString('N')
+        $work = (New-Item -ItemType Directory -Path (Join-Path $DownloadsDir "winget-bootstrap-$attempt") -ErrorAction Stop).FullName
+        $release = Invoke-RestMethod 'https://api.github.com/repos/microsoft/winget-cli/releases/latest' -Headers @{ 'User-Agent' = 'PowerShell' } -TimeoutSec 15 -ErrorAction Stop
+        $bundle = Join-Path $work 'winget.msixbundle'
+        $depsZip = Join-Path $work 'winget-deps.zip'
+        $license = Join-Path $work 'winget-license.xml'
+        Save-WingetReleaseAsset ($release.assets | Where-Object name -EQ 'Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle') $bundle
+        Save-WingetReleaseAsset ($release.assets | Where-Object name -EQ 'DesktopAppInstaller_Dependencies.zip') $depsZip
+        $licenseAsset = $release.assets | Where-Object name -Like '*_License1.xml'
+        if ($licenseAsset) { Save-WingetReleaseAsset $licenseAsset $license }
 
-        try {
-            $rel = Invoke-RestMethod 'https://api.github.com/repos/microsoft/winget-cli/releases/latest' -Headers @{ 'User-Agent' = 'PowerShell' } -TimeoutSec 10 -ErrorAction Stop
-            $bAsset = $rel.assets | Where-Object { $_.name -like '*.msixbundle' } | Select-Object -First 1
-            $lAsset = $rel.assets | Where-Object { $_.name -like '*_License1.xml' } | Select-Object -First 1
-            $dAsset = $rel.assets | Where-Object { $_.name -like '*Dependencies.zip' } | Select-Object -First 1
-            if ($bAsset) { $bundleUrl  = $bAsset.browser_download_url }
-            if ($lAsset) { $licenseUrl = $lAsset.browser_download_url }
-            if ($dAsset) { $depsUrl    = $dAsset.browser_download_url }
-        } catch {}
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $depsRoot = Join-Path $work 'dependencies'
+        [IO.Compression.ZipFile]::ExtractToDirectory($depsZip, $depsRoot)
+        $depsPath = Join-Path $depsRoot 'x64'
+        if (-not (Test-Path -LiteralPath $depsPath)) { $depsPath = $depsRoot }
+        $deps = @(Get-ChildItem -LiteralPath $depsPath -File -Filter '*.appx' | Select-Object -ExpandProperty FullName)
 
-        # Download packages
-        if (-not (Invoke-BitsDownload $depsUrl "$DownloadsDir\winget-deps.zip" 'winget-deps.zip')) { throw 'BITS download failed for WinGet dependencies.' }
-        if (-not (Invoke-BitsDownload $bundleUrl "$DownloadsDir\winget.msixbundle" 'winget.msixbundle')) { throw 'BITS download failed for the WinGet bundle.' }
-        if ($licenseUrl -and -not (Invoke-BitsDownload $licenseUrl "$DownloadsDir\winget-license.xml" 'winget-license.xml')) {
-            throw 'BITS download failed for the WinGet license.'
-        }
-
-        # Extract dependencies
-        Invoke-WithSpinner "Extracting winget-deps.zip" "Extracted winget-deps.zip" {
-            param($z, $d)
-            Expand-FastArchive -Path $z -DestinationPath $d
-        } @("$DownloadsDir\winget-deps.zip", "$DownloadsDir\winget-deps")
-
-        $depsPath = Join-Path "$DownloadsDir\winget-deps" "x64"
-        if (-not (Test-Path $depsPath)) { $depsPath = "$DownloadsDir\winget-deps" }
-        $deps = @(Get-ChildItem $depsPath -Filter *.appx | Select-Object -ExpandProperty FullName)
-        Write-Host "[+] Dependencies found: $($deps.Count) (includes native WindowsAppRuntime 1.8 .appx)" -ForegroundColor Green
-
+        # Provisioning stages packages for the machine; registration makes them
+        # available to the current user. These operations are separate from downloading.
         # Provision and register each dependency package (.appx)
         foreach ($dep in $deps) {
             $depLeaf = Split-Path -Leaf $dep
@@ -512,18 +728,18 @@ function Install-WingetLegacyBootstrap {
         }
 
         # Install winget with DISM provisioning and Appx registration
-        if (Test-Path "$DownloadsDir\winget-license.xml") {
+        if ($licenseAsset) {
             Invoke-WithSpinner "Installing winget with dependencies and license" "Installed winget package" {
                 param($p, $lic, $d)
                 try { Add-AppxProvisionedPackage -Online -PackagePath $p -LicensePath $lic -DependencyPackagePath $d -ErrorAction SilentlyContinue | Out-Null } catch {}
                 try { Add-AppxPackage -Path $p -DependencyPath $d -ErrorAction SilentlyContinue | Out-Null } catch {}
-            } @("$DownloadsDir\winget.msixbundle", "$DownloadsDir\winget-license.xml", $deps)
+            } @($bundle, $license, $deps)
         } else {
             Invoke-WithSpinner "Installing winget with dependencies" "Installed winget package" {
                 param($p, $d)
                 try { Add-AppxProvisionedPackage -Online -PackagePath $p -SkipLicense -DependencyPackagePath $d -ErrorAction SilentlyContinue | Out-Null } catch {}
                 try { Add-AppxPackage -Path $p -DependencyPath $d -ErrorAction SilentlyContinue | Out-Null } catch {}
-            } @("$DownloadsDir\winget.msixbundle", $deps)
+            } @($bundle, $deps)
         }
 
         # Register by family name and sync to local tool path
@@ -532,42 +748,27 @@ function Install-WingetLegacyBootstrap {
         $wPath = Get-WingetPath
         if ($wPath) { return $wPath }
 
-        # Direct ZIP extraction fallback if AppX service failed on Server 2019
-        Write-Host "[*] AppX registration incomplete. Attempting direct portable extraction fallback..." -ForegroundColor Cyan
-        Invoke-WithSpinner "Extracting winget standalone binaries" "Extracted winget standalone binaries" {
-            param($bundle, $depsList, $dest)
-            Add-Type -AssemblyName System.IO.Compression.FileSystem
-            $tmpBundle = "$bundle-extracted"
-            if (-not (Test-Path $tmpBundle)) { New-Item -ItemType Directory -Path $tmpBundle -Force | Out-Null }
-            [System.IO.Compression.ZipFile]::ExtractToDirectory($bundle, $tmpBundle)
-
-            $nestedMsix = Get-ChildItem -Path $tmpBundle -Filter "*x64*.msix" -Recurse | Where-Object { $_.Name -notmatch 'stub' } | Select-Object -First 1
-            if ($nestedMsix) {
-                if (-not (Test-Path $dest)) { New-Item -ItemType Directory -Path $dest -Force | Out-Null }
-                [System.IO.Compression.ZipFile]::ExtractToDirectory($nestedMsix.FullName, $dest)
-                foreach ($dep in $depsList) {
-                    try { [System.IO.Compression.ZipFile]::ExtractToDirectory($dep, $dest) } catch {}
-                }
-                [System.GC]::Collect()
-            }
-        } @("$DownloadsDir\winget.msixbundle", $deps, "$InstallDir\winget")
-
-        Install-WingetLocal
-        return (Get-WingetPath)
+        return (Publish-PortableWinget $bundle $deps $work (Join-Path $InstallDir "winget-ready-$attempt"))
     }
     catch {
         Write-Host "[--------------------------------------------------------------]" -ForegroundColor Red
         Write-Host "[!] Windows Server 2019 manual bootstrap failed: $($_.Exception.Message)" -ForegroundColor Red
         Write-Host "[--------------------------------------------------------------]" -ForegroundColor Red
         return $null
+    } finally {
+        if ($work -and (Test-Path -LiteralPath $work)) {
+            Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction Continue
+        }
     }
 }
 
+# MAIN EXECUTION: helpers above are ready; the shed scripts are fetched before
+# WinGet bootstrap and before any standalone tool or application install.
 try {
     # 0. Fetch the shed scripts before WinGet bootstrap or any tool installation.
-    Write-Host "`n[+] Preparing shed-hardening and shed-scraper in $InstallDir..." -ForegroundColor Cyan
+    Write-Host "`n[+] Preparing shed-hardening, shed-scraper, and shed-dns in $InstallDir..." -ForegroundColor Cyan
     $repo = "https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master/windows"
-    foreach ($script in @("shed-hardening.ps1", "shed-scraper.ps1")) {
+    foreach ($script in @("shed-hardening.ps1", "shed-scraper.ps1", "shed-dns.ps1")) {
         $target = "$InstallDir\$script"
         if (-not (Test-Path $target)) {
             $downloadSucceeded = Invoke-BitsDownload "$repo/$script" $target
@@ -575,8 +776,20 @@ try {
         }
     }
 
+    if ($isMSSQL -and -not $isDC) {
+        $dockerChoice = Read-Host 'Install Docker CE on this SQL host? The installer will defer any required reboot (y/N)'
+        if ($dockerChoice.Trim() -in @('y', 'yes')) {
+            $Downloads.Add(@{
+                Name = 'Docker'
+                Url  = 'https://raw.githubusercontent.com/microsoft/Windows-Containers/Main/helpful_tools/Install-DockerCE/install-docker-ce.ps1'
+            })
+        }
+    }
+
     $wingetPath = Get-WingetPath
 
+    # Server build 20348+ selects the modern bootstrap; older builds use the
+    # manual AppX/bundle path. The build check selects a method, not an app update policy.
     if (-not $wingetPath) {
         $osBuild = [System.Environment]::OSVersion.Version.Build
         # Windows Server 2022 is build 20348+, Windows Server 2019 is build 17763
@@ -589,6 +802,8 @@ try {
             try {
                 Invoke-WithSpinner "Setting up PowerShell Gallery and NuGet provider" "Configured PSGallery & NuGet" {
                     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+                    # These bootstrap changes persist: install the current-user
+                    # provider/module and mark PSGallery trusted for unattended retrieval.
                     Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope CurrentUser -ErrorAction SilentlyContinue | Out-Null
                     Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted -ErrorAction SilentlyContinue | Out-Null
                 }
@@ -609,22 +824,7 @@ try {
                 Write-Warning "Official Microsoft.WinGet.Client bootstrap encountered an error: $($_.Exception.Message)"
             }
 
-            # Method 2: Fallback to automated winget-install script from PSGallery
-            if (-not $wingetPath) {
-                Write-Host "[*] Attempting fallback via winget-install script..." -ForegroundColor Cyan
-                try {
-                    Invoke-WithSpinner "Installing and executing winget-install script" "Completed winget-install script" {
-                        Install-Script -Name winget-install -Force -Scope CurrentUser -ErrorAction Stop
-                        & (Get-Command winget-install -CommandType ExternalScript).Source -Force -ErrorAction SilentlyContinue
-                    }
-                    Install-WingetLocal
-                    $wingetPath = Get-WingetPath
-                } catch {
-                    Write-Warning "winget-install fallback failed: $($_.Exception.Message)"
-                }
-            }
-
-            # Method 3: Final fallback to Server 2019 manual bootstrap if Server 2022 methods fail
+            # Use verified release assets from Microsoft's winget-cli repository.
             if (-not $wingetPath) {
                 Write-Host "[*] Server 2022 methods unsuccessful. Falling back to manual bundle/DISM bootstrap..." -ForegroundColor Yellow
                 $wingetPath = Install-WingetLegacyBootstrap
@@ -661,6 +861,8 @@ try {
     # (Runs sequentially in-process to prevent memory thrashing,
     #  msiexec 1618 mutex collisions, and Explorer shell crashes)
     #----------------------------------------------------------
+    # The result table begins here. It covers standalone tools and package
+    # installs, not every prior bootstrap or later post-install operation.
     $jobResults = [System.Collections.Generic.List[PSCustomObject]]::new()
 
     # 1. Process Standalone Tool Downloads & Extractions
@@ -676,6 +878,8 @@ try {
         }
         $outFile = Join-Path $DownloadsDir $filename
 
+        # A stale file may exist from an earlier run. Never use its existence
+        # as evidence that the current download succeeded.
         $downloadSucceeded = Invoke-BitsDownload $url $outFile "$name ($filename)"
 
         if ($downloadSucceeded -and (Test-Path -LiteralPath $outFile) -and (Get-Item -LiteralPath $outFile).Length -gt 0) {
@@ -700,33 +904,19 @@ try {
                     })
                 }
             }
-            # Execute PowerShell script if .ps1 (e.g., Docker installer)
-            elseif ($filename -like "*.ps1") {
-                Write-Host "[*] [$name] Executing PowerShell installation script ($filename)..." -ForegroundColor Cyan
+            elseif ($name -eq 'Docker') {
                 try {
-                    $proc = Start-Process -FilePath "powershell.exe" -ArgumentList "-ExecutionPolicy Bypass -NoProfile -File `"$outFile`"" -Wait -PassThru
-                    if ($proc.ExitCode -in 0, 3010) {
-                        Write-Host "[+] [$name] Execution completed successfully!" -ForegroundColor Green
-                        $jobResults.Add([PSCustomObject]@{
-                            JobName = $name
-                            Status  = "Success"
-                            Details = "Executed PowerShell script (exit code 0)"
-                        })
-                    } else {
-                        Write-Warning "[-] [$name] Script exited with code: $($proc.ExitCode)"
-                        $jobResults.Add([PSCustomObject]@{
-                            JobName = $name
-                            Status  = "Failed"
-                            Details = "Exit code $($proc.ExitCode)"
-                        })
+                    $windowsPowerShell = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+                    $proc = Start-Process -FilePath $windowsPowerShell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$outFile`" -NoRestart" -Wait -PassThru
+                    if ($proc.ExitCode -notin 0, 3010) { throw "Installer exited with code $($proc.ExitCode)." }
+                    $dockerService = Get-Service -Name docker -ErrorAction SilentlyContinue
+                    if ($dockerService.Status -ne 'Running') {
+                        throw 'Docker service is missing or stopped. Check whether Containers requires a reboot, then rerun setup.'
                     }
+                    $jobResults.Add([PSCustomObject]@{ JobName=$name; Status='Success'; Details='Docker service verified running' })
                 } catch {
-                    Write-Warning "[!] [$name] Script execution failed: $($_.Exception.Message)"
-                    $jobResults.Add([PSCustomObject]@{
-                        JobName = $name
-                        Status  = "Failed"
-                        Details = "Launch error: $($_.Exception.Message)"
-                    })
+                    Write-Warning "Docker installation needs attention: $_"
+                    $jobResults.Add([PSCustomObject]@{ JobName=$name; Status='Failed'; Details=$_.Exception.Message })
                 }
             }
             # Execute silent installer if args provided
@@ -772,6 +962,8 @@ try {
 
     # 2. Process WinGet Package Installations
     if ($wingetPath) {
+        # These are package identifiers, not executable names. Keep --exact
+        # matching for normal installs; WFC has a deliberate second-attempt name fallback.
         $packages = @('Mozilla.Firefox', '7zip.7zip', 'BiniSoft.WindowsFirewallControl', 'Malwarebytes.Malwarebytes')
         Write-Host "`n[+] Installing packages sequentially via winget: $($packages -join ', ')..." -ForegroundColor Cyan
 
@@ -791,7 +983,9 @@ try {
                     $wingetArgs = @('install', '--id', $pkgId, '--exact', '--source', 'winget', '--accept-package-agreements', '--accept-source-agreements')
                 } elseif ($attempt -eq 2 -and $pkgId -match 'WindowsFirewallControl') {
                     # Broaden search if exact ID was not found on first attempt
-                    $wingetArgs = @('install', '--name', 'Windows Firewall Control', '--silent', '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity')
+                    # Start-Process flattens argument arrays; retain native quotes
+                    # around this multiword name in the resulting command line.
+                    $wingetArgs = @('install', '--name', '"Windows Firewall Control"', '--silent', '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity')
                 } else {
                     $wingetArgs = @('install', '--id', $pkgId, '--exact', '--source', 'winget', '--silent', '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity')
                 }
@@ -807,6 +1001,9 @@ try {
                     $lastCode = -1
                 } finally { Set-InstallConsoleColors }
 
+                # 0 is success; 3010 is success with a restart requested.
+                # Verification below tries winget list, but exit-code success is
+                # still recorded even when the list verification cannot confirm the package.
                 if ($lastCode -in 0, 3010) {
                     # Validate installation via winget list
                     $isVerified = $false
@@ -840,6 +1037,8 @@ try {
                 }
             }
 
+            # Failure of one package does not undo previous installs. Only the
+            # listed products have a direct-installer fallback; others retain a failed result.
             # Direct fallback if winget installation failed
             if (-not $installed) {
                 Write-Warning "[!] [$pkgId] Winget install failed (exit code $lastCode). Triggering direct fallback..."
@@ -896,6 +1095,7 @@ try {
                                     $proc2 = Start-Process -FilePath $targetExe -ArgumentList "-install -silent" -Wait -PassThru
                                     $exitCode = $proc2.ExitCode
                                 }
+                                if ($exitCode -notin 0, 3010) { throw "Firewall Control installer failed (exit $exitCode)." }
                             }
                             Write-Host "[+] [$pkgId] Windows Firewall Control installed directly!" -ForegroundColor Green
                             $installed = $true
@@ -967,6 +1167,8 @@ try {
         }
     }
 
+    # This summarizes recorded package/tool outcomes. Review earlier warnings
+    # too, because optional/bootstrap/post-install work may not be included.
     # 3. Final Status Output
     $successCount = ($jobResults | Where-Object { $_.Status -eq 'Success' }).Count
     $failCount = ($jobResults | Where-Object { $_.Status -eq 'Failed' }).Count
@@ -987,6 +1189,8 @@ try {
     }
     Write-Host (("=" * 60) + "`n") -ForegroundColor Cyan
 
+    # These final steps persist outside the current process: EULA values are
+    # written to registry hives and available tool directories join machine PATH.
     # Post-install: Auto-accept Sysinternals EULA system-wide so tools launch without GUI prompts
     try {
         $eulaKeys = @('HKCU:\Software\Sysinternals', 'HKLM:\SOFTWARE\Sysinternals')
@@ -1000,13 +1204,15 @@ try {
     # Post-install: Add Tools, Sysinternals & winget directory to system PATH if not already present
     try {
         $sysinternalsDir = "$InstallDir\Sysinternals"
-        $wingetDir = "$InstallDir\winget"
+        $wingetDir = if ($wingetPath -and (Split-Path -Parent $wingetPath) -eq $script:PortableWingetDirectory) { $script:PortableWingetDirectory }
         $machinePath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
-        $pathsToAdd = @($InstallDir, $sysinternalsDir, $wingetDir) | Where-Object { (Test-Path $_) -and ($machinePath -notlike "*$_*") }
-        if ($pathsToAdd) {
-            $newPath = ($machinePath.TrimEnd(';') + ';' + ($pathsToAdd -join ';')).Trim(';')
+        $machineEntries = @($machinePath -split ';' | Where-Object { $_ -and $_.TrimEnd('\') -notin $script:RejectedWingetDirectories })
+        $pathsToAdd = @($InstallDir, $sysinternalsDir, $wingetDir) | Where-Object { $_ -and (Test-TrustedPath $_) -and $_ -notin $machineEntries }
+        $newPath = (@($machineEntries) + @($pathsToAdd) | Select-Object -Unique) -join ';'
+        if ($newPath -ne $machinePath) {
             [System.Environment]::SetEnvironmentVariable("Path", $newPath, "Machine")
-            $env:Path = "$newPath;$env:Path"
+            $processEntries = @($env:Path -split ';' | Where-Object { $_ -and $_.TrimEnd('\') -notin $script:RejectedWingetDirectories })
+            $env:Path = (@($newPath -split ';') + $processEntries | Select-Object -Unique) -join ';'
             Write-Host "[+] System PATH updated with $InstallDir" -ForegroundColor Green
         }
     } catch {}
@@ -1021,6 +1227,8 @@ finally {
     try { Stop-Transcript -ErrorAction SilentlyContinue } catch {}
     try {
         if ($script:TranscriptPath -and (Test-Path $script:TranscriptPath)) {
+            # Remove spinner redraw artifacts only after closing the transcript,
+            # leaving a readable text log for the completed run.
             $raw = [System.IO.File]::ReadAllText($script:TranscriptPath)
             $raw = $raw -replace "`r\[[\|\/\-\\]\][^\r\n]*", ""
             $cleaned = ($raw -split "`r?`n" | Where-Object { $_ -notmatch '^\s*\[[\|\/\-\\]\]' }) -join "`r`n"
