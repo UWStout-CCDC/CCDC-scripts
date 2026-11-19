@@ -35,11 +35,15 @@ DOWNLOADS AND OUTPUT
 FAILURES
   There is no automatic rollback. Results are tracked per tool/package; some
   setup/post-install errors are handled separately and are not rows in that table.
+.PARAMETER Branch
+Download missing shed scripts from shed-branch. The default branch is master.
 .EXAMPLE
 .\shed-installs.ps1
+.EXAMPLE
+.\shed-installs.ps1 -Branch
 #>
 [CmdletBinding()]
-param()
+param([switch]$Branch)
 
 # Apply black/white colors to both .NET Console and the PowerShell host.
 # Native programs do not inherit Write-Host parameter defaults as rendering rules.
@@ -767,7 +771,8 @@ function Install-WingetLegacyBootstrap {
 try {
     # 0. Fetch the shed scripts before WinGet bootstrap or any tool installation.
     Write-Host "`n[+] Preparing shed-hardening, shed-scraper, and shed-dns in $InstallDir..." -ForegroundColor Cyan
-    $repo = "https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/master/windows"
+    $scriptBranch = if ($Branch) { 'shed-branch' } else { 'master' }
+    $repo = "https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/$scriptBranch/windows"
     foreach ($script in @("shed-hardening.ps1", "shed-scraper.ps1", "shed-dns.ps1")) {
         $target = "$InstallDir\$script"
         if (-not (Test-Path $target)) {
