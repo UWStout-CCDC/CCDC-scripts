@@ -9,11 +9,10 @@ and files for easy download from VMs, via `curl` or similar untility.
 
 ## Directory structure
 
-- `linux`: Files for Linux Boxes
-- `general`: Files for all Boxes, e.g. banners
-- `firewall`: Files for Firewall Usage
-- `templates`: Word templates for injects and incident response
-- `windows`: Files for Windows Boxes
+- `firewall`: Scripts & Files for Firewalls AND for VyOS
+- `linux`: Scripts & Files for Linux Boxes
+- `windows`: Scripts & Files for Windows Boxes
+- `templates`: Word templates for injects and incident response. Includes Legal Banner Template
 
 ## Curl
 
@@ -23,9 +22,8 @@ Using curl, or a similar utility, files can be downloaded onto any machine.
 
 ## Contributing
 
-You can either a create a pull request on github (check github help for more info),
-or email me to become a contributor.
+Options:
+1. Request access to the Github organization by Emailing the Cyber@Stout President and Infrastructure Manager
+2. Create a pull request on github under the UWStout-CCDC Org. 
+3. Request Review from the Executive Team to Merge to master. 
 
-## TODO
-
-- Cleanup Old Repo Scripts
