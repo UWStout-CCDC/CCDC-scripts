@@ -14,7 +14,9 @@ READING GUIDE
   Helpers below handle logging, path/evidence checks, dependency refresh, and the
   optional action menu. Main execution starts at the elevation/directory setup.
   Collection stages 1-6 inventory dependencies, history/downloads, startup,
-  tasks, WMI, and selected filesystem locations. Reports are saved along the way.
+  tasks, WMI, and selected filesystem locations. During collection, timestamped
+  activity updates in the console and audit.log show the stage, elapsed scan time,
+  finding count, and current operation. Reports are saved along the way.
 
 DEFAULTS AND ACTIONS
   Collection is read-only with respect to audited items, but creates report and
@@ -48,23 +50,50 @@ $ProgressPreference = 'SilentlyContinue'
 
 # Write status to both the console and audit.log; count read/action warning messages.
 # Findings themselves are stored separately so a large inventory need not flood the console.
+# Each downloaded script can display its own headings without a companion module.
+function Write-RunHeading {
+    param([string]$Title)
+    Write-Host
+    Write-Host "== $Title ==" -ForegroundColor Cyan -BackgroundColor Black
+}
+
 function Write-ScraperLog {
     param([string]$Message, [ValidateSet('INFO', 'WARN', 'ERROR', 'SUCCESS')][string]$Level = 'INFO')
+    $colors = @{ INFO = 'White'; WARN = 'Yellow'; ERROR = 'Red'; SUCCESS = 'Green' }
     $line = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] [$Level] $Message"
-    Write-Host $line
+    Write-Host $line -ForegroundColor $colors[$Level] -BackgroundColor Black
     Add-Content -LiteralPath $script:ReportLog -Value $line -Encoding UTF8 -ErrorAction Stop
     if ($Level -in @('WARN', 'ERROR')) { $script:ReadOrActionErrors++ }
+}
+
+# Progress reflects work reached on the scan thread. A slow Windows call leaves
+# its operation visible until it returns. Rate-limit output inside large loops.
+function Write-ScraperActivity {
+    param([string]$Detail, [string]$Stage, [switch]$Immediate)
+    if (-not $script:ScanTimer -or -not $script:ScanTimer.IsRunning) { return }
+    $elapsed = $script:ScanTimer.Elapsed
+    if ($Stage) {
+        $script:ScanStage = $Stage
+        Write-RunHeading $Stage
+    } elseif (-not $Immediate -and ($elapsed - $script:LastActivity).TotalSeconds -lt 5) {
+        return
+    }
+    $script:LastActivity = $elapsed
+    Write-ScraperLog ("{0} | {1:hh\:mm\:ss} elapsed | {2} findings | {3}" -f $script:ScanStage, $elapsed, $script:Findings.Count, $Detail)
 }
 
 # Return one validated menu answer, using the displayed default for Enter.
 # Unknown answers reprompt and never implicitly select a destructive operation.
 function Read-ScraperChoice {
-    param([string]$Prompt, [string[]]$Choices, [string]$Default)
+    param([string[]]$Prompt, [string[]]$Choices, [string]$Default)
+    Write-Host
+    foreach ($line in $Prompt) { Write-Host $line }
+    $question = if ($Default) { "Choice (Enter = $Default)" } else { 'Choice' }
     while ($true) {
-        $answer = (Read-Host $Prompt).Trim()
+        $answer = (Read-Host $question).Trim()
         if (-not $answer) { $answer = $Default }
         if ($answer -in $Choices) { return $answer }
-        Write-Host "Enter one of: $($Choices -join ', ')."
+        Write-Host "Choose one of $($Choices -join ', ')." -ForegroundColor Yellow -BackgroundColor Black
     }
 }
 
@@ -87,6 +116,7 @@ function Add-ScraperFinding {
 # Checkpoint the full finding list to CSV and CLIXML, including action outcomes.
 # These writes affect report files only, not the audited items.
 function Save-ScraperReports {
+    Write-ScraperActivity 'Saving CSV and XML reports' -Immediate
     $script:Findings | Export-Csv -LiteralPath $script:FindingsCsv -NoTypeInformation -Encoding UTF8 -ErrorAction Stop
     $script:Findings | Export-Clixml -LiteralPath $script:FindingsXml -ErrorAction Stop
 }
@@ -158,6 +188,7 @@ function Update-ScraperStartupReferences {
             Join-Path $_.FullName 'AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup'
         })
         foreach ($directory in $directories) {
+            if ($CollectFindings) { Write-ScraperActivity "Reading startup folder $directory" }
             if ($directory -notin $Context.ProtectedRoots) { $Context.ProtectedRoots += $directory }
             try { $files = @(Get-ChildItem -LiteralPath $directory -File -Force -ErrorAction Stop) }
             catch [System.Management.Automation.ItemNotFoundException] { continue }
@@ -379,6 +410,7 @@ function Get-ScraperFiles {
         $directory = $pending.Pop()
         if (-not $visited.Add((Get-ScraperPathKey $directory))) { continue }
         if (@($ExcludedRoots | Where-Object { Test-ScraperPathWithin $directory $_ }).Count) { continue }
+        Write-ScraperActivity "Reading folder $directory"
         try {
             if (Test-ScraperLinkedPath $directory) { Write-ScraperLog "Skipped linked directory: $directory"; continue }
             $children = @(Get-ChildItem -LiteralPath $directory -Force -ErrorAction Stop)
@@ -396,9 +428,15 @@ function Get-ScraperFiles {
 function Start-ScraperReview {
     param($Context, [string]$QuarantineDirectory, [string]$TaskBackupDirectory)
     while ($true) {
-        $choice = Read-ScraperChoice -Prompt '[L] List findings, [Q] Review one file for quarantine, [T] Review one task for disablement, [F] Finish (default F)' -Choices @('L', 'Q', 'T', 'F') -Default 'F'
+        $choice = Read-ScraperChoice -Prompt @(
+            'Review findings'
+            '  [L] List findings'
+            '  [Q] Review one file for quarantine'
+            '  [T] Review one scheduled task for disablement'
+            '  [F] Finish'
+        ) -Choices @('L', 'Q', 'T', 'F') -Default 'F'
         if ($choice -eq 'F') { return }
-        if ($choice -eq 'L') { $script:Findings | Format-Table ID, Category, Severity, Name, Path -AutoSize | Out-String | Write-Host; continue }
+        if ($choice -eq 'L') { $script:Findings | Format-Table ID, Category, Severity, Name, Path -AutoSize -Wrap | Out-String | Write-Host; continue }
         $idInput = Read-Host 'Exact finding ID (blank cancels)'
         $id = 0
         if (-not [int]::TryParse($idInput, [ref]$id)) { continue }
@@ -534,12 +572,26 @@ $context = [PSCustomObject]@{
     References = [Collections.Generic.List[string]]::new()
     ProtectedRoots = @($env:SystemRoot, $env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:ProgramW6432, $env:ProgramData, $toolsDirectory) + @($env:PSModulePath -split ';') | Where-Object { $_ }
 }
-Write-ScraperLog 'Audit-first collection. Unknown, unsigned, downloaded, or startup items are not automatically malicious.'
-Write-ScraperLog "Reports: $reportDirectory. No audited items change unless explicitly selected and confirmed later."
+$splash = @'
+
+            ___                    +--------------------------------------------+
+    `=/~~~~~   ~\                  |              shed-scraper.ps1              |
+     | ,      ,_ `\_/~\-           |    made for MWCCDC 2026-27' qualifiers     |
+     >/'>/ ~|||`\( ,~\-            |                                            |
+     |  |   `||   \;               |                                            |
+\\\\//\\\/TX\\//\\\\|//            |  <------------ that's kayne                |
+                                   +--------------------------------------------+
+'@
+Write-Host $splash -ForegroundColor Red -BackgroundColor Black
+Write-ScraperLog 'Collection is read-only. Review individual findings after the reports are saved.'
+Write-ScraperLog "Reports: $reportDirectory"
 
 # 1. Capture live dependency references; never stop processes or services.
+$script:ScanTimer = [Diagnostics.Stopwatch]::StartNew()
+Write-ScraperActivity 'Reading process and service lists' -Stage 'Running processes and services'
 foreach ($class in @('Win32_Process', 'Win32_Service')) {
     try {
+        Write-ScraperActivity "Querying $class" -Immediate
         $instances = @(Get-CimInstance -ClassName $class -ErrorAction Stop)
         foreach ($item in $instances) {
             $references = if ($class -eq 'Win32_Process') { @($item.ExecutablePath, $item.CommandLine) } else { @($item.PathName) }
@@ -549,26 +601,30 @@ foreach ($class in @('Win32_Process', 'Win32_Service')) {
 }
 
 # 2. Collect command history and download provenance; do not modify either.
-Write-ScraperLog 'Collecting command history and download provenance...'
+Write-ScraperActivity 'Listing user profiles' -Stage 'Command history and downloads'
 # These keyword matches find commands worth reading, including legitimate
 # administration/downloads. Matches are never executed or removed from history.
 $historyPattern = '(?i)\b(wget|curl|Invoke-WebRequest|iwr|certutil|bitsadmin|downloadstring|iex|frombase64string|encodedcommand|tcpclient|ncat|socat|mimikatz|chisel|ngrok|ligolo|meterpreter)\b|(?:^|\s)-enc(?:odedcommand)?\b'
 $usersRoot = Join-Path $env:SystemDrive 'Users'
 $profiles = @(Get-ChildItem -LiteralPath $usersRoot -Directory -Force -ErrorAction SilentlyContinue | Where-Object { -not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) })
 foreach ($profile in $profiles) {
+    Write-ScraperActivity "Reading profile $($profile.Name)"
     $historyPath = Join-Path $profile.FullName 'AppData\Roaming\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt'
     if (Test-Path -LiteralPath $historyPath) {
         try {
             $lineNumber = 0
             foreach ($line in @(Get-Content -LiteralPath $historyPath -ErrorAction Stop)) {
                 $lineNumber++
+                if ($lineNumber % 1000 -eq 0) { Write-ScraperActivity "Reading $($profile.Name) history, line $lineNumber" }
                 if ($line -match $historyPattern) { $null = Add-ScraperFinding 'PSHistory' $profile.Name "$historyPath : $lineNumber" "Command needs context: $line" 'REVIEW' }
             }
         } catch { Write-ScraperLog "Could not read history $historyPath`: $_" 'WARN' }
     }
     $downloads = Join-Path $profile.FullName 'Downloads'
     if (Test-Path -LiteralPath $downloads) {
-        foreach ($file in @(Get-ScraperFiles @($downloads) @() @('.exe', '.ps1', '.bat', '.cmd', '.lnk', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.ico'))) {
+        Get-ScraperFiles @($downloads) @() @('.exe', '.ps1', '.bat', '.cmd', '.lnk', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.ico') | ForEach-Object {
+            $file = $_
+            Write-ScraperActivity "Checking download metadata for $($file.Name)"
             try {
                 # Zone.Identifier is optional NTFS download-origin metadata.
                 # Its presence says where a file came from, not whether it is malicious.
@@ -592,7 +648,7 @@ foreach ($key in @('HKCU:\Software\Microsoft\Internet Explorer\TypedURLs', 'HKCU
 Save-ScraperReports
 
 # 3. Inventory registry/startup items; all remain in place, including .lnk/images.
-Write-ScraperLog 'Inventorying startup entries and files (report-only)...'
+Write-ScraperActivity 'Reading startup registry entries' -Stage 'Startup entries and files'
 # Inspect machine and current-user autoruns, including 32-bit application keys
 # and login shell settings. Other users' registry hives are not mounted here.
 $startupKeys = @(
@@ -606,6 +662,7 @@ $startupKeys = @(
 )
 $context.RegistryKeys = $startupKeys
 foreach ($key in $startupKeys) {
+    Write-ScraperActivity "Reading $key"
     if (-not (Test-Path -LiteralPath $key)) { continue }
     try {
         $properties = Get-ItemProperty -LiteralPath $key -ErrorAction Stop
@@ -621,9 +678,13 @@ Update-ScraperStartupReferences $context -CollectFindings
 Save-ScraperReports
 
 # 4. Inventory ALL task paths. Names such as Microsoft are not proof of trust.
-Write-ScraperLog 'Inventorying scheduled tasks (no tasks disabled during collection)...'
+Write-ScraperActivity 'Listing scheduled tasks' -Stage 'Scheduled tasks'
 try {
-    foreach ($task in @(Get-ScheduledTask -ErrorAction Stop)) {
+    $tasks = @(Get-ScheduledTask -ErrorAction Stop)
+    $taskNumber = 0
+    foreach ($task in $tasks) {
+        $taskNumber++
+        Write-ScraperActivity "Task $taskNumber of $($tasks.Count): $($task.TaskPath)$($task.TaskName)" -Immediate:($taskNumber -eq 1)
         $actions = @($task.Actions | ForEach-Object { "$($_.Execute) $($_.Arguments)".Trim() })
         foreach ($action in $actions) { if ($action) { $context.References.Add($action) } }
         $details = "State: $($task.State); Principal: $($task.Principal.UserId); Actions: $($actions -join ' | ')"
@@ -641,8 +702,10 @@ try {
 # 5. WMI subscriptions are report-only. Legitimate management tools use these too.
 # Consumers are the action, filters describe the event, and bindings connect
 # them. Record all three kinds so an IR review can reconstruct the subscription.
+Write-ScraperActivity 'Reading subscription definitions' -Stage 'WMI subscriptions'
 foreach ($class in @('CommandLineEventConsumer', 'ActiveScriptEventConsumer', '__EventFilter', '__FilterToConsumerBinding')) {
     try {
+        Write-ScraperActivity "Querying $class" -Immediate
         foreach ($item in @(Get-CimInstance -Namespace root\subscription -ClassName $class -ErrorAction Stop)) {
             $details = $item | Select-Object Name, ExecutablePath, CommandLineTemplate, ScriptingEngine, ScriptText, Query, Filter, Consumer | ConvertTo-Json -Compress -Depth 4
             foreach ($reference in @($item.ExecutablePath, $item.CommandLineTemplate, $item.ScriptText, $item.Query)) {
@@ -657,7 +720,15 @@ Save-ScraperReports
 # 6. Walk selected locations without following links or collecting the same file twice.
 # File-scope selection affects the final filesystem walk only; history,
 # provenance, startup, task, and WMI collection above has already completed.
-$scope = Read-ScraperChoice -Prompt 'File inventory: [H] User/temp hotspots, [F] Full system drive, [C] Custom folder, [S] Skip (default H; collection changes nothing)' -Choices @('H', 'F', 'C', 'S') -Default 'H'
+$script:ScanTimer.Stop()
+Write-RunHeading 'File inventory scope'
+$scope = Read-ScraperChoice -Prompt @(
+    'Where should the read-only file inventory look?'
+    '  [H] User and temporary folders'
+    '  [F] Entire system drive'
+    '  [C] One folder of your choice'
+    '  [S] Skip file inventory'
+) -Choices @('H', 'F', 'C', 'S') -Default 'H'
 $roots = @()
 if ($scope -eq 'F') { $roots = @("$env:SystemDrive\") }
 elseif ($scope -eq 'C') {
@@ -669,13 +740,20 @@ elseif ($scope -eq 'C') {
         $roots += @('Desktop', 'Downloads', 'AppData\Local', 'AppData\Roaming') | ForEach-Object { Join-Path $profile.FullName $_ }
     }
 }
+$script:ScanTimer.Start()
+Write-ScraperActivity "Checking $($roots.Count) selected scan roots" -Stage 'File inventory'
 $roots = @($roots | Where-Object { Test-Path -LiteralPath $_ -PathType Container })
 # Prune bulky OS stores and the tools/report/quarantine tree before descent.
 # Files outside these exclusions may still be protected from any later quarantine.
 $excluded = @($toolsDirectory, (Join-Path $env:SystemRoot 'WinSxS'), (Join-Path $env:SystemRoot 'servicing'), (Join-Path $env:SystemRoot 'Installer'))
 $extensions = @('.exe', '.ps1', '.psm1', '.psd1', '.bat', '.cmd', '.vbs', '.vbe', '.js', '.jse', '.wsf', '.hta', '.scr', '.jar', '.py')
 $fileCount = 0
-foreach ($file in Get-ScraperFiles $roots $excluded $extensions) {
+$firstFileSeen = $false
+# Process each match as the directory walk yields it, including on a full-drive scan.
+Get-ScraperFiles $roots $excluded $extensions | ForEach-Object {
+    $file = $_
+    Write-ScraperActivity "$fileCount files inventoried. Inspecting $($file.FullName)" -Immediate:(-not $firstFileSeen)
+    $firstFileSeen = $true
     try {
         $evidence = Get-ScraperFileEvidence $file.FullName
         # REVIEW only changes report categorization. It never automatically
@@ -683,17 +761,25 @@ foreach ($file in Get-ScraperFiles $roots $excluded $extensions) {
         $severity = if ($evidence.Signature -eq 'Valid') { 'INFO' } else { 'REVIEW' }
         $null = Add-ScraperFinding 'Filesystem' $file.Name $file.FullName "Size: $($file.Length); signature is context, not a malware verdict." $severity $evidence.Hash $evidence.Signature $evidence.Signer
         $fileCount++
-        if ($fileCount % 250 -eq 0) { Write-ScraperLog "Inventoried $fileCount executable/script files..." }
     } catch { Write-ScraperLog "Could not inspect file $($file.FullName): $_" 'WARN' }
 }
 Save-ScraperReports
-Write-ScraperLog "Collection complete: $($script:Findings.Count) findings. Reports saved before any review actions."
+$script:ScanTimer.Stop()
+Write-RunHeading 'Audit results'
+Write-ScraperLog "Collection complete: $($script:Findings.Count) findings, including $fileCount inventoried files. Reports saved before any review actions."
 $script:Findings | Group-Object Category | Select-Object Name, Count | Format-Table -AutoSize | Out-String | Write-Host
-Write-Host 'No audited files, shortcuts, images, registry entries, tasks, processes, services, or WMI objects have been changed.'
 # OPTIONAL ACTION PHASE: all inventory reports are already on disk. Finish
 # (the default) exits without modifying audited files, registry entries, or tasks.
-$review = Read-ScraperChoice -Prompt '[F] Finish audit, [R] Open optional per-item review (default F)' -Choices @('F', 'R') -Default 'F'
+$review = Read-ScraperChoice -Prompt @(
+    'After collection'
+    '  [F] Finish audit'
+    '  [R] Review individual findings'
+) -Choices @('F', 'R') -Default 'F'
 if ($review -eq 'R') { Start-ScraperReview $context $quarantineDirectory $taskBackupDirectory }
 Save-ScraperReports
-Write-ScraperLog "Finished with $script:ReadOrActionErrors read/action warning(s). Findings: $script:FindingsCsv; actions/recovery paths: $script:ActionsFile"
+Write-RunHeading 'Scraper reports'
+Write-ScraperLog "Read or action warnings and errors: $script:ReadOrActionErrors"
+Write-ScraperLog "Findings: $script:FindingsCsv"
+Write-ScraperLog "Actions and recovery paths: $script:ActionsFile"
+Write-ScraperLog "Audit log: $script:ReportLog"
 Read-Host 'Press Enter to exit'

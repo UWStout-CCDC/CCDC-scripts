@@ -4,35 +4,38 @@
 .SYNOPSIS
 Interactive Windows competition hardening with account and group cleanup.
 .DESCRIPTION
-Run without arguments and answer the prompts. All configuration is interactive.
+Run without arguments and answer the prompts. The host role is detected automatically.
 On a DC, reviews the current AD domain; elsewhere, reviews local accounts.
-Administrator keeps its memberships. Every other user keeps only Domain Users
-(local Users on non-DCs), including protected scoring and service accounts.
+Account cleanup preserves Administrator, Guest, and Kerberos accounts and their
+memberships. It preserves Users, Guests, Domain Users, Domain Guests, and the
+Denied RODC Password Replication Group, including their existing nesting.
+Other users lose non-protected memberships. On AD, cleanup repairs ordinary
+users' non-protected primary groups by moving those users to Domain Users.
 OS-issued service identities may retain non-administrative application groups;
 these exceptions are audited and never exempt ordinary service usernames.
 Enter scoring login wildcards (use *.* for lastname.firstname), optional exact
 scoring names, and existing service usernames at the account prompts. Then choose
 Preview, Audit, Disable, or Remove. Preview changes only the account/group step;
-other hardening still runs. Choose AD-DNS or MSSQL at startup; optional DHCP and
-AD CS web enrollment apply only to AD-DNS. SQL ports/Browser apply only to MSSQL.
+other hardening still runs. Windows services identify the AD-DNS or MSSQL profile.
+Installed AD CS web enrollment applies only to AD-DNS. SQL ports/Browser apply only to MSSQL.
 Reports are saved under C:\Tools\backups; transcripts under C:\Tools\logs.
 During base service hardening, check essential services or choose to enable/start
 those required for this host. Essential-service and remote-access disablement
 reports are saved as CSV files under C:\Tools\logs.
-Internal management rules accept sources in 172.20.240.0/24. Scored endpoints
+Full hardening prompts for the internal IPv4 network (/8, /16, or /24). Scored endpoints
 remain publicly reachable. The firewall step backs up and audits local/effective
 rules, then prompts to audit, disable, or remove selected old local rules.
 Remaining broad/GPO conflicts are reported; audit-only does not close them.
 AD-DNS exposes only WinRM TCP 5985/5986, DNS TCP/UDP 53, and ICMPv4 ping
-externally. AD DS, AD CS, SMB, NTP, and optional DHCP stay internal.
+externally. AD DS, AD CS, SMB, and NTP stay internal.
 MSSQL exposes configured SQL TCP ports, SMB TCP 445, RDP TCP/UDP 3389, and ping.
 Optional SQL Browser UDP 1434 is internal only. External TCP/UDP guards apply
-regardless of the old-rule cleanup choice, while preserving DHCP bootstrap.
+regardless of the old-rule cleanup choice. Both profiles block inbound ADWS and DHCP from all sources.
 .NOTES
 READING GUIDE
   Setup prepares the console, elevation checks, C:\Tools folders, and transcript.
   The function library defines menus, firewall audits, service handling, and
-  account handling. Main execution resumes at the server-profile selection.
+  account handling. Main execution resumes at the host-role detection.
 
 MAIN FLOW
   1: Administrator password and AD-DNS DSRM synchronization.
@@ -46,10 +49,10 @@ MAIN FLOW
 
 DEFAULTS AND EFFECTS
   Base-service choice A disables the listed base services; essential-service
-  choice C only checks them. Optional DHCP/web enrollment/SQL Browser default No.
+  choice C only checks them. Optional SQL Browser defaults to No.
   Account Preview and old-firewall Audit apply only to their respective steps;
   the rest of this script still changes the host. RDP remains a scored endpoint
-  on MSSQL; internal management allowances use source 172.20.240.0/24.
+  on MSSQL; internal management allowances use the entered network.
   Kerberos defaults to status only. Each visit permits one confirmed reset;
   follow-up-only mode avoids rerunning the other hardening steps. Early competition
   resets require a chosen minimum wait, healthy replication, and typed confirmation.
@@ -90,23 +93,40 @@ try {
     Clear-Host
 } catch {}
 
+# Each downloaded script can display its own headings without a companion module.
+function Write-RunHeading {
+    param([string]$Title)
+    Write-Host
+    Write-Host "== $Title ==" -ForegroundColor Cyan -BackgroundColor Black
+}
+
+# Write a timestamped console message that the transcript can capture.
+# WARN/ERROR messages also increment the final issue-message count.
+function Write-Log {
+    param([string]$Message, [ValidateSet('INFO', 'WARN', 'ERROR', 'SUCCESS')][string]$Level = 'INFO')
+    $colors = @{ INFO = 'White'; WARN = 'Yellow'; ERROR = 'Red'; SUCCESS = 'Green' }
+    $line = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] [$Level] $Message"
+    Write-Host $line -ForegroundColor $colors[$Level] -BackgroundColor Black
+    if ($Level -in @('WARN', 'ERROR')) { $script:HardeningIssues++ }
+}
+
 # -----------------------------------------------------------------------------
 # Startup checks and logging
 # -----------------------------------------------------------------------------
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin) {
-    Write-Host "`n[!] ERROR: script must be run as Administrator!" -ForegroundColor Red -BackgroundColor Black
+    Write-Log 'Run this script as Administrator.' ERROR
     Write-Host "" -BackgroundColor Black
-    Read-Host "Press Enter to exit..."
+    Read-Host "Press Enter to exit"
     exit 1
 }
 
 # Keep console window open on terminating errors
 trap {
-    Write-Host "`n[FATAL ERROR] $($_.Exception.Message)" -ForegroundColor Red -BackgroundColor Black
+    Write-Log $_.Exception.Message ERROR
     Write-Host $_.ScriptStackTrace -ForegroundColor DarkGray -BackgroundColor Black
     Write-Host "" -BackgroundColor Black
-    Read-Host "Script encountered an error. Press Enter to exit..."
+    Read-Host "Script encountered an error. Press Enter to exit"
     exit 1
 }
 
@@ -231,64 +251,59 @@ try {
 # -----------------------------------------------------------------------------
 # Function library: shared logging and menus
 # -----------------------------------------------------------------------------
-# Write a timestamped console message that the transcript can capture.
-# WARN/ERROR messages also increment the final issue-message count.
-function Write-Log {
-    param(
-        [string]$Message,
-        [ValidateSet("INFO", "WARN", "ERROR", "SUCCESS")]$Level = "INFO"
-    )
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    if ($Level -in @('WARN', 'ERROR')) { $script:HardeningIssues++ }
-    $colors = @{
-        "INFO"    = "Cyan"
-        "WARN"    = "Yellow"
-        "ERROR"   = "Red"
-        "SUCCESS" = "Green"
-    }
-    Write-Host "[$timestamp] [$Level] $Message" -ForegroundColor $colors[$Level] -BackgroundColor Black
-}
-
 # Repeat menu prompts on invalid input; a blank answer uses the displayed default.
 # Return a validated menu answer; letters/names are matched without case sensitivity.
-# An empty default forces an explicit answer, as used for the server profile.
+# An empty default requires an explicit answer.
 function Read-MenuChoice {
-    param([string]$Prompt, [string[]]$Choices, [string]$Default)
+    param([string[]]$Prompt, [string[]]$Choices, [string]$Default)
+    Write-Host
+    foreach ($line in $Prompt) { Write-Host $line }
+    $question = if ($Default) { "Choice (Enter = $Default)" } else { 'Choice' }
     while ($true) {
-        $answer = (Read-Host $Prompt).Trim()
-        if ([string]::IsNullOrWhiteSpace($answer)) { $answer = $Default }
+        $answer = (Read-Host $question).Trim()
+        if (-not $answer) { $answer = $Default }
         if ($answer -in $Choices) { return $answer }
-        Write-Host "Please enter one of: $($Choices -join ', ')." -ForegroundColor Yellow
+        Write-Host "Choose one of $($Choices -join ', ')." -ForegroundColor Yellow -BackgroundColor Black
     }
 }
 
-# Profile selection and firewall helpers are kept together so ports, source
-# limits, and service expectations all derive from the same settings object.
-# There are exactly two competition hosts. Choose the intended profile explicitly.
-# Collect the two-host configuration and return one settings object.
-# This records choices only; it does not install roles, change SQL listeners, or open ports.
+# Detect the two competition roles before applying any host-specific settings.
+# Read the service inventory even when services are stopped. SQL Browser alone
+# can be installed on a client, so require evidence of a database engine.
 function Read-ServerConfiguration {
-    $choice = Read-MenuChoice -Prompt 'Server profile: [A] AD-DNS (AD DS, AD CS, DNS, optional DHCP, ping), [M] MSSQL (SQL Server, SMB, RDP); choose A or M' -Choices @('A', 'AD-DNS', 'M', 'MSSQL') -Default ''
-    $configuration = [PSCustomObject]@{
-        Profile = $(if ($choice -in @('A', 'AD-DNS')) { 'AD-DNS' } else { 'MSSQL' })
-        EnableDhcp = $false; AdcsWeb = $false; SqlTcpPorts = @('1433'); SqlBrowser = $false
+    $os = $null
+    try { $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop } catch {}
+    if (-not $os) {
+        try { $os = Get-WmiObject Win32_OperatingSystem -ErrorAction Stop } catch {}
     }
-    if ($configuration.Profile -eq 'AD-DNS') {
-        $configuration.EnableDhcp = (Read-MenuChoice -Prompt 'Provide DHCP on AD-DNS (UDP 67 server, internal clients and initial requests)? (y/N)' -Choices @('Y', 'Yes', 'N', 'No') -Default 'N') -in @('Y', 'Yes')
-        $configuration.AdcsWeb = (Read-MenuChoice -Prompt 'Use AD CS web enrollment/IIS and allow internal HTTP/HTTPS 80/443? (y/N; internal RPC enrollment is supported either way)' -Choices @('Y', 'Yes', 'N', 'No') -Default 'N') -in @('Y', 'Yes')
+    $services = @(Get-Service -ErrorAction Stop)
+    $dc = $os.ProductType -eq 2 -or 'NTDS' -in $services.Name
+    $engines = @(Get-SqlEngineServiceNames $services)
+    $sql = $engines.Count -gt 0 -or [bool](Get-Process -Name sqlservr -ErrorAction SilentlyContinue)
+    if ($dc -and $sql) { throw 'Detected both a domain controller and a SQL engine. Hardening requires separate AD-DNS and MSSQL hosts.' }
+    if (-not ($dc -or $sql)) { throw 'Could not identify a domain controller or a SQL database engine. Hardening stopped before applying a profile.' }
+    $configuration = [PSCustomObject]@{
+        Profile = $(if ($dc) { 'AD-DNS' } else { 'MSSQL' })
+        AdcsWeb = $false; SqlEngineNames = $engines; SqlTcpPorts = @('1433'); SqlBrowser = $false
+    }
+    Write-Log "Detected server profile: $($configuration.Profile)."
+    if ($dc) {
+        try {
+            $configuration.AdcsWeb = [bool](Get-WindowsFeature -Name ADCS-Web-Enrollment -ErrorAction Stop).Installed
+        } catch { Write-Log "Could not check AD CS web enrollment. Skipping its IIS allowance: $_" 'WARN' }
     } else {
         while ($true) {
             $portInput = Read-Host 'MSSQL TCP listening port(s), comma-separated (default 1433)'
             if ([string]::IsNullOrWhiteSpace($portInput)) { $portInput = '1433' }
             $ports = @($portInput -split ',' | ForEach-Object { $_.Trim() })
-            $invalid = @($ports | Where-Object { $_ -notmatch '^\d{1,5}$' -or [int]$_ -lt 1 -or [int]$_ -gt 65535 })
+            $invalid = @($ports | Where-Object { $_ -notmatch '^\d{1,5}$' -or [int]$_ -lt 1 -or [int]$_ -gt 65535 -or [int]$_ -eq 9389 })
             if (-not $invalid.Count) {
                 $configuration.SqlTcpPorts = @($ports | ForEach-Object { [string][int]$_ } | Select-Object -Unique)
                 break
             }
-            Write-Host 'Enter TCP port numbers from 1 through 65535.' -ForegroundColor Yellow
+            Write-Host 'Enter TCP ports from 1 through 65535. TCP 9389 is blocked for ADWS.' -ForegroundColor Yellow
         }
-        $configuration.SqlBrowser = (Read-MenuChoice -Prompt 'Require internal SQL Browser discovery on UDP 1434? (y/N; never allowed externally)' -Choices @('Y', 'Yes', 'N', 'No') -Default 'N') -in @('Y', 'Yes')
+        $configuration.SqlBrowser = (Read-MenuChoice -Prompt 'Require internal SQL Browser discovery on UDP 1434? [Y/N]' -Choices @('Y', 'Yes', 'N', 'No') -Default 'N') -in @('Y', 'Yes')
     }
     return $configuration
 }
@@ -296,11 +311,8 @@ function Read-ServerConfiguration {
 # Return default/named SQL database-engine service names for the service report.
 # SQL Browser and SQL Agent are separate services, not database-engine instances.
 function Get-SqlEngineServiceNames {
-    # Query the service database so named instances are included even when stopped.
-    $names = @(Get-Service -ErrorAction Stop | Where-Object { $_.Name -eq 'MSSQLSERVER' -or $_.Name -like 'MSSQL$*' } | Select-Object -ExpandProperty Name)
-    if ($names.Count) { return $names }
-    # Keep a required row in the report when no database engine is installed.
-    return 'MSSQLSERVER'
+    param([object[]]$Services = @(Get-Service -ErrorAction Stop))
+    $Services | Where-Object { $_.Name -eq 'MSSQLSERVER' -or $_.Name -like 'MSSQL$*' } | Select-Object -ExpandProperty Name
 }
 
 # Return the complement of an allowed port list within valid TCP/UDP ports.
@@ -316,10 +328,57 @@ function Get-BlockedFirewallPortRanges {
     if ($next -le 65535) { if ($next -eq 65535) { '65535' } else { "$next-65535" } }
 }
 
+# Use network byte order and 64-bit arithmetic so the full IPv4 range fits.
+function ConvertTo-IPv4Number {
+    param([ipaddress]$Address)
+    $number = [long]0
+    foreach ($octet in $Address.GetAddressBytes()) { $number = $number * 256 + $octet }
+    return $number
+}
+
+function ConvertFrom-IPv4Number {
+    param([long]$Number)
+    '{0}.{1}.{2}.{3}' -f ($Number -shr 24), (($Number -shr 16) -band 255), (($Number -shr 8) -band 255), ($Number -band 255)
+}
+
+# Match the input accepted by shed-dns. Prepare the guard ranges once per run.
+function Get-InternalFirewallNetwork {
+    param([string]$NetworkId)
+    if ($NetworkId.Trim() -notmatch '^([^/]+)/(8|16|24)$') {
+        throw 'Enter the IPv4 network address followed by /8, /16 or /24.'
+    }
+    $base = $Matches[1]
+    $prefix = [int]$Matches[2]
+    $ip = $null
+    if (-not [ipaddress]::TryParse($base, [ref]$ip) -or $ip.AddressFamily -ne 'InterNetwork' -or $ip.ToString() -cne $base) {
+        throw 'Enter a dotted-decimal IPv4 network address.'
+    }
+    $first = ConvertTo-IPv4Number $ip
+    $size = [long]1 -shl (32 - $prefix)
+    if ($first % $size) { throw "Host bits must be zero in a /$prefix network address." }
+    $last = $first + $size - 1
+    $outside = @(
+        if ($first -gt 0) { "0.0.0.0-$(ConvertFrom-IPv4Number ($first - 1))" }
+        if ($last -lt [uint32]::MaxValue) { "$(ConvertFrom-IPv4Number ($last + 1))-255.255.255.255" }
+        '::/0'
+    )
+    [PSCustomObject]@{
+        NetworkId = "$base/$prefix"; PrefixLength = $prefix
+        First = $first; Last = $last; OutsideAddresses = $outside
+    }
+}
+
+function Read-InternalFirewallNetwork {
+    while ($true) {
+        $answer = Read-Host 'Internal IPv4 network in CIDR notation (/8, /16 or /24, e.g. 192.168.50.0/24)'
+        try { return (Get-InternalFirewallNetwork $answer) } catch { Write-Warning $_ }
+    }
+}
+
 # Build rule descriptions from the profile; this function does not apply them.
 # Each returned rule carries its ports, optional program/service filters, and source scope.
 function Get-ServerFirewallRules {
-    param($Configuration)
+    param($Configuration, [Parameter(Mandatory)]$Network)
     if ($Configuration.Profile -notin @('AD-DNS', 'MSSQL')) { throw 'Unsupported server profile.' }
     # Only explicitly listed scored endpoints get Any sources. All other service
     # allowances default to the internal subnet; outside TCP/UDP guards follow.
@@ -338,18 +397,10 @@ function Get-ServerFirewallRules {
             @{ Name = 'CCDC-AD-Kerberos-UDP'; Protocol = 'UDP'; LocalPort = '88,464' },
             @{ Name = 'CCDC-AD-LDAP-TCP'; Protocol = 'TCP'; LocalPort = '389,636,3268,3269' },
             @{ Name = 'CCDC-AD-LDAP-UDP'; Protocol = 'UDP'; LocalPort = '389' },
-            @{ Name = 'CCDC-AD-ADWS-TCP'; Protocol = 'TCP'; LocalPort = '9389' },
             @{ Name = 'CCDC-AD-RPC-EPMAP'; Protocol = 'TCP'; LocalPort = '135' },
             @{ Name = 'CCDC-AD-RPC-Dynamic'; Protocol = 'TCP'; LocalPort = 'RPC'; Program = "$env:SystemRoot\System32\lsass.exe" },
             @{ Name = 'CCDC-ADCS-RPC-In'; Protocol = 'TCP'; LocalPort = 'RPC'; Service = 'CertSvc' }
         )
-        # Initial DHCP clients have no assigned IP yet, so the separate 0.0.0.0
-        # exception also requires exact UDP ports, the server service, and an internal NIC.
-        if ($Configuration.EnableDhcp) {
-            @{ Name = 'CCDC-DHCP-In'; Protocol = 'UDP'; LocalPort = '67'; RemotePort = '67,68'; Service = 'DHCPServer' }
-            if (-not $Configuration.InternalInterfaceAliases) { throw 'DHCP requires an interface with an IPv4 address in 172.20.240.0/24.' }
-            @{ Name = 'CCDC-DHCP-Bootstrap-In'; Protocol = 'UDP'; LocalPort = '67'; RemotePort = '68'; RemoteAddress = '0.0.0.0'; Service = 'DHCPServer'; InterfaceAlias = $Configuration.InternalInterfaceAliases }
-        }
         if ($Configuration.AdcsWeb) {
             @{ Name = 'CCDC-ADCS-Web-In'; Protocol = 'TCP'; LocalPort = '80,443' }
         }
@@ -373,68 +424,58 @@ function Get-ServerFirewallRules {
     }
     foreach ($rule in $rules) {
         $rule.Action = 'Allow'
-        if ($rule.Name -eq 'CCDC-DHCP-Bootstrap-In') { $rule.Scope = 'DHCP bootstrap' }
-        elseif ($rule.Name -in $externalNames) { $rule.RemoteAddress = 'Any'; $rule.Scope = 'Scored' }
-        else { $rule.RemoteAddress = '172.20.240.0/24'; $rule.Scope = 'Internal' }
+        if ($rule.Name -in $externalNames) { $rule.RemoteAddress = 'Any'; $rule.Scope = 'Scored' }
+        else { $rule.RemoteAddress = $Network.NetworkId; $rule.Scope = 'Internal' }
     }
     # Explicit blocks enforce the external TCP/UDP allowlist even if old broad
     # Allow rules are only audited. Outbound policy remains stateful Allow.
-    $outside = @('0.0.0.0-172.20.239.255','172.20.241.0-255.255.255.255','::/0')
     foreach ($protocol in @('TCP','UDP')) {
         $ports = @($rules | Where-Object { $_.Scope -eq 'Scored' -and $_.Protocol -eq $protocol } | ForEach-Object { $_.LocalPort -split ',' } | ForEach-Object { [int]$_ })
-        # Initial DHCP requests use 0.0.0.0. Exclude UDP 67 from the broad guard
-        # only when DHCP is selected; a separate rule blocks other outside clients.
-        if ($protocol -eq 'UDP' -and $Configuration.EnableDhcp) { $ports += 67 }
         $blocked = @(Get-BlockedFirewallPortRanges $ports)
         if ($blocked.Count) {
-            $rules += @{ Name = "CCDC-External-$protocol-Block"; Protocol = $protocol; LocalPort = ($blocked -join ','); Action = 'Block'; RemoteAddress = $outside; Scope = 'Outside internal network' }
+            $rules += @{ Name = "CCDC-External-$protocol-Block"; Protocol = $protocol; LocalPort = ($blocked -join ','); Action = 'Block'; RemoteAddress = $Network.OutsideAddresses; Scope = 'Outside internal network' }
         }
     }
-    if ($Configuration.EnableDhcp) {
-        $rules += @{ Name = 'CCDC-DHCP-External-UDP-Block'; Protocol = 'UDP'; LocalPort = '67'; Action = 'Block'; RemoteAddress = @('0.0.0.1-172.20.239.255','172.20.241.0-255.255.255.255','::/0'); Scope = 'Outside internal network' }
-    }
+    # These local ports are closed on every interface, including the scoring LAN.
+    $rules += @{ Name = 'CCDC-Block-ADWS'; Protocol = 'TCP'; LocalPort = '9389'; Action = 'Block'; RemoteAddress = 'Any'; Scope = 'All sources' }
+    $rules += @{ Name = 'CCDC-Block-DHCP'; Protocol = 'UDP'; LocalPort = '67,68,546,547'; Action = 'Block'; RemoteAddress = 'Any'; Scope = 'All sources' }
     $rules
 }
 
 
-# Return true only when every supplied IPv4 address/subnet/range is inside
-# 172.20.240.0/24. Unknown keywords, IPv6, and wider scopes fail this test.
+# An old Allow rule is internal only if every source falls within the entered CIDR.
+# Windows can report hosts, ranges, prefixes, or dotted subnet masks.
 function Test-InternalFirewallScope {
-    param([string[]]$Addresses)
-    # Every allowed source must fit wholly inside the exact competition /24.
+    param([string[]]$Addresses, [Parameter(Mandatory)]$Network)
     if (-not $Addresses.Count) { return $false }
     foreach ($entry in $Addresses) {
+        if ([string]::IsNullOrWhiteSpace($entry)) { return $false }
         $parts = $entry.Trim() -split '/'
         if ($parts.Count -gt 2) { return $false }
         if ($parts.Count -eq 2) {
-            $prefixLength = 0
-            if ([int]::TryParse($parts[1], [ref]$prefixLength)) {
-                if ($prefixLength -lt 24 -or $prefixLength -gt 32) { return $false }
+            if ($parts[1] -match '^[0-9]{1,2}$') {
+                $prefix = [int]$parts[1]
             } else {
                 $mask = $null
-                if (-not [Net.IPAddress]::TryParse($parts[1], [ref]$mask) -or $mask.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetwork) { return $false }
-                $maskBytes = $mask.GetAddressBytes()
-                if ($maskBytes[0] -ne 255 -or $maskBytes[1] -ne 255 -or $maskBytes[2] -ne 255 -or $maskBytes[3] -notin @(0,128,192,224,240,248,252,254,255)) { return $false }
+                if (-not [ipaddress]::TryParse($parts[1], [ref]$mask) -or $mask.AddressFamily -ne 'InterNetwork' -or $mask.ToString() -ne $parts[1]) { return $false }
+                $bits = ($mask.GetAddressBytes() | ForEach-Object { [Convert]::ToString($_, 2).PadLeft(8, '0') }) -join ''
+                if ($bits -notmatch '^1*0*$') { return $false }
+                $prefix = $bits.TrimEnd('0').Length
             }
+            if ($prefix -lt $Network.PrefixLength -or $prefix -gt 32) { return $false }
         }
         $ends = $parts[0] -split '-'
         if ($ends.Count -gt 2 -or ($ends.Count -eq 2 -and $parts.Count -eq 2)) { return $false }
+        $previous = -1
         foreach ($endpoint in $ends) {
             $ip = $null
-            if (-not [Net.IPAddress]::TryParse($endpoint.Trim(), [ref]$ip) -or $ip.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetwork) { return $false }
-            $bytes = $ip.GetAddressBytes()
-            if ($bytes[0] -ne 172 -or $bytes[1] -ne 20 -or $bytes[2] -ne 240) { return $false }
+            if (-not [ipaddress]::TryParse($endpoint.Trim(), [ref]$ip) -or $ip.AddressFamily -ne 'InterNetwork' -or $ip.ToString() -ne $endpoint.Trim()) { return $false }
+            $number = ConvertTo-IPv4Number $ip
+            if ($number -lt $Network.First -or $number -gt $Network.Last -or $number -lt $previous) { return $false }
+            $previous = $number
         }
     }
     return $true
-}
-
-# Find interface aliases with an IPv4 address in the internal /24.
-# These aliases bind the DHCP bootstrap exception to the intended network adapter.
-function Get-InternalFirewallInterfaces {
-    @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop |
-        Where-Object { Test-InternalFirewallScope @($_.IPAddress) } |
-        Select-Object -ExpandProperty InterfaceAlias -Unique)
 }
 
 # Return local stored rules and effective merged rules, with their filters.
@@ -525,11 +566,11 @@ function Test-FirewallFilterEqual {
     return @(Compare-Object $left $right).Count -eq 0
 }
 
-# Recognize intended public scoring/DHCP exceptions only when their complete
+# Recognize intended public scoring exceptions only when their complete
 # listed filters match the plan. A matching display/name alone is not sufficient.
 function Test-PlannedFirewallException {
     param($Rule, [object[]]$PlannedRules)
-    # Public scoring rules and DHCP bootstrap are intentional exceptions, but a
+    # Public scoring rules are intentional exceptions, but a
     # familiar name alone cannot hide a wider GPO or modified effective rule.
     foreach ($plan in @($PlannedRules | Where-Object { $_.Name -eq $Rule.Name -and $_.Scope -ne 'Internal' -and $_.Action -ne 'Block' })) {
         $protocol = switch ($plan.Protocol) { 'TCP' { '6' } 'UDP' { '17' } 'ICMPv4' { '1' } default { [string]$plan.Protocol } }
@@ -548,11 +589,11 @@ function Test-PlannedFirewallException {
 # Return enabled inbound Allow rules that may expose an internal endpoint to
 # outside sources. Disabled, outbound, block, already-internal, and exact exception rules are skipped.
 function Get-FirewallScopeConflicts {
-    param([object[]]$Inventory, [object[]]$PlannedRules)
+    param([object[]]$Inventory, [object[]]$PlannedRules, [Parameter(Mandatory)]$Network)
     $internalRules = @($PlannedRules | Where-Object { $_.Scope -eq 'Internal' })
     foreach ($old in $Inventory) {
         if (-not $old.Enabled -or $old.Direction -ne 'Inbound' -or $old.Action -ne 'Allow') { continue }
-        if (Test-InternalFirewallScope $old.RemoteAddress) { continue }
+        if (Test-InternalFirewallScope $old.RemoteAddress $Network) { continue }
         if (Test-PlannedFirewallException $old $PlannedRules) { continue }
         $overlaps = @()
         foreach ($required in $internalRules) {
@@ -575,7 +616,7 @@ function Get-FirewallScopeConflicts {
 # Verify explicit block filters in merged effective policy, not just local storage.
 # Authenticated bypass rules can override ordinary blocks and must be reported.
 function Get-FirewallBlockRuleIssues {
-    param([object[]]$Inventory, [object[]]$PlannedRules)
+    param([object[]]$Inventory, [object[]]$PlannedRules, [Parameter(Mandatory)]$Network)
     $blocks=@($PlannedRules | Where-Object Action -EQ Block)
     if ($blocks.Count) {
         try {
@@ -583,7 +624,7 @@ function Get-FirewallBlockRuleIssues {
             if ($profiles.Count -lt 3) {[PSCustomObject]@{Name='Firewall profiles';Issue='Could not verify all three effective firewall profiles.'}}
             foreach ($profile in $profiles) {
                 if ([string]$profile.Enabled -ne 'True' -or [string]$profile.AllowLocalFirewallRules -eq 'False') {
-                    [PSCustomObject]@{Name=[string]$profile.Name;Issue='Effective profile disables the firewall or local rule merging; external port blocks cannot be assumed effective.'}
+                    [PSCustomObject]@{Name=[string]$profile.Name;Issue='Effective profile disables the firewall or local rule merging; inbound port blocks cannot be assumed effective.'}
                 }
             }
         } catch {[PSCustomObject]@{Name='Firewall profiles';Issue="Effective profile read failed: $_"}}
@@ -611,12 +652,13 @@ function Get-FirewallBlockRuleIssues {
         $_.Store -eq 'ActiveStore' -and $_.Enabled -and $_.Direction -eq 'Inbound' -and
         $_.Action -eq 'Allow' -and $_.OverrideBlockRules -in @('True','1')
     })) {
-        if (Test-InternalFirewallScope $rule.RemoteAddress) {continue}
+        $internalSource = Test-InternalFirewallScope $rule.RemoteAddress $Network
         foreach ($plan in $blocks) {
+            if ($internalSource -and $plan.Scope -eq 'Outside internal network') { continue }
             $protocol=if($plan.Protocol -eq 'TCP'){'6'}else{'17'}
             if ($rule.Protocol -in @('Any','256',$plan.Protocol,$protocol) -and
                 (Test-FirewallPortOverlap $rule.LocalPort @($plan.LocalPort -split ','))) {
-                [PSCustomObject]@{Name=$rule.Name;Issue='Authenticated bypass rule may override external port blocks; review this rule at its policy source.'}
+                [PSCustomObject]@{Name=$rule.Name;Issue='Authenticated bypass rule may override inbound port blocks; review this rule at its policy source.'}
                 break
             }
         }
@@ -626,17 +668,23 @@ function Get-FirewallBlockRuleIssues {
 # Present old-rule audit/selection menus, save the chosen plan, and optionally
 # disable/remove exact local rules. Default A only audits; GPO rules remain report-only.
 function Invoke-OldFirewallRuleReview {
-    param([object[]]$Inventory, [object[]]$PlannedRules, [string[]]$ManagedNames, [string]$ReportPrefix, [string]$BackupPath)
+    param([object[]]$Inventory, [object[]]$PlannedRules, [string[]]$ManagedNames, [string]$ReportPrefix, [string]$BackupPath, [Parameter(Mandatory)]$Network)
     $legacy = @($Inventory | Where-Object { $_.Name -notin $ManagedNames -and $_.DisplayName -notin $ManagedNames })
     # Audit both stores, but select mutations only from locally editable rows.
     # IDs refer to this saved inventory; display names can be duplicated.
-    $conflicts = @(Get-FirewallScopeConflicts $legacy $PlannedRules)
+    $conflicts = @(Get-FirewallScopeConflicts $legacy $PlannedRules $Network)
     $conflicts | Export-Csv -LiteralPath "$ReportPrefix-conflicts-before.csv" -NoTypeInformation -ErrorAction Stop
     $local = @($legacy | Where-Object CanChange)
     Write-Log "Old firewall inventory: $ReportPrefix-before.csv. Local rules: $($local.Count); potential scope conflicts (local/effective): $($conflicts.Count)."
     $local | Format-Table ID, DisplayName, Enabled, Direction, Action, Protocol, @{N='Ports';E={$_.LocalPort -join ','}}, @{N='Sources';E={$_.RemoteAddress -join ','}} -AutoSize | Out-String | Write-Host
     if ($conflicts.Count) { $conflicts | Format-Table ID, DisplayName, Store, SourceType, LocalPort, RemoteAddress -AutoSize | Out-String | Write-Host }
-    $scope = Read-MenuChoice -Prompt 'Old firewall rules: [A] Audit only, [C] Review internal-scope conflicts, [I] Review all old local inbound Allow rules, [S] Select local IDs (default A; profile rules still apply)' -Choices @('A', 'C', 'I', 'S') -Default 'A'
+    $scope = Read-MenuChoice -Prompt @(
+        'Review existing firewall rules. The profile rules apply with every choice.'
+        '  [A] Audit only'
+        '  [C] Review internal network scope conflicts'
+        '  [I] Review all old local inbound Allow rules'
+        '  [S] Select local rules by ID'
+    ) -Choices @('A', 'C', 'I', 'S') -Default 'A'
     if ($scope -eq 'A') {
         if ($conflicts.Count) { Write-Log "Audited only: $($conflicts.Count) potential conflict records remain. Existing broad allows may bypass the new internal-source limits." 'WARN' }
         else { Write-Log 'Old rules audited only; no old-rule changes selected.' }
@@ -661,7 +709,12 @@ function Invoke-OldFirewallRuleReview {
     }
     if (-not $selected.Count) { Write-Log 'No changeable old rules selected. GPO/effective-only rules are report-only.'; return }
     $selected | Format-Table ID, Name, DisplayName, Enabled, Direction, Action -AutoSize | Out-String | Write-Host
-    $choice = Read-MenuChoice -Prompt 'Selected old rules: [D] Disable, [R] Remove, [A] Audit only (default D)' -Choices @('D', 'R', 'A') -Default 'D'
+    $choice = Read-MenuChoice -Prompt @(
+        'What should happen to the selected rules?'
+        '  [D] Disable'
+        '  [R] Remove'
+        '  [A] Audit only'
+    ) -Choices @('D', 'R', 'A') -Default 'D'
     if ($choice -eq 'A') { return }
     if (-not (Test-Path -LiteralPath $BackupPath -PathType Leaf) -or (Get-Item -LiteralPath $BackupPath).Length -le 0) { throw 'A verified firewall backup is required before changing old rules.' }
     $selected | Select-Object ID, Name, DisplayName, Enabled, Direction, Action | Export-Csv -LiteralPath "$ReportPrefix-cleanup-plan.csv" -NoTypeInformation -ErrorAction Stop
@@ -717,15 +770,15 @@ function Get-ServiceState {
 }
 
 # Describe which services should run or remain disabled for the chosen host.
-# Optional DHCP/IIS/SQL Browser choices determine which additional services are required.
+# Installed AD CS web enrollment and optional SQL Browser determine additional required services.
 function Get-EssentialServicePolicy {
     param($Configuration, [bool]$DomainJoined, [string[]]$SqlEngineNames = @('MSSQLSERVER'))
     if ($Configuration.Profile -notin @('AD-DNS', 'MSSQL')) { throw 'Unsupported server profile.' }
     $adDns = $Configuration.Profile -eq 'AD-DNS'
-    # Dhcp is the DHCP CLIENT and is distinct from optional DHCPServer.
+    # Dhcp is the DHCP CLIENT and is distinct from DHCPServer.
     # LanmanServer provides SMB; TermService provides RDP; CertSvc provides AD CS.
     $policy = @(
-        @{ Name = 'Dhcp'; Expected = 'Running' }, # client, not the optional DHCP server
+        @{ Name = 'Dhcp'; Expected = 'Running' }, # client, not the DHCP server
         @{ Name = 'W32Time'; Expected = 'Running' },
         @{ Name = 'LanmanServer'; Expected = 'Running' },
         @{ Name = 'Netlogon'; Expected = $(if ($adDns -or $DomainJoined) { 'Running' } else { 'Not required' }) },
@@ -739,7 +792,7 @@ function Get-EssentialServicePolicy {
             @{ Name = 'ADWS'; Expected = 'Running' },
             @{ Name = 'DNS'; Expected = 'Running' },
             @{ Name = 'CertSvc'; Expected = 'Running' },
-            @{ Name = 'DHCPServer'; Expected = $(if ($Configuration.EnableDhcp) { 'Running' } else { 'Not required' }) }
+            @{ Name = 'DHCPServer'; Expected = 'Not required' }
         )
         if ($Configuration.AdcsWeb) {
             $policy += @{ Name = 'WAS'; Expected = 'Running' }, @{ Name = 'W3SVC'; Expected = 'Running' }
@@ -934,12 +987,22 @@ function Get-AccountInventory {
     [PSCustomObject]@{ Users = $users; Groups = $groups }
 }
 
-# Classify Administrator by SID first, then Kerberos, explicit service names, and
-# scoring names/patterns. Protection preserves the account, not non-default group memberships.
+# Match Windows identities by SID so renaming a built-in or reusing its name
+# does not change which memberships cleanup preserves.
+function Test-ProtectedCleanupSid {
+    param([string]$Sid)
+    # BUILTIN Users/Guests; domain or machine Guest/krbtgt, Domain Users,
+    # Domain Guests, and Denied RODC Password Replication Group.
+    return $Sid -in @('S-1-5-32-545', 'S-1-5-32-546') -or
+        $Sid -match '^S-1-5-21-\d+-\d+-\d+-(501|502|513|514|572)$'
+}
+
+# Built-ins take precedence over operator-supplied scoring and service names.
 function Get-AccountCategory {
     param($User, [string]$AdministratorSid, [string[]]$Patterns, [string[]]$ScoringNames, [string[]]$ServiceNames)
     if ($User.SID -eq $AdministratorSid) { return 'Administrator' }
-    if ($User.IsKerberos) { return 'Kerberos' }
+    if ($User.IsKerberos -or $User.SID -match '^S-1-5-21-\d+-\d+-\d+-502$') { return 'Kerberos' }
+    if (Test-ProtectedCleanupSid $User.SID) { return 'Built-in' }
     if ($ServiceNames -contains $User.Name) { return 'Service' }
     if ($ScoringNames -contains $User.Name) { return 'Scoring' }
     foreach ($pattern in $Patterns) {
@@ -986,8 +1049,7 @@ function Get-ServiceMembershipPreservations {
     }
 }
 
-# Build membership changes without applying them. Administrator is exempt;
-# ordinary users retain only Users, while OS service exceptions are reported.
+# Build only actionable changes. Protected accounts and groups remain in the inventory.
 function Get-GroupCleanupPlan {
     param($Inventory, [bool]$DomainController, [string]$AdministratorSid, [string]$DefaultGroupSid)
     $defaultGroup = @($Inventory.Groups | Where-Object SID -EQ $DefaultGroupSid)
@@ -1001,10 +1063,10 @@ function Get-GroupCleanupPlan {
     }
     if ($DomainController) {
         foreach ($user in $Inventory.Users) {
-            if ($user.SID -eq $AdministratorSid) { continue }
+            if ($user.SID -eq $AdministratorSid -or $user.IsKerberos -or (Test-ProtectedCleanupSid $user.SID)) { continue }
             $memberships = @($user.MemberOf)
-            if ($user.PrimaryGroupID -ne 513) {
-                $primarySid = ($user.SID -replace '-\d+$', '') + '-' + $user.PrimaryGroupID
+            $primarySid = ($user.SID -replace '-\d+$', '') + '-' + $user.PrimaryGroupID
+            if (-not (Test-ProtectedCleanupSid $primarySid)) {
                 if (-not $groupsBySid.ContainsKey($primarySid)) { throw "Cannot resolve primary group for $($user.Name)." }
                 [PSCustomObject]@{
                     Action = 'ResetPrimaryGroup'; Account = $user.Name; Member = $user.SID
@@ -1015,20 +1077,12 @@ function Get-GroupCleanupPlan {
                 $memberships += $groupsBySid[$primarySid].Identity
             }
             foreach ($membership in @($memberships | Select-Object -Unique)) {
-                if ($membership -eq $defaultGroup.Identity) { continue }
                 if (-not $groupsByIdentity.ContainsKey($membership)) { throw "Cannot resolve group '$membership' for $($user.Name)." }
+                if (Test-ProtectedCleanupSid $groupsByIdentity[$membership].SID) { continue }
                 [PSCustomObject]@{
                     Action = 'RemoveMembership'; Account = $user.Name; Member = $user.SID
                     Group = $groupsByIdentity[$membership].Name; GroupIdentity = $groupsByIdentity[$membership].SID
                 }
-            }
-        }
-        # Otherwise all users could inherit extra rights through Domain Users.
-        foreach ($parent in $defaultGroup.MemberOf) {
-            if (-not $groupsByIdentity.ContainsKey($parent)) { throw "Cannot resolve parent group '$parent'." }
-            [PSCustomObject]@{
-                Action = 'RemoveMembership'; Account = $defaultGroup.Name; Member = $defaultGroup.SID
-                Group = $groupsByIdentity[$parent].Name; GroupIdentity = $groupsByIdentity[$parent].SID
             }
         }
     } else {
@@ -1039,10 +1093,10 @@ function Get-GroupCleanupPlan {
             $preserved["$($entry.GroupIdentity)/$($entry.Member)"] = $true
         }
         foreach ($group in $Inventory.Groups) {
-            if ($group.SID -eq $DefaultGroupSid) { continue }
+            if (Test-ProtectedCleanupSid $group.SID) { continue }
             # Remove domain/nested groups too, so they cannot grant local rights.
             foreach ($member in $group.Members) {
-                if ($member.SID -eq $AdministratorSid) { continue }
+                if ($member.SID -eq $AdministratorSid -or (Test-ProtectedCleanupSid $member.SID)) { continue }
                 if ($preserved.ContainsKey("$($group.Identity)/$($member.SID)")) { continue }
                 [PSCustomObject]@{
                     Action = 'RemoveMembership'; Account = $member.Name; Member = $member.SID
@@ -1070,7 +1124,11 @@ function Invoke-GroupCleanup {
             } else {
                 Remove-LocalGroupMember -SID $change.GroupIdentity -Member $change.Member -Confirm:$false -ErrorAction Stop
             }
-            Write-Log "$($change.Action): $($change.Account) -> $($change.Group)" 'SUCCESS'
+            if ($change.Action -eq 'ResetPrimaryGroup') {
+                Write-Log "Set primary group for $($change.Account) to $($change.Group)." SUCCESS
+            } else {
+                Write-Log "Removed $($change.Account) from $($change.Group)." SUCCESS
+            }
         } catch {
             $failures++
             Write-Log "Group change failed for $($change.Account) in $($change.Group): $_" 'ERROR'
@@ -1086,7 +1144,7 @@ function Invoke-AccountCleanup {
         [string]$AdministratorSid, [string[]]$Patterns, [string[]]$ScoringNames, [string[]]$ServiceNames)
     if ($Action -notin @('Remove','Disable')) { return }
     foreach ($user in $Users) {
-        if ($user.Category -ne 'Other' -or $user.SID -match '-(500|502)$' -or $user.IsKerberos) { continue }
+        if ($user.Category -ne 'Other' -or $user.SID -match '-500$' -or $user.IsKerberos -or (Test-ProtectedCleanupSid $user.SID)) { continue }
         try {
             # Bind both the final read and the write to the previewed SID. A
             # replacement at the same name has a different SID and cannot be selected.
@@ -1107,7 +1165,7 @@ function Invoke-AccountCleanup {
                 continue
             }
             # Windows reserves these accounts; disable instead of trying to delete.
-            $reserved = $user.SID -match '-(501|503|504)$'
+            $reserved = $user.SID -match '-(503|504)$'
             if ($Action -eq 'Remove' -and -not $reserved) {
                 if ($DomainController) {
                     Remove-ADUser -Identity $user.SID -Server $script:AccountServer -Confirm:$false -ErrorAction Stop
@@ -1183,7 +1241,8 @@ function Invoke-AccountReview {
         $user | Add-Member -NotePropertyName Category -NotePropertyValue $category -Force
     }
     $inventory.Users | Sort-Object Category, Name | Format-Table Name, Enabled, Category -AutoSize | Out-String | Write-Host
-    Write-Log 'Administrator keeps its groups. ALL other users keep only Domain Users (local Users on non-DCs), including scoring/service accounts.'
+    Write-Log 'Account cleanup preserves Administrator, Guest, krbtgt, and RODC Kerberos accounts, including their primary groups and memberships.'
+    Write-Log 'Membership cleanup preserves Users, Guests, Domain Users, Domain Guests, and Denied RODC Password Replication Group, including nesting. Ordinary users with non-protected primary groups move to Domain Users.'
     Write-Log 'Group objects and computer accounts are retained. Scoring/service protection applies only to account disablement/deletion.'
 
     $reportPrefix = Join-Path $ReportDirectory "accounts-$([guid]::NewGuid())"
@@ -1197,12 +1256,22 @@ function Invoke-AccountReview {
     Save-AccountInventory $inventory "$reportPrefix-before"
     $plan | Export-Csv -Path "$reportPrefix-group-plan.csv" -NoTypeInformation -ErrorAction Stop
     Write-Log "Account inventory and group plan saved: $reportPrefix*"
-    if ($plan.Count) { $plan | Format-Table Action, Account, Group -AutoSize | Out-String | Write-Host }
+    if ($plan.Count) {
+        $plan | Format-Table Account, @{Name='Planned change'; Expression={
+            if ($_.Action -eq 'ResetPrimaryGroup') { 'Set primary group' } else { 'Remove membership' }
+        }}, Group -AutoSize -Wrap | Out-String | Write-Host
+    }
     Write-Log "Planned group changes: $($plan.Count)."
     # P changes no accounts/groups. A still strips non-default memberships;
     # D/R also disable/delete Other accounts only after group verification passes.
     $selection = Read-MenuChoice `
-        -Prompt 'Account step: [P] Preview only, [A] Apply group cleanup/audit accounts, [D] Apply group cleanup/disable others, [R] Apply group cleanup/remove others (default P)' `
+        -Prompt @(
+            'Choose an account action. A, D, and R also apply the displayed group changes.'
+            '  [P] Preview only'
+            '  [A] Audit accounts'
+            '  [D] Disable unprotected accounts'
+            '  [R] Remove unprotected accounts'
+        ) `
         -Choices @('P', 'Preview', 'A', 'Audit', 'D', 'Disable', 'R', 'Remove') -Default 'P'
     $actions = @{ P = 'Preview'; Preview = 'Preview'; A = 'Audit'; Audit = 'Audit'; D = 'Disable'; Disable = 'Disable'; R = 'Remove'; Remove = 'Remove' }
     $Action = $actions[$selection]
@@ -1234,7 +1303,7 @@ function Invoke-AccountReview {
     if ($failures -or $remaining.Count) {
         throw "Group cleanup incomplete ($failures failures; $($remaining.Count) remaining changes). Account disablement/deletion skipped. See $reportPrefix*."
     }
-    Write-Log 'Verified: reviewed users have only their default Users group; Administrator memberships were retained.' 'SUCCESS'
+    Write-Log 'Verified that no planned membership changes remain and Administrator retained its memberships.' 'SUCCESS'
     Invoke-AccountCleanup -Users $candidates -Action $Action -DomainController $DomainController `
         -AdministratorSid $administratorSid -Patterns $Patterns -ScoringNames $ScoringNames -ServiceNames $ServiceNames
     Save-AccountInventory (Get-AccountInventory -DomainController $DomainController) "$reportPrefix-after"
@@ -1419,7 +1488,12 @@ function Invoke-KrbtgtRotationReview {
         $status | ConvertTo-Json -Compress | Add-Content -LiteralPath $auditPath -Encoding UTF8 -ErrorAction Stop
         Write-Log "krbtgt key version $($status.Version); last reset $($status.LastSetUtc.ToString('u')); recommended next reset after $($status.RecommendedAfterUtc.ToString('u'))."
         Write-Log "Policy verified: $($status.PolicyVerified). Replication ready: $($status.ReplicationReady). Audit: $auditPath"
-        $choice = Read-MenuChoice -Prompt 'Kerberos: [S] Status only, [R] Reset once after recommended wait, [E] Early competition reset (default S)' -Choices @('S', 'R', 'E') -Default 'S'
+        $choice = Read-MenuChoice -Prompt @(
+            'Kerberos key rotation'
+            '  [S] Show status only'
+            '  [R] Reset once after the recommended wait'
+            '  [E] Request an early competition reset'
+        ) -Choices @('S', 'R', 'E') -Default 'S'
         if ($choice -eq 'S') { return }
         if (-not $status.ReplicationReady) { throw 'krbtgt copies differ or AD replication reports failures. Repair replication before resetting.' }
         $now = [datetime]::UtcNow
@@ -1490,28 +1564,6 @@ function Test-PasswordMatch {
     }
 }
 
-# Select one of the two competition hosts, then validate the account database.
-# -----------------------------------------------------------------------------
-# MAIN EXECUTION: all helper functions above are now available. Profile selection
-# is checked against Windows DC status before password/service/firewall changes.
-$serverConfiguration = Read-ServerConfiguration
-$os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
-$script:isDC = $os.ProductType -eq 2
-if (($serverConfiguration.Profile -eq 'AD-DNS') -ne $script:isDC) {
-    throw "Selected profile $($serverConfiguration.Profile) does not match this host's domain-controller status. No hardening changes have been applied."
-}
-$script:isDomainJoined = $script:isDC
-try {
-    $script:isDomainJoined = $script:isDC -or [bool](Get-CimInstance Win32_ComputerSystem -ErrorAction Stop).PartOfDomain
-} catch {
-    Write-Log "Could not detect domain membership: $_. Netlogon will be checked as required." 'WARN'
-    $script:isDomainJoined = $true
-}
-$sqlEngineNames = @()
-if ($serverConfiguration.Profile -eq 'MSSQL') {
-    $sqlEngineNames = @(Get-SqlEngineServiceNames)
-}
-
 $splash = @'
 
             ___                    +--------------------------------------------+
@@ -1524,21 +1576,39 @@ $splash = @'
 '@
 Write-Host $splash -ForegroundColor Red -BackgroundColor Black
 
+# Detect the competition host and its account database.
+# -----------------------------------------------------------------------------
+# MAIN EXECUTION: detect the host before password, service, or firewall changes.
+$serverConfiguration = Read-ServerConfiguration
+$script:isDC = $serverConfiguration.Profile -eq 'AD-DNS'
+$script:isDomainJoined = $script:isDC
+try {
+    $script:isDomainJoined = $script:isDC -or [bool](Get-CimInstance Win32_ComputerSystem -ErrorAction Stop).PartOfDomain
+} catch {
+    Write-Log "Could not detect domain membership: $_. Netlogon will be checked as required." 'WARN'
+    $script:isDomainJoined = $true
+}
+$sqlEngineNames = $serverConfiguration.SqlEngineNames
+
 Write-Log "Detected Host: $(hostname)" "INFO"
-Write-Log "Selected server profile: $($serverConfiguration.Profile)."
 if ($serverConfiguration.Profile -eq 'AD-DNS') {
-    Write-Log "AD-DNS: AD DS, AD CS, DNS, ping; DHCP: $($serverConfiguration.EnableDhcp); AD CS web enrollment: $($serverConfiguration.AdcsWeb)."
+    Write-Log "AD-DNS: AD DS, AD CS, DNS, ping; AD CS web enrollment: $($serverConfiguration.AdcsWeb)."
 } else {
     Write-Log "MSSQL: SQL TCP $($serverConfiguration.SqlTcpPorts -join ', '), SMB, RDP; SQL Browser: $($serverConfiguration.SqlBrowser)."
 }
 Write-Log 'Steps: password / Kerberos, service cleanup, remote access, firewall, account cleanup, network review, security baseline.'
 Write-Log 'Account/group actions will be selected at their prompts. Account preview is the default.'
-Write-Log "Transcript: $script:LogFile | Reports and firewall backup: $BackupDir"
+Write-Log "Transcript: $script:LogFile"
+Write-Log "Reports and firewall backup: $BackupDir"
 
 # Follow-up mode changes no passwords, services, firewall rules, or accounts
 # outside the explicitly confirmed krbtgt operation.
 if ($script:isDC) {
-    $mode = Read-MenuChoice -Prompt '[H] Full hardening, [K] Kerberos follow-up only (default H)' -Choices @('H', 'K') -Default 'H'
+    $mode = Read-MenuChoice -Prompt @(
+        'Choose a run mode'
+        '  [H] Full hardening'
+        '  [K] Kerberos follow-up only'
+    ) -Choices @('H', 'K') -Default 'H'
     if ($mode -eq 'K') {
         Invoke-KrbtgtRotationReview $BackupDir
         try { Stop-Transcript -ErrorAction Stop | Out-Null } catch {}
@@ -1549,6 +1619,10 @@ if ($script:isDC) {
 # -----------------------------------------------------------------------------
 # Capture the original firewall before any hardening steps can change it,
 # including service startup, RDP settings and Enable-PSRemoting.
+$internalNetwork = Read-InternalFirewallNetwork
+Write-Log "Internal management network: $($internalNetwork.NetworkId)"
+
+Write-RunHeading 'Firewall backup'
 $firewallRun = [guid]::NewGuid()
 $firewallReportPrefix = Join-Path $LogsDir "firewall-$firewallRun"
 $fwBackup = Join-Path $BackupDir "firewall-rules-$firewallRun.wfw"
@@ -1564,9 +1638,7 @@ try {
 
 # 1. Administrator Password Change + DSRM Sync
 # -----------------------------------------------------------------------------
-Write-Host "--------------------------------------------------------------------------------"
-Write-Host "Please input a new Administrator password."
-Write-Host "--------------------------------------------------------------------------------"
+Write-RunHeading 'Administrator password'
 
 # The built-in Administrator keeps RID 500 even when renamed. DSRM sync
 # takes a login name, so read it by SID from the same DC that receives the reset.
@@ -1632,9 +1704,7 @@ $baseServicesList = @(
     @{ Name = "SNMPTRAP";       Desc = "SNMP Trap" }
 )
 
-Write-Host "`n--------------------------------------------------------------------------------"
-Write-Host "Base service hardening and essential service status"
-Write-Host "--------------------------------------------------------------------------------"
+Write-RunHeading 'Services and startup settings'
 
 # Show every installed listed base service, including stopped/disabled ones,
 # so the operator can decide whether to disable the whole list or individual entries.
@@ -1655,9 +1725,14 @@ if ($detectedBaseServices.Count -eq 0) {
     Write-Log "No vulnerable base services found on this system." "INFO"
 } else {
     Write-Host "Detected base services eligible for disabling:" -ForegroundColor Cyan
-    $detectedBaseServices | Format-Table -Property Name, Status, StartType, Description -AutoSize | Out-String | Write-Host -ForegroundColor DarkCyan
+    $detectedBaseServices | Format-Table -Property Name, Status, StartType, Description -AutoSize | Out-String | Write-Host
 
-    $svcChoice = Read-MenuChoice -Prompt 'Base services: [A] Disable all listed, [S] Select individually, [N] Skip (default A)' -Choices @('A', 'S', 'N') -Default 'A'
+    $svcChoice = Read-MenuChoice -Prompt @(
+        'Choose which listed services to disable'
+        '  [A] Disable all listed services'
+        '  [S] Select individually'
+        '  [N] Skip'
+    ) -Choices @('A', 'S', 'N') -Default 'A'
 
     if ($svcChoice -eq "A" -or $svcChoice -eq "a") {
         foreach ($s in $detectedBaseServices) {
@@ -1671,7 +1746,7 @@ if ($detectedBaseServices.Count -eq 0) {
         }
     } elseif ($svcChoice -eq "S" -or $svcChoice -eq "s") {
         foreach ($s in $detectedBaseServices) {
-            $prompt = Read-Host "Disable service '$($s.Name)' ($($s.Description))? (Y/n)"
+            $prompt = Read-Host "Disable service '$($s.Name)' ($($s.Description))? [Y/N] (Enter = Y)"
             if ($prompt -ne 'n' -and $prompt -ne 'N') {
                 try {
                     Stop-Service -Name $s.Name -Force -ErrorAction Stop
@@ -1698,7 +1773,11 @@ try {
     Write-Log 'RDP/WinRM expectations follow the final host policy. Their remote-management configuration is applied in step 5.'
     # Check-only is the default here, unlike the separate base-disable menu.
     # R changes only required services; RDP/WinRM still follow the server profile.
-    $serviceRepairChoice = Read-MenuChoice -Prompt 'Essential services: [C] Check only, [R] Set required services to Automatic and start them (default C)' -Choices @('C', 'R') -Default 'C'
+    $serviceRepairChoice = Read-MenuChoice -Prompt @(
+        'Essential services'
+        '  [C] Check status only'
+        '  [R] Set required services to Automatic and start them'
+    ) -Choices @('C', 'R') -Default 'C'
     if ($serviceRepairChoice -eq 'R') {
         $repairResults = @(Repair-EssentialServices $essentialStatus)
         $repairResults | Export-Csv -Path "$essentialReportPrefix-repairs.csv" -NoTypeInformation -ErrorAction Stop
@@ -1712,6 +1791,7 @@ try {
 # -----------------------------------------------------------------------------
 # 4. Stop and disable SSH, Telnet, and third-party remote access
 # -----------------------------------------------------------------------------
+Write-RunHeading 'Remote access tools'
 Write-Log "Stopping and disabling SSH, Telnet, AnyDesk, TeamViewer, VNC, and RustDesk..." "INFO"
 
 # OpenSSH Server cleanup
@@ -1772,9 +1852,7 @@ New-NetFirewallRule -DisplayName "CCDC-Block-Telnet" -Direction Inbound -Action 
 # - RDP: Enabled with NLA/TLS on MSSQL; disabled on AD-DNS.
 # - WinRM: Enabled on AD-DNS; disabled on MSSQL.
 
-Write-Host "`n--------------------------------------------------------------------------------"
-Write-Host "Configuring remote management: RDP on MSSQL; WinRM on AD-DNS"
-Write-Host "--------------------------------------------------------------------------------"
+Write-RunHeading 'Remote management'
 
 # RDP registry settings control connection permission, NLA, TLS, encryption, and
 # idle timeout. Creating a firewall allowance alone would not configure any of these.
@@ -1820,17 +1898,14 @@ Invoke-WinRmBaseline -DomainController $script:isDC
 # -----------------------------------------------------------------------------
 # 6. Firewall rules by host role
 # -----------------------------------------------------------------------------
+Write-RunHeading 'Firewall policy'
 Write-Log "Configuring Windows Firewall..." "INFO"
 try {
-    if ($serverConfiguration.EnableDhcp) {
-        $aliases = @(Get-InternalFirewallInterfaces)
-        if (-not $aliases.Count) { throw 'DHCP enabled but no interface is addressed in 172.20.240.0/24. Firewall changes skipped.' }
-        $serverConfiguration | Add-Member -NotePropertyName InternalInterfaceAliases -NotePropertyValue $aliases -Force
-    }
-    $firewallRules = @(Get-ServerFirewallRules $serverConfiguration)
-    Write-Log 'Internal management sources: 172.20.240.0/24. Scored endpoints retain public source access.'
+    $firewallRules = @(Get-ServerFirewallRules $serverConfiguration $internalNetwork)
+    Write-Log 'Both hosts block inbound ADWS TCP 9389 and DHCP UDP 67/68/546/547 from all sources. DHCP lease acquisition or renewal may be affected.'
+    Write-Log "Internal management sources: $($internalNetwork.NetworkId). Scored endpoints retain public source access."
     if ($serverConfiguration.Profile -eq 'AD-DNS') {
-        Write-Log 'External plan: WinRM TCP 5985/5986, DNS TCP/UDP 53, and ping only. AD DS/AD CS/SMB/NTP/DHCP are internal.'
+        Write-Log 'External plan: WinRM TCP 5985/5986, DNS TCP/UDP 53, and ping only. AD DS/AD CS/SMB/NTP are internal.'
     } else { Write-Log 'External plan: configured SQL TCP ports, SMB TCP 445, RDP TCP/UDP 3389, and ping only. SQL Browser stays internal.' }
     $firewallRules | ForEach-Object { [PSCustomObject]@{ Name = $_.Name; Action = $_.Action; Protocol = $_.Protocol; Ports = $_.LocalPort; Sources = @($_.RemoteAddress) -join ','; Scope = $_.Scope } } |
         Export-Csv -LiteralPath "$firewallReportPrefix-profile-plan.csv" -NoTypeInformation -ErrorAction Stop
@@ -1856,7 +1931,7 @@ try {
         'CCDC-AD-LDAP-TCP', 'CCDC-AD-LDAP-UDP', 'CCDC-AD-ADWS-TCP', 'CCDC-AD-SMB-TCP',
         'CCDC-AD-RPC-EPMAP', 'CCDC-AD-RPC-Dynamic', 'CCDC-ADCS-RPC-In', 'CCDC-ADCS-Web-In',
         'CCDC-AD-SMB-External-TCP-Block', 'CCDC-AD-SMB-External-UDP-Block',
-        'CCDC-External-TCP-Block', 'CCDC-External-UDP-Block', 'CCDC-DHCP-External-UDP-Block',
+        'CCDC-External-TCP-Block', 'CCDC-External-UDP-Block', 'CCDC-DHCP-External-UDP-Block', 'CCDC-Block-ADWS', 'CCDC-Block-DHCP',
         'CCDC-SMB-TCP-In', 'CCDC-MSSQL-TCP-In', 'CCDC-MSSQL-UDP-In', 'CCDC-RDP-TCP-In', 'CCDC-RDP-UDP-In'
     )
     foreach ($ruleName in @($managedRuleNames | Where-Object { $_ -notin @($firewallRules.Name) })) {
@@ -1892,19 +1967,19 @@ try {
     }
     # Default old-rule action is Audit. The fresh scoped rules are applied
     # regardless; this menu separately decides whether old allowances are retired.
-    Invoke-OldFirewallRuleReview -Inventory $beforeFirewall -PlannedRules $firewallRules -ManagedNames $managedRuleNames -ReportPrefix $firewallReportPrefix -BackupPath $fwBackup
+    Invoke-OldFirewallRuleReview -Inventory $beforeFirewall -PlannedRules $firewallRules -ManagedNames $managedRuleNames -ReportPrefix $firewallReportPrefix -BackupPath $fwBackup -Network $internalNetwork
     $afterFirewall = @(Get-FirewallAuditInventory)
     Save-FirewallAuditInventory $afterFirewall "$firewallReportPrefix-after"
-    $blockIssues = @(Get-FirewallBlockRuleIssues $afterFirewall $firewallRules)
+    $blockIssues = @(Get-FirewallBlockRuleIssues $afterFirewall $firewallRules $internalNetwork)
     $blockIssues | Export-Csv -LiteralPath "$firewallReportPrefix-block-issues.csv" -NoTypeInformation -ErrorAction Stop
     if ($blockIssues.Count) {
-        Write-Log "EXTERNAL PORT BLOCKS NOT VERIFIED: $($blockIssues.Count) effective-policy issue(s). Review $firewallReportPrefix-block-issues.csv; policy-source changes may be required." 'WARN'
+        Write-Log "INBOUND PORT BLOCKS NOT VERIFIED: $($blockIssues.Count) effective-policy issue(s). Review $firewallReportPrefix-block-issues.csv; policy-source changes may be required." 'WARN'
     } else {
-        Write-Log 'External TCP/UDP guards match the effective policy. Verify scored endpoints externally and internal-only services from both networks.' 'SUCCESS'
+        Write-Log 'ADWS, DHCP, and external TCP/UDP blocks match the effective policy. Verify scored endpoints externally and internal-only services from both networks.' 'SUCCESS'
     }
     # Check merged effective policy after cleanup, including policies this host
     # cannot edit locally. A clean comparison is not proof of network reachability.
-    $remainingConflicts = @(Get-FirewallScopeConflicts @($afterFirewall | Where-Object Store -EQ ActiveStore) $firewallRules)
+    $remainingConflicts = @(Get-FirewallScopeConflicts @($afterFirewall | Where-Object Store -EQ ActiveStore) $firewallRules $internalNetwork)
     $remainingConflicts | Export-Csv -LiteralPath "$firewallReportPrefix-conflicts-remaining.csv" -NoTypeInformation -ErrorAction Stop
     if ($remainingConflicts.Count) {
         Write-Log "INTERNAL SCOPE NOT VERIFIED: $($remainingConflicts.Count) effective allow rule(s) may bypass the source limits. Review $firewallReportPrefix-conflicts-remaining.csv; GPO rules require changes at their source." 'WARN'
@@ -1926,7 +2001,7 @@ if ($script:isDC) {
 # -----------------------------------------------------------------------------
 # 8. Account review and group membership cleanup
 # -----------------------------------------------------------------------------
-Write-Log 'Reviewing accounts and removing non-default group memberships...'
+Write-RunHeading 'Accounts and group memberships'
 try {
     Invoke-AccountReview -DomainController $script:isDC `
         -CurrentSid ([Security.Principal.WindowsIdentity]::GetCurrent().User.Value) `
@@ -1936,18 +2011,15 @@ try {
 }
 
 # -----------------------------------------------------------------------------
-# 9. List Network Config, Audit Hosts File, & Open ncpa.cpl
+# 9. Display network configuration and audit the hosts file
 # -----------------------------------------------------------------------------
-Write-Log "Dumping active network adapter configurations..." "INFO"
+Write-RunHeading 'Network configuration'
 try {
-    Get-NetIPConfiguration | ForEach-Object {
-        Write-Host "--------------------------------------------------------" -ForegroundColor DarkGray
-        Write-Host " Interface    : $($_.InterfaceAlias) ($($_.InterfaceDescription))" -ForegroundColor White
-        Write-Host " IPv4 Address : $($_.IPv4Address.IPAddress)" -ForegroundColor Green
-        Write-Host " IPv4 Gateway : $($_.IPv4DefaultGateway.NextHop)" -ForegroundColor Cyan
-        Write-Host " DNS Servers  : $($_.DNSServer.ServerAddresses -join ', ')" -ForegroundColor Yellow
-    }
-    Write-Host "--------------------------------------------------------`n" -ForegroundColor DarkGray
+    Get-NetIPConfiguration | Select-Object InterfaceAlias, InterfaceDescription,
+        @{Name='IPv4'; Expression={$_.IPv4Address.IPAddress -join ', '}},
+        @{Name='Gateway'; Expression={$_.IPv4DefaultGateway.NextHop -join ', '}},
+        @{Name='DNS servers'; Expression={$_.DNSServer.ServerAddresses -join ', '}} |
+        Format-List | Out-String | Write-Host
 } catch {
     Write-Log "Could not query NetIPConfiguration: $_" "WARN"
 }
@@ -1959,19 +2031,17 @@ $hostsFile = "C:\Windows\System32\drivers\etc\hosts"
 if (Test-Path $hostsFile) {
     $hostsEntries = Get-Content $hostsFile | Where-Object { $_ -notmatch '^\s*#' -and $_.Trim() -ne '' }
     if ($hostsEntries) {
-        Write-Log "WARNING: Custom hosts file entries detected:" "WARN"
+        Write-Log "Active hosts file overrides:" "WARN"
         $hostsEntries | ForEach-Object { Write-Host "   $_" -ForegroundColor Red }
     } else {
         Write-Log "Hosts file is clean (no active non-comment overrides)." "SUCCESS"
     }
 }
 
-Write-Log "Opening Network Connections control panel (ncpa.cpl)..." "INFO"
-Start-Process "ncpa.cpl"
-
 # -----------------------------------------------------------------------------
 # 10. Enable Defender Baseline & Conservative Lockout Policy
 # -----------------------------------------------------------------------------
+Write-RunHeading 'Defender, account lockout, and SMB signing'
 Write-Log 'Applying and verifying Defender, account lockout, and SMB signing on this host...'
 Invoke-DefenderBaseline
 Invoke-LockoutBaseline -DomainController $script:isDC -ReportDirectory $BackupDir
@@ -1993,6 +2063,7 @@ try {
     Write-Log "Could not download install script: $_" "WARN"
 }
 
+Write-RunHeading 'Hardening results'
 # Refresh service status after remote-management policy and the remaining hardening.
 try {
     Write-EssentialServiceReport @(Get-EssentialServiceStatus $essentialServicePolicy) "$essentialReportPrefix-final.csv" 'end of hardening'
@@ -2003,9 +2074,11 @@ try {
 # Report emitted warning/error messages, not a transactional success guarantee.
 # Earlier changes remain in place if a later operation logged an error.
 if ($script:HardeningIssues) {
-    Write-Log "Hardening finished with $script:HardeningIssues warning/error message(s). Review the transcript: $script:LogFile" 'WARN'
+    Write-Log "Hardening finished with $script:HardeningIssues warning/error messages." 'WARN'
 } else {
-    Write-Log "Hardening finished. Transcript: $script:LogFile" 'SUCCESS'
+    Write-Log "Hardening finished." 'SUCCESS'
 }
+Write-Log "Transcript: $script:LogFile"
+Write-Log "Reports and backups: $BackupDir"
 try { Stop-Transcript | Out-Null } catch {}
 Read-Host 'Press Enter to exit'
