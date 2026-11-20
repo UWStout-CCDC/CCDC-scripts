@@ -1,1035 +1,1090 @@
-#Requires -Version 5.1
 #Requires -RunAsAdministrator
+
 <#
 .SYNOPSIS
-Install selected tools from reviewed, hash-locked artifacts and verify installed state.
+Download the shed scripts, prepare WinGet, and install the competition tool set.
 .DESCRIPTION
-Standalone installer with an embedded, reviewed package catalog; no lockfile is required.
-Default tools include RunAsTrustedInstaller (RunAsTI64.exe) and Timeline Explorer.
-All downloads require their pinned SHA-256. Mutable vendor URLs fail closed after upstream updates;
-review a new artifact and update the embedded catalog before accepting a changed download.
-Portable tools are published under ToolsRoot\bin; RunAsTrustedInstaller is installed, never launched.
-Timeline Explorer includes its nested TimelineExplorer folder. Docker is opt-in with -Docker
-or -Components Docker; automatic restarts are disabled. Public Npcap is interactive; unattended
-OEM installation requires both -NpcapOemPath and -NpcapOemSha256.
-WinGet, when available, only downloads pinned artifacts; verified direct downloads provide fallback.
-Local companion scripts are copied when present; they are never downloaded from a mutable branch.
-Use -WhatIf to inspect. Exit codes: 0 verified, 1 failed/incomplete, 3010 restart required.
+Run elevated in Windows PowerShell. Setup prepares C:\Tools and a transcript;
+helper functions are defined before main installation begins.
+
+MAIN FLOW
+  Step 0 downloads missing shed-hardening.ps1, shed-scraper.ps1, and shed-dns.ps1 first.
+  WinGet setup then reuses an existing copy or tries modern/legacy bootstrapping.
+  Step 1 downloads standalone tools and extracts/runs their payloads.
+  The Sysinternals EULA is accepted immediately after the suite is extracted.
+  Step 2 installs the WinGet package list, with selected direct-download fallbacks.
+  Step 3 prints recorded results and updates PATH.
+
+WHAT CHANGES
+  This script performs installations; it is not a download-only audit. MSI/EXE
+  installers run locally. MSSQL operators can opt into Docker with reboots deferred. Malwarebytes
+  is intentionally interactive. Bootstrap may install modules/providers, mark
+  PSGallery trusted on Server 2025+, and install the VC++ runtime. Tools,
+  permissions, machine PATH, and EULA registry settings can persist after exit.
+
+DOWNLOADS AND OUTPUT
+  Direct URL payloads use foreground BITS; package managers use their own network
+  mechanisms. Downloads are kept in C:\Tools\downloads; installed/copied tools
+  use C:\Tools. Logs are in C:\Tools\logs\install-<timestamp>.log. BITS success
+  means a completed nonempty file, not an independent malware/signature verdict.
+  WinGet uses --no-vt and console color resets to preserve the black background.
+  WinGet candidates require a valid Microsoft signature and trusted owners/ACLs
+  before version probes. Unsafe existing portable trees are left unused; a clean
+  directory is used for bootstrap. Manual bootstrap downloads must match the SHA-256
+  digests from the Microsoft WinGet release. Logs/downloads allow Administrators and SYSTEM.
+
+FAILURES
+  There is no automatic rollback. Results are tracked per tool/package; some
+  setup/post-install errors are handled separately and are not rows in that table.
+.PARAMETER Branch
+Download missing shed scripts from shed-branch. The default branch is master.
+.EXAMPLE
+.\shed-installs.ps1
+.EXAMPLE
+.\shed-installs.ps1 -Branch
 #>
-[CmdletBinding(SupportsShouldProcess=$true, ConfirmImpact='Medium')]
-param(
-    [ValidateSet('Firefox','7Zip','FirewallControl','Malwarebytes','Sysinternals','Npcap','Docker','RunAsTrustedInstaller','TimelineExplorer')]
-    [string[]]$Components=@('Firefox','7Zip','FirewallControl','Malwarebytes','Sysinternals','Npcap','RunAsTrustedInstaller','TimelineExplorer'),
-    [switch]$Docker, [switch]$NonInteractive, [switch]$SkipWinget,
-    [string]$NpcapOemPath, [ValidatePattern('^[a-fA-F0-9]{64}$')][string]$NpcapOemSha256,
-    [string]$ToolsRoot='C:\Tools'
-)
-$ErrorActionPreference='Stop'
-Set-StrictMode -Version 2.0
-function Assert-ShedWindows {
-    if ($env:OS -ne 'Windows_NT') { throw 'Shed entry points require Windows. Pure helper tests can run on other platforms.' }
-    if (-not [Environment]::Is64BitProcess) { throw 'Run 64-bit Windows PowerShell or PowerShell 7.' }
-    if ([Environment]::OSVersion.Version.Build -lt 17763) { throw 'Windows Server 2019 / Windows 10 1809 or newer is required.' }
-    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
-    if (-not ([Security.Principal.WindowsPrincipal]$identity).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-        throw 'Run this script in an elevated PowerShell session.'
-    }
+[CmdletBinding()]
+param([switch]$Branch)
+
+function Write-RunHeading {
+    param([string]$Title)
+    Write-Host
+    Write-Host "== $Title ==" -ForegroundColor Cyan -BackgroundColor Black
 }
 
-function Test-ShedPathWithin {
-    param([string]$Path, [string]$Root)
-    $candidate = [IO.Path]::GetFullPath($Path).TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
-    $parent = [IO.Path]::GetFullPath($Root).TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
-    return $candidate.Equals($parent, [StringComparison]::OrdinalIgnoreCase) -or
-        $candidate.StartsWith($parent + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)
+function Write-Log {
+    param([string]$Message, [ValidateSet('INFO', 'WARN', 'ERROR', 'SUCCESS')][string]$Level = 'INFO')
+    $colors = @{ INFO = 'White'; WARN = 'Yellow'; ERROR = 'Red'; SUCCESS = 'Green' }
+    $line = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] [$Level] $Message"
+    Write-Host $line -ForegroundColor $colors[$Level] -BackgroundColor Black
 }
 
-function Assert-ShedNoReparsePoint {
-    param([Parameter(Mandatory)][string]$Path)
-    $current = [IO.Path]::GetFullPath($Path)
-    while ($current) {
-        if (Test-Path -LiteralPath $current) {
-            if ((Get-Item -LiteralPath $current -Force -ErrorAction Stop).Attributes -band [IO.FileAttributes]::ReparsePoint) {
-                throw "Refusing reparse point in trusted path: $current"
-            }
-        }
-        $parent = [IO.Directory]::GetParent($current)
-        $current = if ($parent) { $parent.FullName } else { $null }
-    }
-}
-
-function Set-ShedPrivateAcl {
-    param([Parameter(Mandatory)][string]$Path, [switch]$AllowUsersRead)
-    Assert-ShedNoReparsePoint $Path
-    $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
-    $acl = if ($item.PSIsContainer) { New-Object Security.AccessControl.DirectorySecurity } else { New-Object Security.AccessControl.FileSecurity }
-    $acl.SetAccessRuleProtection($true, $false)
-    $admins = [Security.Principal.SecurityIdentifier]'S-1-5-32-544'
-    $acl.SetOwner($admins)
-    $inheritance = if ($item.PSIsContainer) { [Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit' } else { [Security.AccessControl.InheritanceFlags]::None }
-    foreach ($sid in @('S-1-5-32-544', 'S-1-5-18')) {
-        $rule = New-Object Security.AccessControl.FileSystemAccessRule(
-            ([Security.Principal.SecurityIdentifier]$sid), [Security.AccessControl.FileSystemRights]::FullControl,
-            $inheritance, [Security.AccessControl.PropagationFlags]::None, [Security.AccessControl.AccessControlType]::Allow)
-        $acl.AddAccessRule($rule)
-    }
-    if ($AllowUsersRead) {
-        $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule(
-            ([Security.Principal.SecurityIdentifier]'S-1-5-32-545'), [Security.AccessControl.FileSystemRights]::ReadAndExecute,
-            $inheritance, [Security.AccessControl.PropagationFlags]::None, [Security.AccessControl.AccessControlType]::Allow)))
-    }
-    Set-Acl -LiteralPath $Path -AclObject $acl -ErrorAction Stop
-}
-
-function Initialize-ShedRoot {
-    param([string]$Root)
-    if ($Root -notmatch '^[A-Za-z]:\\' -or [IO.Path]::GetPathRoot($Root).TrimEnd('\') -eq $Root.TrimEnd('\')) {
-        throw 'ToolsRoot must be a local directory below a drive root.'
-    }
-    $profileRoot=[Environment]::ExpandEnvironmentVariables([string][Microsoft.Win32.Registry]::GetValue('HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList','ProfilesDirectory',($env:SystemDrive+'\Users')))
-    foreach ($systemPath in @($env:SystemRoot,$env:ProgramFiles,${env:ProgramFiles(x86)},$env:ProgramData,$profileRoot)) {
-        if ($systemPath -and (Test-ShedPathWithin $systemPath $Root)) {throw 'ToolsRoot must not contain a Windows, application, ProgramData or user-profile root.'}
-    }
-    if (Test-ShedPathWithin $Root $env:SystemRoot) {throw 'ToolsRoot must be outside the Windows directory.'}
-    Assert-ShedNoReparsePoint $Root
-    # A writable parent must not let an unprivileged process replace the secured tree.
-    $ancestor=[IO.Directory]::GetParent([IO.Path]::GetFullPath($Root))
-    $replaceRights=[Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor [Security.AccessControl.FileSystemRights]::ChangePermissions -bor [Security.AccessControl.FileSystemRights]::TakeOwnership
-    while ($ancestor) {
-        if (Test-Path -LiteralPath $ancestor.FullName) {
-            $parentAcl=Get-Acl -LiteralPath $ancestor.FullName -ErrorAction Stop
-            $parentOwner=$parentAcl.GetOwner([Security.Principal.SecurityIdentifier]).Value
-            if ($parentOwner -notin @('S-1-5-32-544','S-1-5-18','S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464')) {
-                throw "ToolsRoot has an untrusted parent owner at $($ancestor.FullName). Use an admin-controlled local path."
-            }
-            foreach ($rule in $parentAcl.GetAccessRules($true,$true,[Security.Principal.SecurityIdentifier])) {
-                if ($rule.AccessControlType -eq 'Allow' -and -not ($rule.PropagationFlags -band [Security.AccessControl.PropagationFlags]::InheritOnly) -and ($rule.FileSystemRights -band $replaceRights) -and
-                    $rule.IdentityReference.Value -notin @('S-1-5-32-544','S-1-5-18','S-1-3-0') -and $rule.IdentityReference.Value -notlike 'S-1-5-80-*') {
-                    throw "ToolsRoot has a replaceable parent: $($ancestor.FullName). Choose a directory directly under an admin-controlled drive root."
-                }
-            }
-        }
-        $ancestor=$ancestor.Parent
-    }
-    if (Test-Path -LiteralPath $Root) {
-        $owner = (Get-Acl -LiteralPath $Root -ErrorAction Stop).GetOwner([Security.Principal.SecurityIdentifier]).Value
-        $currentSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-        if ($owner -notin @('S-1-5-32-544', 'S-1-5-18', $currentSid)) {
-            throw "Untrusted owner $owner on $Root. Use a new admin-owned ToolsRoot."
-        }
-        # Inspect before changing anything; never descend through junctions or links.
-        $stack = New-Object 'Collections.Generic.Stack[string]'
-        $stack.Push($Root)
-        $items = New-Object 'Collections.Generic.List[object]'
-        while ($stack.Count) {
-            foreach ($child in @(Get-ChildItem -LiteralPath $stack.Pop() -Force -ErrorAction Stop)) {
-                if ($child.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Reparse point in tooling tree: $($child.FullName)" }
-                $items.Add($child)
-                if ($child.PSIsContainer) { $stack.Push($child.FullName) }
-            }
-        }
-        Set-ShedPrivateAcl $Root -AllowUsersRead
-        foreach ($child in $items) {
-            $public = Test-ShedPathWithin $child.FullName (Join-Path $Root 'bin')
-            Set-ShedPrivateAcl $child.FullName -AllowUsersRead:$public
-        }
-        Assert-ShedExistingPathTrust $Root
-        foreach ($child in $items) {
-            Assert-ShedExistingPathTrust $child.FullName
-        }
-    } else {
-        $null = New-Item -ItemType Directory -Path $Root -ErrorAction Stop
-        Set-ShedPrivateAcl $Root -AllowUsersRead
-        if (@(Get-ChildItem -LiteralPath $Root -Force -ErrorAction Stop).Count) {throw 'Unexpected contents appeared in the new workspace; choose a fresh ToolsRoot.'}
-    }
-    foreach ($name in @('bin', 'downloads', 'logs', 'evidence', 'backups', 'recovery', 'quarantine')) {
-        $path = Join-Path $Root $name
-        $null = New-Item -ItemType Directory -Path $path -Force -ErrorAction Stop
-        Set-ShedPrivateAcl $path -AllowUsersRead:($name -eq 'bin')
-    }
-}
-
-function Assert-ShedExistingPathTrust {
-    param([string]$Path)
-    $acl=Get-Acl -LiteralPath $Path -ErrorAction Stop
-    $trusted=@('S-1-5-32-544','S-1-5-18',[Security.Principal.WindowsIdentity]::GetCurrent().User.Value)
-    if ($acl.GetOwner([Security.Principal.SecurityIdentifier]).Value -notin $trusted) {throw "Untrusted owner on cached workspace content: $Path"}
-    $write=[Security.AccessControl.FileSystemRights]::Write -bor [Security.AccessControl.FileSystemRights]::Delete -bor [Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor [Security.AccessControl.FileSystemRights]::ChangePermissions -bor [Security.AccessControl.FileSystemRights]::TakeOwnership
-    foreach ($rule in $acl.GetAccessRules($true,$true,[Security.Principal.SecurityIdentifier])) {
-        if ($rule.AccessControlType -eq 'Allow' -and -not ($rule.PropagationFlags -band [Security.AccessControl.PropagationFlags]::InheritOnly) -and
-            ($rule.FileSystemRights -band $write) -and $rule.IdentityReference.Value -notin $trusted) {
-            throw "Untrusted write permission on cached workspace content: $Path. Use a fresh admin-controlled ToolsRoot."
-        }
-    }
-}
-
-function Write-ShedJson {
-    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][AllowNull()][AllowEmptyCollection()]$Value)
-    $temporary = "$Path.$([guid]::NewGuid().ToString('N')).part"
+# Apply black/white colors to both .NET Console and the PowerShell host.
+# Native programs do not inherit Write-Host parameter defaults as rendering rules.
+function Set-InstallConsoleColors {
+    # Write-Host defaults do not control native child-process console output.
     try {
-        [IO.File]::WriteAllText($temporary, (ConvertTo-Json -InputObject $Value -Depth 30), (New-Object Text.UTF8Encoding($false)))
-        if (Test-Path -LiteralPath $Path) { [IO.File]::Replace($temporary, $Path, [NullString]::Value) }
-        else { [IO.File]::Move($temporary, $Path) }
-    } finally { if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary -Force -ErrorAction Stop } }
-}
-
-function Read-ShedJson {
-    param([string]$Path)
-    Get-Content -LiteralPath $Path -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
-}
-
-function New-ShedContext {
-    param([string]$Name, [string]$ToolsRoot = 'C:\Tools', [switch]$Simulation, [switch]$NoTranscript)
-    $root = [IO.Path]::GetFullPath($ToolsRoot)
-    $requestedRoot=$root
-    if ($Simulation) {
-        $root = Join-Path ([IO.Path]::GetTempPath()) ('shed-whatif-' + [guid]::NewGuid().ToString('N'))
-        foreach ($namePart in @('', 'bin', 'downloads', 'logs', 'evidence', 'backups', 'recovery', 'quarantine')) {
-            $null = New-Item -ItemType Directory -Path (Join-Path $root $namePart) -Force -WhatIf:$false
-        }
-    } else { Initialize-ShedRoot $root }
-    $id = [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssZ') + '-' + [guid]::NewGuid().ToString('N').Substring(0, 8)
-    $foreground=[ConsoleColor]::Gray; $background=[ConsoleColor]::Black
-    try {$foreground=[Console]::ForegroundColor; $background=[Console]::BackgroundColor} catch {Write-Verbose $_}
-    $context = [pscustomobject]@{
-        Name=$Name; Root=$root; RequestedRoot=$requestedRoot; RunId=$id; HostName=[Environment]::MachineName; Simulation=[bool]$Simulation
-        LogPath=(Join-Path $root "logs\$Name-$id.log"); EventsPath=(Join-Path $root "logs\$Name-$id.jsonl")
-        Results=(New-Object 'Collections.Generic.List[object]'); TranscriptStarted=$false
-        Foreground=$foreground; Background=$background
-        Location=(Get-Location).Path; ProcessDirectory=[IO.Directory]::GetCurrentDirectory()
-        SecurityProtocol=[Net.ServicePointManager]::SecurityProtocol
-    }
-    try { [Console]::BackgroundColor='Black'; [Console]::ForegroundColor='White' } catch { Write-Verbose $_ }
-    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
-    if (-not $NoTranscript) {
-        try {
-            $null = Start-Transcript -Path (Join-Path $root "logs\$Name-$id.transcript.txt") -ErrorAction Stop
-            $context.TranscriptStarted = $true
-        } catch { Write-Warning "Transcript unavailable; structured logging remains active: $($_.Exception.Message)" }
-    }
-    Write-ShedLog $context "Starting $Name on $($context.HostName); run $id"
-    return $context
-}
-
-function Write-ShedEvent {
-    param($Context, [string]$Kind, $Data)
-    $record = [ordered]@{Utc=[DateTime]::UtcNow.ToString('o'); Host=$Context.HostName; RunId=$Context.RunId; Kind=$Kind; Data=$Data}
-    [IO.File]::AppendAllText($Context.EventsPath, (($record | ConvertTo-Json -Depth 30 -Compress) + [Environment]::NewLine), (New-Object Text.UTF8Encoding($false)))
-}
-
-function Write-ShedLog {
-    param($Context, [string]$Message, [ValidateSet('INFO','WARN','ERROR','SUCCESS')][string]$Level='INFO')
-    $line = "[$([DateTime]::UtcNow.ToString('o'))] [$Level] $Message"
-    $color = @{INFO='Cyan'; WARN='Yellow'; ERROR='Red'; SUCCESS='Green'}[$Level]
-    Write-Host $line -ForegroundColor $color -BackgroundColor Black
-    [IO.File]::AppendAllText($Context.LogPath, $line + [Environment]::NewLine, (New-Object Text.UTF8Encoding($false)))
-}
-
-function Add-ShedResult {
-    param($Context, [string]$Name, [ValidateSet('Succeeded','Failed','Skipped','RebootRequired','Incomplete')][string]$Status, [string]$Details='')
-    $result = [pscustomobject]@{Utc=[DateTime]::UtcNow.ToString('o'); Name=$Name; Status=$Status; Details=$Details}
-    $Context.Results.Add($result)
-    Write-ShedEvent $Context 'Result' $result
-    $level = if ($Status -eq 'Failed') {'ERROR'} elseif ($Status -in @('Incomplete','RebootRequired')) {'WARN'} elseif ($Status -eq 'Skipped') {'INFO'} else {'SUCCESS'}
-    Write-ShedLog $Context "$Name : $Status. $Details" $level
-}
-
-function Invoke-ShedStep {
-    param($Context, [string]$Name, [scriptblock]$Action, [scriptblock]$Verify, [bool]$Enabled=$true)
-    if (-not $Enabled) { Add-ShedResult $Context $Name 'Skipped' 'Not selected or declined by ShouldProcess.'; return }
+        [Console]::BackgroundColor = [ConsoleColor]::Black
+        [Console]::ForegroundColor = [ConsoleColor]::White
+    } catch {}
     try {
-        & $Action | Out-Null
-        if ($Verify -and -not (& $Verify)) { throw 'The post-change verification did not pass.' }
-        Add-ShedResult $Context $Name 'Succeeded'
-    } catch { Add-ShedResult $Context $Name 'Failed' $_.Exception.Message }
+        $Host.UI.RawUI.BackgroundColor = 'Black'
+        $Host.UI.RawUI.ForegroundColor = 'White'
+    } catch {}
 }
 
-function Get-ShedExitCode {
-    param($Context)
-    if (@($Context.Results | Where-Object { $_.Status -in @('Failed','Incomplete') }).Count) { return 1 }
-    if (@($Context.Results | Where-Object Status -eq 'RebootRequired').Count) { return 3010 }
-    return 0
-}
-
-function Close-ShedContext {
-    param($Context)
-    try {
-        $Context.Results | Export-Csv -LiteralPath (Join-Path $Context.Root "logs\$($Context.Name)-$($Context.RunId)-results.csv") -NoTypeInformation -Encoding UTF8 -ErrorAction Stop -WhatIf:$false
-        $Context.Results | Format-Table Name,Status,Details -Wrap | Out-Host
-        Write-ShedLog $Context "Results: $($Context.EventsPath); exit code $(Get-ShedExitCode $Context)"
-    } finally {
-        try {if ($Context.TranscriptStarted) { Stop-Transcript -ErrorAction Stop | Out-Null }}
-        finally {
-            [Net.ServicePointManager]::SecurityProtocol = $Context.SecurityProtocol
-            try {[IO.Directory]::SetCurrentDirectory($Context.ProcessDirectory); Set-Location -LiteralPath $Context.Location -ErrorAction Stop}
-            finally {try { [Console]::ForegroundColor=$Context.Foreground; [Console]::BackgroundColor=$Context.Background } catch { Write-Verbose $_ }}
-        }
-    }
-}
-
-function ConvertTo-ShedNativeArgument {
-    param([AllowEmptyString()][string]$Value)
-    # Windows CommandLineToArgvW / CRT quoting, including quotes and trailing slashes.
-    if ($Value -and $Value -notmatch '[\s"]') { return $Value }
-    $escaped = [regex]::Replace($Value, '(\\*)"', '$1$1\"')
-    $escaped = [regex]::Replace($escaped, '(\\+)$', '$1$1')
-    return '"' + $escaped + '"'
-}
-
-function Invoke-ShedNative {
-    param([string]$FilePath, [string[]]$ArgumentList=@(), [int[]]$SuccessCodes=@(0), [string]$WorkingDirectory=([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($FilePath))), [int]$TimeoutSeconds=1800, [switch]$AllowFailure)
-    $info = New-Object Diagnostics.ProcessStartInfo
-    $info.FileName=$FilePath; $info.Arguments=(@($ArgumentList | ForEach-Object { ConvertTo-ShedNativeArgument $_ }) -join ' ')
-    $info.WorkingDirectory=$WorkingDirectory; $info.UseShellExecute=$false
-    $info.RedirectStandardOutput=$true; $info.RedirectStandardError=$true; $info.CreateNoWindow=$true
-    $process = New-Object Diagnostics.Process
-    $process.StartInfo = $info
-    try {
-        if (-not $process.Start()) { throw "Could not start $FilePath" }
-        $stdout = $process.StandardOutput.ReadToEndAsync()
-        $stderr = $process.StandardError.ReadToEndAsync()
-        if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
-            $exception=New-Object TimeoutException("Timed out waiting for $FilePath (PID $($process.Id)); it may still be running. The installation pipeline must stop.")
-            $exception.Data['ProcessStillRunning']=$true
-            throw $exception
-        }
-        $process.WaitForExit()
-        $result = [pscustomobject]@{ExitCode=$process.ExitCode; StdOut=$stdout.GetAwaiter().GetResult(); StdErr=$stderr.GetAwaiter().GetResult()}
-        if (-not $AllowFailure -and $result.ExitCode -notin $SuccessCodes) {
-            throw "$FilePath exited $($result.ExitCode): $($result.StdErr) $($result.StdOut)"
-        }
-        return $result
-    } finally { $process.Dispose() }
-}
-
-function Get-ShedFileEvidence {
-    param([Parameter(Mandatory)][string]$Path)
-    Assert-ShedNoReparsePoint $Path
-    $before = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
-    if ($before.PSIsContainer) { throw "Expected a file: $Path" }
-    $length=$before.Length; $modified=$before.LastWriteTimeUtc
-    $hash = (Get-FileHash -LiteralPath $before.FullName -Algorithm SHA256 -ErrorAction Stop).Hash
-    $after = Get-Item -LiteralPath $before.FullName -Force -ErrorAction Stop
-    if ($length -ne $after.Length -or $modified -ne $after.LastWriteTimeUtc) { throw "File changed during collection: $Path" }
-    $signatureStatus='NotChecked'; $publisher=''
-    if ($after.Extension -in @('.exe','.dll','.msi','.msix','.msixbundle','.appx','.appxbundle','.ps1','.psm1')) {
-        $command = Get-Command Get-AuthenticodeSignature -ErrorAction SilentlyContinue
-        if ($command) {
-            $signature = Get-AuthenticodeSignature -LiteralPath $after.FullName -ErrorAction Stop
-            $signatureStatus = [string]$signature.Status
-            if ($signature.SignerCertificate) { $publisher=$signature.SignerCertificate.Subject }
-        }
-    }
-    $ownerSid=''; $ownerError=''
-    if ($env:OS -eq 'Windows_NT') {
-        try {$ownerSid=(Get-Acl -LiteralPath $after.FullName -ErrorAction Stop).GetOwner([Security.Principal.SecurityIdentifier]).Value}
-        catch {$ownerError=$_.Exception.Message}
-    }
-    [pscustomobject]@{Path=$after.FullName; Sha256=$hash; Length=$length; CreationUtc=$after.CreationTimeUtc.ToString('o'); LastWriteUtc=$modified.ToString('o'); Signature=$signatureStatus; Publisher=$publisher; OwnerSid=$ownerSid; OwnerReadError=$ownerError}
-}
-
-function Assert-ShedArtifact {
-    param([string]$Path, [ValidatePattern('^[a-fA-F0-9]{64}$')][string]$Sha256, [string]$PublisherPattern='')
-    $evidence = Get-ShedFileEvidence $Path
-    if ($evidence.Sha256 -ne $Sha256) { throw "SHA-256 mismatch: $Path" }
-    if ($PublisherPattern -and ($evidence.Signature -ne 'Valid' -or $evidence.Publisher -notmatch $PublisherPattern)) {
-        throw "Expected publisher/signature not verified: $Path ($($evidence.Signature), $($evidence.Publisher))"
-    }
-    return $evidence
-}
-
-function Get-ShedVerifiedDownload {
-    param($Context, [string]$Uri, [string]$Destination, [ValidatePattern('^[a-fA-F0-9]{64}$')][string]$Sha256, [string]$PublisherPattern='')
-    if (([uri]$Uri).Scheme -ne 'https') { throw 'Verified downloads require HTTPS.' }
-    Assert-ShedNoReparsePoint $Destination
-    if (-not (Test-ShedPathWithin $Destination (Join-Path $Context.Root 'downloads'))) { throw 'Download destination must be inside the protected downloads directory.' }
-    if (Test-Path -LiteralPath $Destination) {
-        try { $null = Assert-ShedArtifact $Destination $Sha256 $PublisherPattern; return $Destination }
-        catch { Write-ShedLog $Context "Cached artifact rejected: $Destination" 'WARN' }
-    }
-    $temporary = "$Destination.$([guid]::NewGuid().ToString('N')).part"
-    # Retain the original extension so Authenticode can identify the artifact format.
-    $temporary += [IO.Path]::GetExtension($Destination)
-    try {
-        Invoke-WebRequest -Uri $Uri -OutFile $temporary -UseBasicParsing -TimeoutSec 180 -ErrorAction Stop
-        $null = Assert-ShedArtifact $temporary $Sha256 $PublisherPattern
-        if (Test-Path -LiteralPath $Destination) { [IO.File]::Replace($temporary, $Destination, [NullString]::Value) }
-        else { [IO.File]::Move($temporary, $Destination) }
-        Set-ShedPrivateAcl $Destination
-        return $Destination
-    } finally { if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary -Force -ErrorAction Stop } }
-}
-
-function Test-ShedSecureStringEqual {
-    param([Security.SecureString]$First, [Security.SecureString]$Second)
-    if ($First.Length -ne $Second.Length) { return $false }
-    $left=[IntPtr]::Zero; $right=[IntPtr]::Zero
-    try {
-        $left=[Runtime.InteropServices.Marshal]::SecureStringToBSTR($First)
-        $right=[Runtime.InteropServices.Marshal]::SecureStringToBSTR($Second)
-        $different=0
-        for ($index=0; $index -lt $First.Length; $index++) {
-            $different = $different -bor ([Runtime.InteropServices.Marshal]::ReadInt16($left,$index*2) -bxor [Runtime.InteropServices.Marshal]::ReadInt16($right,$index*2))
-        }
-        return $different -eq 0
-    } finally {
-        if ($left -ne [IntPtr]::Zero) { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($left) }
-        if ($right -ne [IntPtr]::Zero) { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($right) }
-    }
-}
-
-function Get-ShedProtectedSidSet {
-    param([string[]]$ScoringSids=@(), [string[]]$BuiltInSids=@(), [string]$OperatorSid, [string[]]$ServiceSids=@())
-    $set = New-Object 'Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
-    foreach ($sid in (@($ScoringSids) + @($BuiltInSids) + @($OperatorSid) + @($ServiceSids))) {
-        if ($sid) { $null=$set.Add($sid) }
-    }
-    return ,$set
-}
-
-function Get-ShedSession {
-    param($SenderInfo)
-    if ($env:SSH_CONNECTION) { return [pscustomobject]@{Transport='SSH'; Remote=$true; Peer=($env:SSH_CONNECTION -split '\s+')[0]; Session=$env:SSH_CONNECTION} }
-    if ($SenderInfo) { return [pscustomobject]@{Transport='WinRM'; Remote=$true; Peer=''; Session=[string]$SenderInfo.ConnectionString} }
-    if ($env:SESSIONNAME -match '^RDP-') { return [pscustomobject]@{Transport='RDP'; Remote=$true; Peer=''; Session=$env:SESSIONNAME} }
-    if ($env:SESSIONNAME -and $env:SESSIONNAME -ne 'Console') { return [pscustomobject]@{Transport='Unknown'; Remote=$true; Peer=''; Session=$env:SESSIONNAME} }
-    return [pscustomobject]@{Transport='Console'; Remote=$false; Peer=''; Session='Console'}
-}
-
-function Test-ShedAddressScope {
-    param([string]$Address, [string[]]$Scopes)
-    $client=[Net.IPAddress]::Parse($Address)
-    $expanded=New-Object 'Collections.Generic.List[string]'
-    foreach ($scope in $Scopes) {
-        if ($scope -eq 'Any') {return $true}
-        if ($scope -eq 'LocalSubnet') {
-            foreach ($entry in @(Get-NetIPAddress -AddressState Preferred -ErrorAction Stop)) {$expanded.Add("$($entry.IPAddress)/$($entry.PrefixLength)")}
-        } else {$expanded.Add($scope)}
-    }
-    foreach ($scope in $expanded) {
-        $parts=$scope -split '/'; $network=[Net.IPAddress]::Parse($parts[0])
-        $left=$client.GetAddressBytes(); $right=$network.GetAddressBytes()
-        if ($left.Length -ne $right.Length) {continue}
-        $bits=if ($parts.Count -eq 2) {[int]$parts[1]} else {$left.Length*8}
-        if ($bits -lt 0 -or $bits -gt $left.Length*8) {throw "Invalid network prefix: $scope"}
-        $matchesNetwork=$true
-        for ($index=0; $index -lt $left.Length; $index++) {
-            $used=[Math]::Min(8,[Math]::Max(0,$bits-$index*8))
-            $mask=if ($used -eq 0) {0} else {(255 -shl (8-$used)) -band 255}
-            if (($left[$index] -band $mask) -ne ($right[$index] -band $mask)) {$matchesNetwork=$false;break}
-        }
-        if ($matchesNetwork) {return $true}
-    }
-    return $false
-}
-
-function Get-ShedFiles {
-    param([string[]]$Roots, [string[]]$Extensions=@(), [string[]]$ExcludeRoots=@(), $Context,
-        [Collections.Generic.HashSet[string]]$Seen=(New-Object 'Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)))
-    $stack = New-Object 'Collections.Generic.Stack[string]'
-    foreach ($root in $Roots) { if ($root -and (Test-Path -LiteralPath $root)) { $stack.Push([IO.Path]::GetFullPath($root)) } }
-    while ($stack.Count) {
-        $path=$stack.Pop()
-        if (-not $Seen.Add($path)) { continue }
-        $excluded=$false
-        foreach ($excludedRoot in $ExcludeRoots) { if (Test-ShedPathWithin $path $excludedRoot) { $excluded=$true; break } }
-        if ($excluded) {if ($Context) {Write-ShedEvent $Context Coverage @{Path=$path;Status='ExcludedByPolicy'}}; continue }
-        try {
-            $item=Get-Item -LiteralPath $path -Force -ErrorAction Stop
-            if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
-                if ($Context) { Write-ShedEvent $Context 'Coverage' @{Path=$path; Status='SkippedReparsePoint'} }
-                continue
-            }
-            if ($item.PSIsContainer) {
-                foreach ($child in @(Get-ChildItem -LiteralPath $path -Force -ErrorAction Stop)) { $stack.Push($child.FullName) }
-            } elseif (-not $Extensions.Count -or $item.Extension -in $Extensions) { Write-Output $item }
-        } catch {
-            if ($Context) { Add-ShedResult $Context "Coverage: $path" 'Incomplete' $_.Exception.Message }
-            else { Write-Error -ErrorRecord $_ -ErrorAction Continue }
-        }
-    }
-}
-
-function Split-ShedCommand {
-    param([AllowEmptyString()][string]$Command, [string]$ProfilePath='')
-    $expanded=$Command.Trim()
-    if ($ProfilePath) {
-        foreach ($mapping in @(@('%USERPROFILE%',$ProfilePath), @('%APPDATA%',(Join-Path $ProfilePath 'AppData\Roaming')), @('%LOCALAPPDATA%',(Join-Path $ProfilePath 'AppData\Local')))) {
-            $replacement=$mapping[1]
-            $expanded=[regex]::Replace($expanded,[regex]::Escape($mapping[0]),[Text.RegularExpressions.MatchEvaluator]{$replacement},[Text.RegularExpressions.RegexOptions]::IgnoreCase)
-        }
-    }
-    $expanded=[Environment]::ExpandEnvironmentVariables($expanded)
-    $executable=''; $arguments=''; $ambiguous=$false
-    if ($expanded -match '^"([^"]+)"(?:\s+(.*))?$') { $executable=$matches[1]; if ($matches.ContainsKey(2)) { $arguments=$matches[2] } }
-    elseif ($expanded -match '^(\S+)(?:\s+(.*))?$') {
-        $executable=$matches[1]; if ($matches.ContainsKey(2)) { $arguments=$matches[2] }
-        $ambiguous=($executable -notmatch '\.(exe|com|cmd|bat|ps1|vbs|js)$' -and $arguments -match '\.(exe|com)\b')
-    }
-    [pscustomobject]@{Raw=$Command; Expanded=$expanded; Executable=$executable; Arguments=$arguments; Ambiguous=$ambiguous}
-}
-
-function Get-ShedFingerprint {
-    param($Value)
-    $canonical=ConvertTo-ShedCanonicalValue $Value
-    $bytes=[Text.Encoding]::UTF8.GetBytes((ConvertTo-Json -InputObject $canonical -Depth 30 -Compress))
-    $algorithm=[Security.Cryptography.SHA256]::Create()
-    try { return ([BitConverter]::ToString($algorithm.ComputeHash($bytes))).Replace('-','') }
-    finally { $algorithm.Dispose() }
-}
-
-function ConvertTo-ShedCanonicalValue {
-    param([AllowNull()]$Value)
-    if ($null -eq $Value) {return $null}
-    # Pipeline output can wrap strings as PSObjects (for example Join-Path).
-    # Handle scalar values before inspecting adapted PSObject properties such as Length.
-    if ($Value -is [string]) {return [string]$Value}
-    if ($Value -is [DateTime]) {return $Value.ToUniversalTime().ToString('o')}
-    if ($Value.GetType().IsValueType) {return $Value.PSObject.BaseObject}
-    if ($Value -is [Collections.IDictionary]) {
-        $ordered=[ordered]@{}; [string[]]$keys=@($Value.Keys); [Array]::Sort($keys,[StringComparer]::Ordinal)
-        foreach ($key in $keys) {$ordered[$key]=ConvertTo-ShedCanonicalValue $Value[$key]}
-        return $ordered
-    }
-    if ($Value -is [pscustomobject]) {
-        $ordered=[ordered]@{}; [string[]]$keys=@($Value.PSObject.Properties.Name); [Array]::Sort($keys,[StringComparer]::Ordinal)
-        foreach ($key in $keys) {$ordered[$key]=ConvertTo-ShedCanonicalValue $Value.$key}
-        return $ordered
-    }
-    if ($Value -is [Collections.IEnumerable] -and $Value -isnot [string]) {
-        $items=New-Object 'Collections.Generic.List[object]'
-        foreach ($item in $Value) {$items.Add((ConvertTo-ShedCanonicalValue $item))}
-        return ,$items.ToArray()
-    }
-    return $Value
-}
-
-function Read-ShedPackageLock {
-    # Reviewed official sources and digests travel with this standalone script.
-    $lock=@'
-{
-  "SchemaVersion": 1,
-  "ReviewedDate": "2026-11-13",
-  "WingetManifestCommit": "d4ba473606cda2b1a04e2b3a02851abca279253d",
-  "Packages": [
-    {
-      "Name": "Firefox",
-      "Id": "Mozilla.Firefox",
-      "Version": "160.0",
-      "Kind": "Exe",
-      "Uri": "https://download-installer.cdn.mozilla.net/pub/firefox/releases/160.0/win64/en-US/Firefox%20Setup%20160.0.exe",
-      "Sha256": "8732312EE2D7960C6EA830A4E0D3C0FF5FE0B10856DAB44E2C432FCDEB63FF63",
-      "PublisherPattern": "Mozilla Corporation",
-      "Arguments": [
-        "/S",
-        "/PreventRebootRequired=true"
-      ],
-      "DisplayNamePattern": "^Mozilla Firefox",
-      "ExecutableRelativePath": "Mozilla Firefox\\firefox.exe",
-      "SourceManifest": "https://raw.githubusercontent.com/microsoft/winget-pkgs/d4ba473606cda2b1a04e2b3a02851abca279253d/manifests/m/Mozilla/Firefox/160.0/Mozilla.Firefox.installer.yaml",
-      "SourceManifestSha256": "6c1cbd01f5c91e3e9bf14358da31c331e21d504559450cfe498575fcd52e6d52"
-    },
-    {
-      "Name": "7Zip",
-      "Id": "7zip.7zip",
-      "Version": "26.06",
-      "Kind": "Msi",
-      "Uri": "https://github.com/ip7z/7zip/releases/download/26.06/7z2606-x64.msi",
-      "Sha256": "6DC822569E777D9A3ECD5FFCBC22B55600AF87E6C5D9810A64E8566CF5A4AF9F",
-      "PublisherPattern": "",
-      "Arguments": [],
-      "DisplayNamePattern": "^7-Zip",
-      "ExecutableRelativePath": "7-Zip\\7z.exe",
-      "SourceManifest": "https://raw.githubusercontent.com/microsoft/winget-pkgs/d4ba473606cda2b1a04e2b3a02851abca279253d/manifests/7/7zip/7zip/26.06/7zip.7zip.installer.yaml",
-      "SourceManifestSha256": "9826689b28f1a7018a957227fa01444b5ceadfe225b2fbdef7f5379951b089bc"
-    },
-    {
-      "Name": "FirewallControl",
-      "Id": "BiniSoft.WindowsFirewallControl",
-      "Version": "6.39.0.0",
-      "Kind": "Exe",
-      "Uri": "https://www.binisoft.org/download/wfc6setup.exe",
-      "Sha256": "88C81C92DF17A9B28EF5FCBEDEC1FFFDD85ED5EB79957330B3ABD5B279E01230",
-      "PublisherPattern": "Malwarebytes|BiniSoft",
-      "Arguments": [
-        "-run",
-        "-close",
-        "-install",
-        "-update"
-      ],
-      "DisplayNamePattern": "^Windows Firewall Control",
-      "ExecutableRelativePath": "Malwarebytes\\Windows Firewall Control\\wfc.exe",
-      "SourceManifest": "https://raw.githubusercontent.com/microsoft/winget-pkgs/d4ba473606cda2b1a04e2b3a02851abca279253d/manifests/b/BiniSoft/WindowsFirewallControl/6.39.0.0/BiniSoft.WindowsFirewallControl.installer.yaml",
-      "SourceManifestSha256": "a5c9786cab38dc745f61c3f31dceec6980160abf572ab660f7798e4a82aedd6b"
-    },
-    {
-      "Name": "Malwarebytes",
-      "Id": "Malwarebytes.Malwarebytes",
-      "Version": "5.7.3.376",
-      "Kind": "Exe",
-      "Uri": "https://data-cdn.mbamupdates.com/web/mb5-setup-consumer/offline/mb5-setup-consumer-5.7.3.376-167.0.5780-1.0.115771.exe",
-      "Sha256": "BE06E457881269992D5D8B57F2303F9BB3A73F25ECA301B801BFD46B0B049BDB",
-      "PublisherPattern": "Malwarebytes",
-      "Arguments": [
-        "/VERYSILENT",
-        "/NORESTART"
-      ],
-      "DisplayNamePattern": "^Malwarebytes",
-      "ExecutableRelativePath": "Malwarebytes\\Anti-Malware\\mbam.exe",
-      "SourceManifest": "https://raw.githubusercontent.com/microsoft/winget-pkgs/d4ba473606cda2b1a04e2b3a02851abca279253d/manifests/m/Malwarebytes/Malwarebytes/5.7.3.376/Malwarebytes.Malwarebytes.installer.yaml",
-      "SourceManifestSha256": "94dc9ba235df635f21a33017ac2323b30b8e8a04852a29be2987e2118cb98630"
-    },
-    {
-      "Name": "Sysinternals",
-      "Id": "Microsoft.Sysinternals.Suite",
-      "Version": "2026-10-15",
-      "Kind": "Archive",
-      "Uri": "https://download.sysinternals.com/files/SysinternalsSuite.zip",
-      "Sha256": "E1E75DE5CDB12116B0A4ECA83725DC7C7A1645266196025CBE5CA6C167161AED",
-      "PublisherPattern": "",
-      "Arguments": [],
-      "DisplayNamePattern": "",
-      "ExecutableRelativePath": "Autoruns64.exe",
-      "SourceManifest": "https://raw.githubusercontent.com/microsoft/winget-pkgs/d4ba473606cda2b1a04e2b3a02851abca279253d/manifests/m/Microsoft/Sysinternals/Suite/2026-10-15/Microsoft.Sysinternals.Suite.installer.yaml",
-      "SourceManifestSha256": "dc16893e9987ed80cd36fec3ab0c78d72edf4ddd41e51a4d008569b06479c295"
-    },
-    {
-      "Name": "Npcap",
-      "Id": "Npcap",
-      "Version": "1.90",
-      "Kind": "Npcap",
-      "Uri": "https://npcap.com/dist/npcap-1.90.exe",
-      "Sha256": "682b57e1c05ef375931975c9d6ded40888f4bfdf9f4b11571e654f962f1199b6",
-      "PublisherPattern": "Insecure\\.Com|Nmap Software",
-      "Arguments": [
-        "/winpcap_mode=yes",
-        "/admin_only=yes",
-        "/no_kill=yes"
-      ],
-      "DisplayNamePattern": "^Npcap",
-      "ExecutableRelativePath": "",
-      "SourceManifest": "https://npcap.com/dist/npcap-1.90.exe",
-      "SourceManifestSha256": "682b57e1c05ef375931975c9d6ded40888f4bfdf9f4b11571e654f962f1199b6"
-    },
-    {
-      "Name": "Docker",
-      "Id": "Docker",
-      "Version": "29.9.3",
-      "Kind": "Docker",
-      "Uri": "https://download.docker.com/win/static/stable/x86_64/docker-29.9.3.zip",
-      "Sha256": "7c4ff7bbb31579046cd34dd8b91f7cbd3ab3482a1a85330170be726ef792d751",
-      "PublisherPattern": "",
-      "Arguments": [],
-      "DisplayNamePattern": "",
-      "ExecutableRelativePath": "docker.exe",
-      "PayloadSha256": {
-        "docker.exe": "82b011a6c253c6c6a273891133fbf8c76f0a909483f5c34e6dcb7ebc98b91dd5",
-        "dockerd.exe": "3ce3b65813dee1d4ca4859d86c40cc1cccace541c412d18c0a0346e2e1236963"
-      },
-      "SourceManifest": "https://download.docker.com/win/static/stable/x86_64/",
-      "SourceManifestSha256": ""
-    },
-    {
-      "Name": "RunAsTrustedInstaller",
-      "Id": "",
-      "Version": "2.3.2",
-      "Kind": "Portable",
-      "Uri": "https://github.com/fafalone/RunAsTrustedInstaller/releases/download/v2.3.2/RunAsTI64.exe",
-      "Sha256": "92A75D619744FC9559D50EAC77537C89A829FF63DE23162D6D63FCA15CA947DE",
-      "PublisherPattern": "",
-      "Arguments": [],
-      "DisplayNamePattern": "",
-      "ExecutableRelativePath": "RunAsTI64.exe",
-      "SourceManifest": "https://github.com/fafalone/RunAsTrustedInstaller/releases/tag/v2.3.2"
-    },
-    {
-      "Name": "TimelineExplorer",
-      "Id": "",
-      "Version": "2026.10.0",
-      "Kind": "Archive",
-      "Uri": "https://download.ericzimmermanstools.com/net/TimelineExplorer.zip",
-      "Sha256": "DFB9C3055FEABAF57C05D0D380AC17E1F050B2628136CAF8BA7BE963FD3FED3E",
-      "PublisherPattern": "",
-      "PayloadPublisherPattern": "(?:^|,\\s*)(?:CN|O)=ZimTech LLC(?:,|$)",
-      "Arguments": [],
-      "DisplayNamePattern": "",
-      "ExecutableRelativePath": "TimelineExplorer\\TimelineExplorer.exe",
-      "SourceManifest": "https://ericzimmerman.github.io/"
-    }
-  ]
-}
-'@ | ConvertFrom-Json -ErrorAction Stop
-    if ($lock.SchemaVersion -ne 1) {throw 'Unsupported package lock schema.'}
-    $names=New-Object 'Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
-    foreach ($package in $lock.Packages) {
-        if (-not $names.Add($package.Name)) {throw 'Duplicate package in embedded catalog.'}
-        if ($package.Sha256 -notmatch '^[a-fA-F0-9]{64}$' -or ([uri]$package.Uri).Scheme -ne 'https') {throw "Unpinned artifact in embedded catalog: $($package.Name)"}
-        if ($package.Kind -notin @('Exe','Msi','Archive','Portable','Npcap','Docker')) {throw 'Unsupported installer kind.'}
-        if ($package.Kind -eq 'Docker') {
-            foreach ($name in @('docker.exe','dockerd.exe')) {if ($package.PayloadSha256.$name -notmatch '^[a-fA-F0-9]{64}$') {throw 'Docker executable hash missing.'}}
-        }
-    }
-    return $lock
-}
-
-function Compare-ShedVersion {
-    param([string]$Actual, [string]$Required)
-    $left=@([regex]::Matches($Actual,'\d+') | ForEach-Object {[long]$_.Value})
-    $right=@([regex]::Matches($Required,'\d+') | ForEach-Object {[long]$_.Value})
-    if (-not $left.Count -or -not $right.Count) {throw 'Cannot compare nonnumeric package versions.'}
-    for ($index=0; $index -lt [Math]::Max($left.Count,$right.Count); $index++) {
-        $a=if ($index -lt $left.Count) {$left[$index]} else {0}
-        $b=if ($index -lt $right.Count) {$right[$index]} else {0}
-        if ($a -gt $b) {return 1}; if ($a -lt $b) {return -1}
-    }
-    return 0
-}
-
-function Get-ShedWinget {
-    $candidates=New-Object 'Collections.Generic.List[string]'
-    $command=Get-Command winget.exe -CommandType Application -ErrorAction SilentlyContinue
-    if ($command) {$candidates.Add($command.Source)}
-    if (Get-Command Get-AppxPackage -ErrorAction SilentlyContinue) {
-        foreach ($package in @(Get-AppxPackage -Name Microsoft.DesktopAppInstaller -AllUsers -ErrorAction Stop | Sort-Object Version -Descending)) {
-            $candidates.Add((Join-Path $package.InstallLocation winget.exe))
-        }
-    }
-    foreach ($path in $candidates) {
-        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {continue}
-        try {
-            Assert-ShedNoReparsePoint $path
-            $signature=Get-AuthenticodeSignature -LiteralPath $path -ErrorAction Stop
-            if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch '(?:^|,\s*)(?:CN|O)=Microsoft Corporation(?:,|$)') {continue}
-            $null=Invoke-ShedNative $path @('--version') -TimeoutSeconds 30
-            return $path
-        } catch {Write-Verbose "WinGet candidate rejected: $path : $($_.Exception.Message)"}
-    }
-    return $null
-}
-
-function Test-ShedPackageInstalled {
-    param($Package, $Context)
-    if ($Package.Kind -in @('Archive','Portable')) {
-        $directory=Join-Path $Context.Root ('bin\'+$Package.Name)
-        $receiptPath=Join-Path $directory '.shed-installed.json'
-        if (-not (Test-Path -LiteralPath $receiptPath)) {return $false}
-        $receipt=Read-ShedJson $receiptPath
-        if (-not (Test-Path -LiteralPath (Join-Path $directory $Package.ExecutableRelativePath) -PathType Leaf)) {return $false}
-        if ($receipt.ArtifactSha256 -ne $Package.Sha256) {return $false}
-        foreach ($entry in $receipt.Files) {
-            $path=Join-Path $directory $entry.RelativePath
-            if (-not (Test-ShedPathWithin $path $directory) -or -not (Test-Path -LiteralPath $path)) {return $false}
-            if ((Get-ShedFileEvidence $path).Sha256 -ne $entry.Sha256) {return $false}
-        }
-        return $receipt.Files.Count -gt 0
-    }
-    if ($Package.Kind -eq 'Docker') {
-        $service=Get-Service docker -ErrorAction SilentlyContinue
-        if (-not $service -or $service.Status -ne 'Running') {return $false}
-        $directory=Join-Path $env:ProgramFiles Docker
-        foreach ($name in @('docker.exe','dockerd.exe')) {
-            $path=Join-Path $directory $name
-            if (-not (Test-Path -LiteralPath $path)) {return $false}
-            if ((Get-ShedFileEvidence $path).Sha256 -ne $Package.PayloadSha256.$name) {return $false}
-        }
-        $result=Invoke-ShedNative (Join-Path $directory docker.exe) @('version','--format','{{.Server.Version}}') -TimeoutSeconds 45 -AllowFailure
-        return $result.ExitCode -eq 0 -and (Compare-ShedVersion $result.StdOut $Package.Version) -ge 0
-    }
-    if ($Package.Kind -eq 'Npcap') {
-        $driver=Get-CimInstance Win32_SystemDriver -Filter "Name='npcap'" -ErrorAction SilentlyContinue
-        if (-not $driver) {return $false}
-        foreach ($root in @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall')) {
-            if (-not (Test-Path -LiteralPath $root)) {continue}
-            foreach ($key in @(Get-ChildItem -LiteralPath $root -ErrorAction Stop)) {
-                try {
-                    $version=$key.GetValue('DisplayVersion'); $name=$key.GetValue('DisplayName')
-                    if ($name -match '^Npcap' -and $version -and (Compare-ShedVersion $version $Package.Version) -ge 0) {return $true}
-                } finally {if ($null -ne $key) {$key.Dispose()}}
-            }
-        }
-        return $false
-    }
-    $entries=New-Object 'Collections.Generic.List[object]'
-    foreach ($root in @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall')) {
-        if (-not (Test-Path -LiteralPath $root)) {continue}
-        foreach ($key in @(Get-ChildItem -LiteralPath $root -ErrorAction Stop)) {
-            try {
-                $name=$key.GetValue('DisplayName'); $version=$key.GetValue('DisplayVersion')
-                if ($name -and $version -and $name -match $Package.DisplayNamePattern -and (Compare-ShedVersion $version $Package.Version) -ge 0) {$entries.Add(@{Name=$name; Version=$version})}
-            } finally {if ($null -ne $key) {$key.Dispose()}}
-        }
-    }
-    if (-not $entries.Count) {return $false}
-    $candidates=@((Join-Path $env:ProgramFiles $Package.ExecutableRelativePath))
-    if (${env:ProgramFiles(x86)}) {$candidates+=@(Join-Path ${env:ProgramFiles(x86)} $Package.ExecutableRelativePath)}
-    if ($Package.Name -eq 'FirewallControl') {
-        $candidates+=@((Join-Path $env:ProgramFiles 'Windows Firewall Control\wfc.exe'))
-        if (${env:ProgramFiles(x86)}) {$candidates+=@(Join-Path ${env:ProgramFiles(x86)} 'Windows Firewall Control\wfc.exe')}
-    }
-    foreach ($path in $candidates) {
-        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {continue}
-        $evidence=Get-ShedFileEvidence $path
-        if ($Package.PublisherPattern -and ($evidence.Signature -ne 'Valid' -or $evidence.Publisher -notmatch $Package.PublisherPattern)) {continue}
-        if ($Package.Name -eq 'Malwarebytes' -and (Get-Service MBAMService -ErrorAction Stop).Status -ne 'Running') {return $false}
-        if ($Package.Name -eq 'FirewallControl' -and (Get-Service wfcs -ErrorAction Stop).Status -ne 'Running') {return $false}
-        return $true
-    }
-    return $false
-}
-
-function Expand-ShedArchive {
-    param([string]$Path, [string]$Destination)
-    if (Test-Path -LiteralPath $Destination) {throw 'Archive extraction requires a fresh destination.'}
-    Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction Stop
-    $archive=[IO.Compression.ZipFile]::OpenRead($Path)
-    try {
-        foreach ($entry in $archive.Entries) {
-            $relative=$entry.FullName.Replace('\',[string][IO.Path]::DirectorySeparatorChar).Replace('/',[string][IO.Path]::DirectorySeparatorChar)
-            $target=[IO.Path]::GetFullPath((Join-Path $Destination $relative))
-            if (-not (Test-ShedPathWithin $target $Destination) -or [IO.Path]::IsPathRooted($relative) -or $entry.FullName -match '^[A-Za-z]:') {throw 'Archive entry escapes its destination.'}
-            if (($entry.ExternalAttributes -shr 16 -band 61440) -eq 40960) {throw 'Archive contains a symbolic link.'}
-        }
-    } finally {$archive.Dispose()}
-    [IO.Compression.ZipFile]::ExtractToDirectory($Path,$Destination)
-}
-
-function Install-ShedArchive {
-    param($Context, $Package, [string]$ArchivePath)
-    $staging=Join-Path $Context.Root ('downloads\extract-'+[guid]::NewGuid().ToString('N'))
-    $destination=Join-Path $Context.Root ('bin\'+$Package.Name)
-    $previous=Join-Path $Context.Root ('backups\'+$Package.Name+'-'+[guid]::NewGuid().ToString('N'))
-    try {
-        if ($Package.Kind -eq 'Portable') {
-            $null=New-Item -ItemType Directory -Path $staging -ErrorAction Stop
-            $null=Assert-ShedArtifact $ArchivePath $Package.Sha256 $Package.PublisherPattern
-            Copy-Item -LiteralPath $ArchivePath -Destination (Join-Path $staging $Package.ExecutableRelativePath) -ErrorAction Stop
-        } else {Expand-ShedArchive $ArchivePath $staging}
-        if (-not (Test-Path -LiteralPath (Join-Path $staging $Package.ExecutableRelativePath))) {throw 'Expected archive executable is absent.'}
-        if ($Package.PSObject.Properties['PayloadPublisherPattern'] -and $Package.PayloadPublisherPattern) {
-            $payload=Get-ShedFileEvidence (Join-Path $staging $Package.ExecutableRelativePath)
-            if ($payload.Signature -ne 'Valid' -or $payload.Publisher -notmatch $Package.PayloadPublisherPattern) {throw 'Archive executable publisher validation failed.'}
-        }
-        $files=@(Get-ShedFiles -Roots @($staging) | ForEach-Object {
-            $evidence=Get-ShedFileEvidence $_.FullName
-            [pscustomobject]@{RelativePath=$_.FullName.Substring($staging.Length).TrimStart('\','/'); Sha256=$evidence.Sha256}
-        })
-        Write-ShedJson (Join-Path $staging '.shed-installed.json') @{ArtifactSha256=$Package.Sha256; Files=$files}
-        if (Test-Path -LiteralPath $destination) {Move-Item -LiteralPath $destination -Destination $previous -ErrorAction Stop}
-        try {Move-Item -LiteralPath $staging -Destination $destination -ErrorAction Stop}
-        catch {if (Test-Path -LiteralPath $previous) {Move-Item -LiteralPath $previous -Destination $destination -ErrorAction Stop}; throw}
-        Set-ShedPrivateAcl $destination -AllowUsersRead
-        foreach ($file in Get-ShedFiles -Roots @($destination)) {Set-ShedPrivateAcl $file.FullName -AllowUsersRead}
-        if (-not (Test-ShedPackageInstalled $Package $Context)) {throw 'Published archive did not pass receipt validation.'}
-    } finally {if (Test-Path -LiteralPath $staging) {Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction Stop}}
-}
-
-function Install-ShedDocker {
-    param($Context, $Package, [string]$ArchivePath)
-    # Feature enablement is local and explicitly forbids an automatic restart.
-    if (Get-Module -ListAvailable -Name ServerManager) {
-        Import-Module ServerManager -ErrorAction Stop
-        $feature=Get-WindowsFeature Containers -ErrorAction Stop
-        if (-not $feature.Installed) {
-            $result=Install-WindowsFeature Containers -Restart:$false -ErrorAction Stop
-            if (-not $result.Success) {throw 'Containers feature installation failed.'}
-            if ($result.RestartNeeded -eq 'Yes') {return 3010}
-        }
-    } elseif (Get-Command Enable-WindowsOptionalFeature -ErrorAction SilentlyContinue) {
-        $feature=Get-WindowsOptionalFeature -Online -FeatureName Containers -ErrorAction Stop
-        if ($feature.State -ne 'Enabled') {
-            $result=Enable-WindowsOptionalFeature -Online -FeatureName Containers -NoRestart -ErrorAction Stop
-            if ($result.RestartNeeded) {return 3010}
-        }
-    } else {
-        throw 'Neither ServerManager nor OptionalFeature cmdlets are available to enable Containers.'
-    }
-    $staging=Join-Path $Context.Root ('downloads\docker-'+[guid]::NewGuid().ToString('N'))
-    try {
-        Expand-ShedArchive $ArchivePath $staging
-        foreach ($name in @('docker.exe','dockerd.exe')) {$null=Assert-ShedArtifact (Join-Path $staging "docker\$name") $Package.PayloadSha256.$name}
-        if (Get-Service docker -ErrorAction SilentlyContinue) {throw 'An existing nonmatching Docker service requires a planned upgrade; it was left intact.'}
-        $directory=Join-Path $env:ProgramFiles Docker
-        Assert-ShedNoReparsePoint $directory
-        $null=New-Item -ItemType Directory -Path $directory -Force -ErrorAction Stop
-        foreach ($name in @('docker.exe','dockerd.exe')) {
-            Copy-Item -LiteralPath (Join-Path $staging "docker\$name") -Destination (Join-Path $directory $name) -Force -ErrorAction Stop
-            $null=Assert-ShedArtifact (Join-Path $directory $name) $Package.PayloadSha256.$name
-        }
-        $config=Join-Path $env:ProgramData 'docker\config'
-        Assert-ShedNoReparsePoint $config
-        $null=New-Item -ItemType Directory -Path $config -Force -ErrorAction Stop
-        if (-not (Test-Path -LiteralPath (Join-Path $config daemon.json))) {Write-ShedJson (Join-Path $config daemon.json) @{hosts=@('npipe://')}}
-        $null=Invoke-ShedNative (Join-Path $directory dockerd.exe) @('--register-service','--service-name','docker')
-        Set-Service docker -StartupType Automatic -ErrorAction Stop; Start-Service docker -ErrorAction Stop
-        if (-not (Test-ShedPackageInstalled $Package $Context)) {throw 'Docker service/server health check failed.'}
-        return 0
-    } finally {if (Test-Path -LiteralPath $staging) {Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction Stop}}
-}
-
-function Invoke-ShedPackageInstall {
-    param($Context, $Package, [string]$WingetPath, [bool]$NonInteractive, [string]$NpcapOemPath='', [string]$NpcapOemSha256='')
-    try {
-        if (Test-ShedPackageInstalled $Package $Context) {Add-ShedResult $Context $Package.Name Succeeded 'Installed state already meets the reviewed lock; no reinstall.'; return}
-        if ($Package.Kind -eq 'Npcap' -and $NonInteractive -and -not $NpcapOemPath) {Add-ShedResult $Context Npcap Incomplete 'Public Npcap requires interactive installation; supply a reviewed OEM path and SHA-256 for silent mode.'; return}
-        $extension=if ($Package.Kind -in @('Archive','Docker')) {'.zip'} elseif ($Package.Kind -eq 'Msi') {'.msi'} else {'.exe'}
-        $destination=Join-Path $Context.Root ("downloads\$($Package.Name)-$($Package.Version)$extension")
-        $prefetched=$false
-        if ($WingetPath -and $Package.Kind -in @('Exe','Msi')) {
-            $stage=Join-Path $Context.Root ('downloads\winget-'+[guid]::NewGuid().ToString('N'))
-            $null=New-Item -ItemType Directory -Path $stage -ErrorAction Stop
-            $cleanupStage=$true
-            try {
-                # WinGet metadata cannot substitute its own hash for the reviewed lock.
-                # It only downloads; execution always follows our artifact validation.
-                $result=Invoke-ShedNative $WingetPath @('download','--id',$Package.Id,'--exact','--version',$Package.Version,'--source','winget','--scope','machine','--download-directory',$stage,'--accept-package-agreements','--accept-source-agreements','--disable-interactivity') -AllowFailure
-                Write-ShedEvent $Context Installer @{Package=$Package.Name; Method='WinGetDownload'; ExitCode=$result.ExitCode; StdOut=$result.StdOut; StdErr=$result.StdErr}
-                foreach ($candidate in Get-ShedFiles -Roots @($stage) -Extensions @($extension) -Context $Context) {
-                    if ((Get-FileHash -LiteralPath $candidate.FullName -Algorithm SHA256 -ErrorAction Stop).Hash -ne $Package.Sha256) {continue}
-                    $null=Assert-ShedArtifact $candidate.FullName $Package.Sha256 $Package.PublisherPattern
-                    $publish=$destination+'.'+[guid]::NewGuid().ToString('N')+$extension
-                    try {
-                        [IO.File]::Copy($candidate.FullName,$publish,$false)
-                        $null=Assert-ShedArtifact $publish $Package.Sha256 $Package.PublisherPattern
-                        if (Test-Path -LiteralPath $destination) {[IO.File]::Replace($publish,$destination,[NullString]::Value)} else {[IO.File]::Move($publish,$destination)}
-                        Set-ShedPrivateAcl $destination; $prefetched=$true
-                    } finally {if (Test-Path -LiteralPath $publish) {Remove-Item -LiteralPath $publish -Force -ErrorAction Stop}}
-                    break
-                }
-            } catch {
-                if ($_.Exception.Data.Contains('ProcessStillRunning')) {$cleanupStage=$false}
-                throw
-            } finally {if ($cleanupStage) {Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction Stop}}
-            if (-not $prefetched) {Write-ShedLog $Context "WinGet did not supply the exact locked artifact for $($Package.Name); using its reviewed HTTPS URL." WARN}
-        }
-        if (-not $prefetched) {
-            if ($Package.Kind -eq 'Npcap' -and $NpcapOemPath) {
-                $null=Assert-ShedArtifact $NpcapOemPath $NpcapOemSha256 $Package.PublisherPattern
-                Copy-Item -LiteralPath $NpcapOemPath -Destination $destination -Force -ErrorAction Stop
-                $null=Assert-ShedArtifact $destination $NpcapOemSha256 $Package.PublisherPattern
-            } else {$null=Get-ShedVerifiedDownload $Context $Package.Uri $destination $Package.Sha256 $Package.PublisherPattern}
-        }
-        $code=0
-        switch ($Package.Kind) {
-            Archive {Install-ShedArchive $Context $Package $destination}
-            Portable {Install-ShedArchive $Context $Package $destination}
-            Docker {$code=Install-ShedDocker $Context $Package $destination}
-            Msi {
-                $log=Join-Path $Context.Root "logs\$($Package.Name)-$($Context.RunId)-msi.log"
-                $result=Invoke-ShedNative "$env:SystemRoot\System32\msiexec.exe" @('/i',$destination,'/qn','/norestart','/L*v',$log) -SuccessCodes @(0,3010)
-                $code=$result.ExitCode
-            }
-            default {
-                $arguments=@($Package.Arguments)
-                if ($Package.Kind -eq 'Npcap' -and $NpcapOemPath) {$arguments=@('/S')+$arguments}
-                $result=Invoke-ShedNative $destination $arguments -SuccessCodes @(0,3010)
-                $code=$result.ExitCode
-                Write-ShedEvent $Context Installer @{Package=$Package.Name; Method='VerifiedDirect'; ExitCode=$code; StdOut=$result.StdOut; StdErr=$result.StdErr}
-            }
-        }
-        if ($code -eq 3010) {Add-ShedResult $Context $Package.Name RebootRequired 'Restart is required before final health verification; rerun afterward. No restart was initiated.'}
-        elseif (Test-ShedPackageInstalled $Package $Context) {Add-ShedResult $Context $Package.Name Succeeded 'Installed state verified.'}
-        else {throw 'Installer returned success but the installed-state check failed.'}
-    } catch {
-        Add-ShedResult $Context $Package.Name Failed $_.Exception.Message
-        if ($_.Exception.Data.Contains('ProcessStillRunning')) {throw}
-    }
-}
-
-function Merge-ShedPath {
-    param([string]$Current, [string[]]$Additions)
-    $seen=New-Object 'Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
-    $entries=New-Object 'Collections.Generic.List[string]'
-    foreach ($entry in @($Current -split ';') + @($Additions)) {
-        if (-not $entry.Trim()) {continue}
-        $normalized=[Environment]::ExpandEnvironmentVariables($entry.Trim().Trim('"')).TrimEnd('\','/')
-        if ($seen.Add($normalized)) {$entries.Add($entry.Trim())}
-    }
-    return $entries -join ';'
-}
-
-function Set-ShedToolPath {
-    param($Context, [string[]]$Directories)
-    $key=[Microsoft.Win32.Registry]::LocalMachine.OpenSubKey('SYSTEM\CurrentControlSet\Control\Session Manager\Environment',$true)
-    try {
-        $raw=[string]$key.GetValue('Path','',[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
-        $kind=$key.GetValueKind('Path')
-        foreach ($directory in $Directories) {Assert-ShedNoReparsePoint $directory; if (-not (Test-ShedPathWithin $directory (Join-Path $Context.Root bin))) {throw 'Only protected executable directories are added to PATH.'}}
-        $merged=Merge-ShedPath $raw $Directories
-        if ($merged -ne $raw) {$key.SetValue('Path',$merged,$kind)}
-        # Keep the current process's already expanded machine/user entries. Never inject raw %...% tokens.
-        $env:Path=Merge-ShedPath $env:Path $Directories
-    } finally {if ($null -ne $key) {$key.Dispose()}}
-}
-
-function Copy-ShedBundle {
-    param($Context, [string]$SourceDirectory)
-    $destination=Join-Path $Context.Root 'bin\Shed'
-    if ([IO.Path]::GetFullPath($SourceDirectory).TrimEnd('\') -eq $destination.TrimEnd('\')) {return}
-    $staging=Join-Path $Context.Root ('downloads\bundle-'+[guid]::NewGuid().ToString('N'))
-    $null=New-Item -ItemType Directory -Path $staging -ErrorAction Stop
-    try {
-        foreach ($name in @('shed-hardening.ps1','shed-installs.ps1','shed-scraper.ps1')) {
-            $source=Join-Path $SourceDirectory $name
-            if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {Write-ShedLog $Context "Companion script absent locally: $name" WARN; continue}
-            $file=Get-Item -LiteralPath $source -ErrorAction Stop
-            Assert-ShedNoReparsePoint $file.FullName
-            $target=Join-Path $staging $file.Name
-            Copy-Item -LiteralPath $file.FullName -Destination $target -ErrorAction Stop
-            if ((Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash) {throw 'Local bundle copy hash mismatch.'}
-        }
-        $previous=Join-Path $Context.Root ('backups\Shed-'+$Context.RunId)
-        if (Test-Path -LiteralPath $destination) {Move-Item -LiteralPath $destination -Destination $previous -ErrorAction Stop}
-        try {Move-Item -LiteralPath $staging -Destination $destination -ErrorAction Stop}
-        catch {if (Test-Path -LiteralPath $previous) {Move-Item -LiteralPath $previous -Destination $destination -ErrorAction Stop}; throw}
-        Set-ShedPrivateAcl $destination -AllowUsersRead
-        foreach ($file in Get-ShedFiles -Roots @($destination)) {Set-ShedPrivateAcl $file.FullName -AllowUsersRead}
-    } finally {if (Test-Path -LiteralPath $staging) {Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction Stop}}
-}
-
-$context=$null; $exitCode=1
+# -----------------------------------------------------------------------------
+# Console appearance and native-process color defaults
+# -----------------------------------------------------------------------------
 try {
-    Assert-ShedWindows
-    if ([bool]$NpcapOemPath -ne [bool]$NpcapOemSha256) {throw 'Supply both NpcapOemPath and NpcapOemSha256.'}
-    $lock=Read-ShedPackageLock
-    $context=New-ShedContext -Name installs -ToolsRoot $ToolsRoot -Simulation:$WhatIfPreference
+    Set-InstallConsoleColors
+    if ($Host.PrivateData) {
+        $Host.PrivateData.WarningBackgroundColor = 'Black'
+        $Host.PrivateData.WarningForegroundColor = 'Yellow'
+        $Host.PrivateData.ErrorBackgroundColor   = 'Black'
+        $Host.PrivateData.ErrorForegroundColor   = 'Red'
+        $Host.PrivateData.VerboseBackgroundColor = 'Black'
+        $Host.PrivateData.VerboseForegroundColor = 'Cyan'
+        $Host.PrivateData.DebugBackgroundColor   = 'Black'
+        $Host.PrivateData.DebugForegroundColor   = 'DarkCyan'
+        $Host.PrivateData.ProgressBackgroundColor = 'Black'
+        $Host.PrivateData.ProgressForegroundColor = 'White'
+    }
+    $PSDefaultParameterValues['Write-Host:BackgroundColor'] = 'Black'
+    Clear-Host
+} catch {}
+
+# Installation, machine PATH/ACL changes, and AppX provisioning require elevation.
+# Keep early errors visible in the console rather than attempting partial setup.
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin) {
+    Write-Log 'Run this script as Administrator.' ERROR
+    Write-Host "" -BackgroundColor Black
+    Read-Host "Press Enter to exit"
+    exit 1
+}
+
+# Keep console window open on terminating errors
+trap {
+    Write-Log $_.Exception.Message ERROR
+    Write-Host $_.ScriptStackTrace -ForegroundColor DarkGray -BackgroundColor Black
+    Write-Host "" -BackgroundColor Black
+    Read-Host "Script encountered an error. Press Enter to exit"
+    break
+}
+
+# Keep scripts/tool copies, cached payloads, and transcripts in separate
+# subdirectories. Changing the working directory also avoids network-share cwd issues.
+$InstallDir = "C:\Tools"
+$DownloadsDir = "$InstallDir\downloads"
+$LogsDir = "$InstallDir\logs"
+
+# global preferences to stop catch errors and hide progress bars
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+# Disable native command terminating errors in modern PowerShell so tools like robocopy (exit code 1 = success) do not throw
+if (Test-Path variable:global:PSNativeCommandUseErrorActionPreference) {
+    $global:PSNativeCommandUseErrorActionPreference = $false
+}
+$PSNativeCommandUseErrorActionPreference = $false
+# TLS 1.2 for REST/package-manager requests; BITS uses Windows networking settings.
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
 $splash = @'
 
             ___                    +--------------------------------------------+
     `=/~~~~~   ~\                  |             shed-installs.ps1              |
-     | ,      ,_ `\_/~\-           |   made for MWCCDC 2026-27' invitationals   |
+     | ,      ,_ `\_/~\-           |    made for MWCCDC 2026-27' qualifiers     |
      >/'>/ ~|||`\( ,~\-            |                                            |
      |  |   `||   \;               |                                            |
 \\\\//\\\/TX\\//\\\\|//            |  <------------ that's kayne                |
                                    +--------------------------------------------+
 '@
 Write-Host $splash -ForegroundColor Red -BackgroundColor Black
-    if ($Docker) {$Components+=@('Docker')}
-    $winget=$null
-    if (-not $SkipWinget -and -not $WhatIfPreference) {
-        try {$winget=Get-ShedWinget} catch {Write-ShedLog $context "WinGet unavailable: $($_.Exception.Message)" WARN}
-        if (-not $winget) {Add-ShedResult $context 'WinGet bootstrap' Skipped 'Using verified direct installers. No Gallery trust changes or unsupported portable extraction.'}
-    }
-    foreach ($name in @($Components | Select-Object -Unique)) {
-        $package=@($lock.Packages | Where-Object Name -eq $name)
-        if ($package.Count -ne 1) {Add-ShedResult $context $name Failed 'Selected component missing from embedded catalog.'; continue}
-        if ($PSCmdlet.ShouldProcess("$name $($package[0].Version)",'Install hash-locked component and verify resulting state')) {
-            Invoke-ShedPackageInstall $context $package[0] $winget ([bool]$NonInteractive) $NpcapOemPath $NpcapOemSha256
-        } else {Add-ShedResult $context $name Skipped 'Not applied.'}
-    }
-    if ($PSCmdlet.ShouldProcess((Join-Path $ToolsRoot 'bin\Shed'),'Copy complete local Shed bundle with hash verification')) {
-        Invoke-ShedStep $context 'Local Shed bundle' {Copy-ShedBundle $context $PSScriptRoot}
-    }
-    if (-not $WhatIfPreference) {
-        $directories=@()
-        foreach ($name in @('Sysinternals','RunAsTrustedInstaller','TimelineExplorer')) {
-            $package=@($lock.Packages | Where-Object Name -eq $name)[0]
-            if (Test-ShedPackageInstalled $package $context) {$directory=Join-Path $context.Root ('bin\'+$name); if ($name -eq 'TimelineExplorer') {$directory=Join-Path $directory TimelineExplorer}; $directories+=@($directory)}
+
+# Kept in each standalone script so downloaded copies need no companion module.
+function Get-TrustedOwnerSids {
+    @('S-1-5-18', 'S-1-5-32-544',
+        'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464',
+        [Security.Principal.WindowsIdentity]::GetCurrent().User.Value)
+}
+
+# Check ownership, write permissions, and every ancestor without following links.
+# A trusted signature alone cannot prevent DLL loading from a writable directory.
+function Test-TrustedPath {
+    param([string]$Path, [switch]$Recurse)
+    try {
+        $trusted = @(Get-TrustedOwnerSids)
+        $writeRights = [Security.AccessControl.FileSystemRights]'Write,Delete,DeleteSubdirectoriesAndFiles,ChangePermissions,TakeOwnership'
+        $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+        $pending = [Collections.Generic.Stack[object]]::new()
+        $pending.Push($item)
+        if ($Recurse -and $item.PSIsContainer) {
+            # Enumerate manually: do not recurse through a junction before checking it.
+            $directories = [Collections.Generic.Stack[object]]::new()
+            $directories.Push($item)
+            while ($directories.Count) {
+                foreach ($child in @(Get-ChildItem -LiteralPath $directories.Pop().FullName -Force -ErrorAction Stop)) {
+                    if ($child.Attributes -band [IO.FileAttributes]::ReparsePoint) { return $false }
+                    $pending.Push($child)
+                    if ($child.PSIsContainer) { $directories.Push($child) }
+                }
+            }
         }
-        if ($directories.Count -and $PSCmdlet.ShouldProcess('Machine PATH','Add validated tool directories')) {Invoke-ShedStep $context 'Tool PATH' {Set-ShedToolPath $context $directories}}
+        $parent = if ($item.PSIsContainer) { $item.Parent } else { $item.Directory }
+        # Drive-root create-folder permissions do not grant access to existing
+        # protected children. Check every directory below the drive root.
+        while ($parent -and $parent.Parent) { $pending.Push($parent); $parent = $parent.Parent }
+        while ($pending.Count) {
+            $current = $pending.Pop()
+            if ($current.Attributes -band [IO.FileAttributes]::ReparsePoint) { return $false }
+            $acl = Get-Acl -LiteralPath $current.FullName -ErrorAction Stop
+            if ($acl.GetOwner([Security.Principal.SecurityIdentifier]).Value -notin $trusted) { return $false }
+            foreach ($rule in $acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])) {
+                if ($rule.AccessControlType -eq 'Allow' -and
+                    ($rule.FileSystemRights -band $writeRights) -and $rule.IdentityReference.Value -notin $trusted) { return $false }
+            }
+        }
+        return $true
+    } catch { return $false }
+}
+
+# Create a directory with an explicit ACL before writing tools or sensitive reports.
+# Reject linked paths/foreign ownership; retain existing directory contents.
+function Initialize-Directory {
+    param([string]$Path, [switch]$Private)
+    $fullPath = [IO.Path]::GetFullPath($Path)
+    $parent = [IO.DirectoryInfo]::new($fullPath)
+    $trustedOwners = @(Get-TrustedOwnerSids)
+    while ($parent -and $parent.Parent) {
+        if (Test-Path -LiteralPath $parent.FullName) {
+            $existing = Get-Item -LiteralPath $parent.FullName -Force -ErrorAction Stop
+            if (-not $existing.PSIsContainer -or ($existing.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                throw "Refusing linked/non-directory workspace: $($parent.FullName)"
+            }
+            $owner = (Get-Acl -LiteralPath $parent.FullName -ErrorAction Stop).GetOwner([Security.Principal.SecurityIdentifier]).Value
+            if ($owner -notin $trustedOwners) { throw "Untrusted workspace owner at $($parent.FullName). Use a clean Administrator-owned directory." }
+        }
+        $parent = $parent.Parent
     }
-    $exitCode=Get-ShedExitCode $context
+    $null = New-Item -ItemType Directory -Path $fullPath -Force -ErrorAction Stop
+    $security = [Security.AccessControl.DirectorySecurity]::new()
+    $security.SetAccessRuleProtection($true, $false)
+    $security.SetOwner([Security.Principal.SecurityIdentifier]::new('S-1-5-32-544'))
+    foreach ($sid in @('S-1-5-32-544', 'S-1-5-18')) {
+        $security.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+            [Security.Principal.SecurityIdentifier]::new($sid), 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow'))
+    }
+    if (-not $Private) {
+        $security.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+            [Security.Principal.SecurityIdentifier]::new('S-1-5-32-545'), 'ReadAndExecute', 'ContainerInherit,ObjectInherit', 'None', 'Allow'))
+    }
+    Set-Acl -LiteralPath $fullPath -AclObject $security -ErrorAction Stop
+    if (-not (Test-TrustedPath $fullPath)) { throw "Workspace permission verification failed: $fullPath" }
+    $verified = Get-Acl -LiteralPath $fullPath -ErrorAction Stop
+    if (-not $verified.AreAccessRulesProtected) { throw "Workspace still inherits permissions: $fullPath" }
+    if ($Private) {
+        foreach ($rule in $verified.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])) {
+            if ($rule.AccessControlType -eq 'Allow' -and $rule.IdentityReference.Value -notin @('S-1-5-18', 'S-1-5-32-544')) {
+                throw "Private workspace has unexpected access: $fullPath"
+            }
+        }
+    }
+}
+
+# Create install directory for tools
+Write-Log "Creating install directory at $InstallDir"
+# Check the old tree BEFORE tightening its parent ACL. Fixing permissions does
+# not make binaries previously writable by another user trustworthy.
+$script:PortableWingetDirectory = Join-Path $InstallDir 'winget'
+$script:RejectedWingetDirectories = @()
+if ((Test-Path -LiteralPath $script:PortableWingetDirectory) -and
+    -not (Test-TrustedPath $script:PortableWingetDirectory -Recurse)) {
+    $script:RejectedWingetDirectories += $script:PortableWingetDirectory
+    Write-Warning "Existing portable WinGet tree is untrusted; leaving it unused: $script:PortableWingetDirectory"
+    $script:PortableWingetDirectory = Join-Path $InstallDir "winget-clean-$([guid]::NewGuid().ToString('N'))"
+}
+$env:Path = (@($env:Path -split ';' | Where-Object { $_ -and $_.TrimEnd('\') -notin $script:RejectedWingetDirectories }) -join ';')
+Initialize-Directory $InstallDir
+Initialize-Directory $LogsDir -Private
+Initialize-Directory $DownloadsDir -Private
+Set-Location -Path $InstallDir
+[System.IO.Directory]::SetCurrentDirectory($InstallDir)
+
+# Log everything from CLI to file (safely ignore if a transcript is already running)
+$script:TranscriptPath = "$LogsDir\install-$(Get-Date -f yyyyMMdd-HHmmss)-$([guid]::NewGuid().ToString('N')).log"
+try {
+    Start-Transcript -Path $script:TranscriptPath -ErrorAction Stop | Out-Null
 } catch {
-    if ($context) {Add-ShedResult $context 'Installer interrupted' Failed $_.Exception.Message} else {Write-Error -ErrorRecord $_ -ErrorAction Continue}
-    $exitCode=1
-} finally {if ($context) {try {Close-ShedContext $context} catch {Write-Error -ErrorRecord $_ -ErrorAction Continue; $exitCode=1}}}
-exit $exitCode
+    Write-Warning "Could not start transcript (an existing transcript may already be active): $($_.Exception.Message)"
+}
+
+# Role Detection: Domain Controller & MSSQL Server
+$isDC = $false
+try {
+    $os = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
+    if (-not $os) { $os = Get-WmiObject Win32_OperatingSystem -ErrorAction SilentlyContinue }
+    if ($os -and $os.ProductType -eq 2) { $isDC = $true }
+} catch {}
+
+if (-not $isDC -and (Get-Service -Name NTDS -ErrorAction SilentlyContinue)) {
+    $isDC = $true
+}
+
+$sqlServices = @('MSSQLSERVER', 'MSSQL$*', 'SQLSERVER*', 'SQLBrowser')
+$foundSqlSvc = foreach ($s in $sqlServices) {
+    $svc = Get-Service -Name $s -ErrorAction SilentlyContinue
+    if ($svc) { $svc; break }
+}
+$isMSSQL = [bool]$foundSqlSvc -or [bool](Get-Process -Name sqlservr -ErrorAction SilentlyContinue)
+
+Write-Log "Domain controller: $isDC. SQL Server detected: $isMSSQL."
+
+# Build the standalone download queue now; these entries do not download or
+# execute until the main installation flow reaches the standalone-tools loop.
+$Downloads = [System.Collections.Generic.List[hashtable]]::new()
+
+# Sysinternals Suite is always directly downloaded & extracted to C:\Tools\Sysinternals
+Write-Log "Queuing Sysinternals Suite for direct download."
+$Downloads.Add(@{
+    Name = 'Sysinternals'
+    Url  = 'https://download.sysinternals.com/files/SysinternalsSuite.zip'
+})
+
+Write-Log "Queuing the interactive Npcap setup wizard."
+# The public installer uses a wizard. Preselect WinPcap compatibility in the GUI.
+$Downloads.Add(@{
+    Name        = 'Npcap'
+    Url         = 'https://npcap.com/dist/npcap-1.90.exe'
+    InstallArgs = '/winpcap_mode=yes'
+})
+
+# -----------------------------------------------------------------------------
+# Log one start and outcome per operation so the console and transcript agree.
+function Invoke-WithStatus {
+    param(
+        [Parameter(Mandatory=$true)][string]$StatusText,
+        [Parameter(Mandatory=$true)][string]$DoneText,
+        [Parameter(Mandatory=$true)][scriptblock]$ScriptBlock,
+        [object[]]$ArgumentList = @()
+    )
+    Write-Log $StatusText
+    try {
+        & $ScriptBlock @ArgumentList
+    } catch {
+        Write-Log "${StatusText} failed: $($_.Exception.Message)" WARN
+        throw
+    }
+    Write-Log $DoneText SUCCESS
+}
+
+# Download one URL through BITS and return exactly true/false to the caller.
+# Publish a nonempty staged file only on success; cleanup is limited to this job/temp path.
+function Invoke-BitsDownload {
+    param(
+        [Parameter(Mandatory=$true)][string]$Url,
+        [Parameter(Mandatory=$true)][string]$OutFile,
+        [string]$Description = (Split-Path -Leaf $OutFile)
+    )
+
+    # Unique names prevent cleanup from canceling another application's BITS
+    # job or overwriting its partial download. Existing final files survive a failed transfer.
+    $jobName = "shed-installs-$([guid]::NewGuid())"
+    $partialPath = $null
+    try {
+        # BITS is a Windows service. Enable Manual startup only if disabled,
+        # then start it if needed; do not restart a service that is already running.
+        Import-Module BitsTransfer -ErrorAction Stop
+        $bits = Get-Service -Name BITS -ErrorAction Stop
+        if ($bits.StartType -eq 'Disabled') {
+            Write-Log 'BITS was disabled; enabling Manual startup for downloads.' 'INFO'
+            Set-Service -Name BITS -StartupType Manual -ErrorAction Stop
+        }
+        if ($bits.Status -ne 'Running') { Start-Service -Name BITS -ErrorAction Stop }
+
+        # Download beside the final destination under a unique temporary name.
+        # Callers must honor the Boolean result before executing/extracting the final path.
+        $destination = [IO.Path]::GetFullPath($OutFile)
+        $parent = [IO.Path]::GetDirectoryName($destination)
+        if (-not (Test-Path -LiteralPath $parent -PathType Container)) {
+            New-Item -ItemType Directory -Path $parent -Force -ErrorAction Stop | Out-Null
+        }
+        $partialPath = Join-Path $parent (".$([IO.Path]::GetFileName($destination)).$([guid]::NewGuid()).partial")
+        Invoke-WithStatus "Downloading $Description via BITS" "Downloaded $Description via BITS" {
+            param($source, $temporaryPath, $finalPath, $displayName, $label)
+            # Synchronous Foreground transfers complete before installation starts.
+            # Bound transient-error retries instead of using BITS' 14-day default.
+            Start-BitsTransfer -Source $source -Destination $temporaryPath -TransferType Download `
+                -Priority Foreground -DisplayName $displayName -Description $label `
+                -RetryInterval 60 -RetryTimeout 180 -ErrorAction Stop | Out-Null
+            if (-not (Test-Path -LiteralPath $temporaryPath -PathType Leaf) -or
+                (Get-Item -LiteralPath $temporaryPath -Force -ErrorAction Stop).Length -le 0) {
+                throw 'BITS did not produce a nonempty download.'
+            }
+            Move-Item -LiteralPath $temporaryPath -Destination $finalPath -Force -ErrorAction Stop
+        } @($Url, $partialPath, $destination, $jobName, $Description)
+        return $true
+    } catch {
+        Write-Log "BITS download failed for $Description`: $($_.Exception.Message)" 'ERROR'
+        # A failed synchronous transfer may leave a queued job. Remove only this
+        # request's uniquely named job; other BITS jobs are never canceled.
+        try {
+            Get-BitsTransfer -ErrorAction Stop | Where-Object DisplayName -EQ $jobName |
+                Remove-BitsTransfer -ErrorAction Stop | Out-Null
+        } catch {
+            Write-Log "Could not check/clean up BITS job $jobName`: $($_.Exception.Message)" 'WARN'
+        }
+        return $false
+    } finally {
+        if ($partialPath -and (Test-Path -LiteralPath $partialPath)) {
+            try { Remove-Item -LiteralPath $partialPath -Force -ErrorAction Stop }
+            catch { Write-Log "Could not remove partial download $partialPath`: $_" 'WARN' }
+        }
+    }
+}
+
+# Extract an archive, preferring installed 7-Zip and falling back to Expand-Archive.
+# Extraction writes into the requested destination; callers choose whether/how to install it.
+function Expand-FastArchive {
+    param(
+        [Parameter(Mandatory=$true)][string]$Path,
+        [Parameter(Mandatory=$true)][string]$DestinationPath
+    )
+    if (-not (Test-Path $DestinationPath)) {
+        New-Item -ItemType Directory -Path $DestinationPath -Force | Out-Null
+    }
+
+    # Try 7-Zip if installed
+    $7z = @(
+        "$env:ProgramFiles\7-Zip\7z.exe",
+        "${env:ProgramFiles(x86)}\7-Zip\7z.exe"
+    ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+
+    if ($7z) {
+        $p = Start-Process -FilePath $7z -ArgumentList "x", "-y", "`"-o$DestinationPath`"", "`"$Path`"" -NoNewWindow -Wait -PassThru
+        if ($p.ExitCode -eq 0) {
+            [System.GC]::Collect()
+            return
+        }
+    }
+
+    # Fallback to Expand-Archive with explicit garbage collection
+    Expand-Archive -Path $Path -DestinationPath $DestinationPath -Force
+    [System.GC]::Collect()
+}
+
+# Validate Microsoft Authenticode identity without executing the candidate.
+function Test-MicrosoftSignedBinary {
+    param([string]$Path)
+    try {
+        $signature = Get-AuthenticodeSignature -LiteralPath $Path -ErrorAction Stop
+        return ($signature.Status -eq 'Valid' -and $signature.SignerCertificate -and
+            $signature.SignerCertificate.Subject -match '(?:^|,\s*)O=Microsoft Corporation(?:,|$)')
+    } catch { return $false }
+}
+
+# Check ACLs/owner throughout the binary directory and reject earlier unsafe
+# trees, then verify Microsoft's signature BEFORE running even --version.
+function Test-WingetExecutable {
+    param([string]$Path)
+    if (-not $Path -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $false }
+    foreach ($rejected in $script:RejectedWingetDirectories) {
+        if ([IO.Path]::GetFullPath($Path).StartsWith($rejected.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) { return $false }
+    }
+    if (-not (Test-TrustedPath (Split-Path $Path -Parent) -Recurse) -or
+        -not (Test-MicrosoftSignedBinary $Path)) {
+        Write-Warning "Skipping untrusted or non-Microsoft WinGet candidate: $Path"
+        return $false
+    }
+    Set-InstallConsoleColors
+    try {
+        try {
+            $p = Start-Process -FilePath $Path -ArgumentList '--version', '--no-vt' -NoNewWindow -Wait -PassThru -ErrorAction Stop
+            if ($p.ExitCode -eq 0) { return $true }
+        } catch {}
+
+        try {
+            $out = & $Path --version --no-vt 2>&1
+            if ($LASTEXITCODE -eq 0) { return $true }
+        } catch {}
+
+        return $false
+    } finally { Set-InstallConsoleColors }
+}
+
+# Search standard, app-alias, staged-package, and local portable locations in order.
+# Return the first candidate passing the version check, or no path when none works.
+function Get-WingetPath {
+    # 1. In existing PATH
+    foreach ($cmd in @(Get-Command winget -CommandType Application -All -ErrorAction SilentlyContinue)) {
+        if (Test-WingetExecutable $cmd.Source) { return $cmd.Source }
+    }
+
+    # 2. Local tool installation
+    $local = Join-Path $script:PortableWingetDirectory 'winget.exe'
+    if (Test-WingetExecutable $local) { return $local }
+
+    # 3. User app execution alias
+    $alias = "$env:LOCALAPPDATA\Microsoft\WindowsApps\winget.exe"
+    if (Test-WingetExecutable $alias) { return $alias }
+
+    # 4. Search WindowsApps for staged DesktopAppInstaller
+    $appxDir = Get-ChildItem -Path "$env:ProgramFiles\WindowsApps" -Filter "Microsoft.DesktopAppInstaller_*_x64__8wekyb3d8bbwe" -ErrorAction SilentlyContinue |
+        Sort-Object Name | Select-Object -Last 1
+    if ($appxDir) {
+        $candidate = Join-Path $appxDir.FullName 'winget.exe'
+        if (Test-Path $candidate) {
+            if (Test-WingetExecutable $candidate) { return $candidate }
+        }
+    }
+
+    # 5. AppxPackage InstallLocation
+    $pkg = Get-AppxPackage -AllUsers Microsoft.DesktopAppInstaller -ErrorAction SilentlyContinue |
+        Sort-Object Version -Descending | Select-Object -First 1
+    if ($pkg -and $pkg.InstallLocation) {
+        $candidate = Join-Path $pkg.InstallLocation 'winget.exe'
+        if (Test-Path $candidate) {
+            if (Test-WingetExecutable $candidate) { return $candidate }
+        }
+    }
+
+    # 6. Portable Program Files directory
+    $prog = "$env:ProgramFiles\Microsoft\winget\winget.exe"
+    if (Test-WingetExecutable $prog) { return $prog }
+
+    return $null
+}
+
+# Copy staged WinGet files into C:\Tools\winget, ensure the VC++ runtime is available,
+# and set permissions for elevated use. The caller adds a verified executable to PATH.
+function Install-WingetLocal {
+    param([string]$SourceDir)
+
+    $dest = $script:PortableWingetDirectory
+    Initialize-Directory $dest -Private
+
+    if (-not $SourceDir) {
+        $pkg = Get-AppxPackage -AllUsers Microsoft.DesktopAppInstaller -ErrorAction SilentlyContinue |
+            Sort-Object Version -Descending | Select-Object -First 1
+        if ($pkg -and $pkg.InstallLocation -and (Test-Path $pkg.InstallLocation)) {
+            $SourceDir = $pkg.InstallLocation
+        }
+        else {
+            $found = Get-ChildItem -Path "$env:ProgramFiles\WindowsApps" -Filter "Microsoft.DesktopAppInstaller_*_x64__8wekyb3d8bbwe" -ErrorAction SilentlyContinue |
+                Sort-Object Name | Select-Object -Last 1
+            if ($found) { $SourceDir = $found.FullName }
+        }
+    }
+
+    if ($SourceDir -and (Test-Path $SourceDir)) {
+        # Read from WindowsApps using backup-mode copy instead of taking
+        # ownership/changing the installed package's original directory permissions.
+        # Robocopy with /B (backup operator mode to safely copy without modifying WindowsApps ACLs)
+        robocopy $SourceDir $dest /B /E /MT:2 /R:1 /W:1 /NFL /NDL /NJH /NJS | Out-Null
+        if ($LASTEXITCODE -ge 8) { throw "WinGet copy failed (robocopy exit $LASTEXITCODE)." }
+    }
+
+    Install-WingetRuntime
+    if (-not (Test-TrustedPath $dest -Recurse)) { throw 'Portable WinGet directory failed permission verification.' }
+
+    # The caller locates and verifies winget.exe before adding it to PATH.
+}
+
+function Install-WingetRuntime {
+    # Ensure VC++ Redistributable is installed (required by standalone winget runtime)
+    $vcKey = 'HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64'
+    $hasVc = (Test-Path $vcKey) -and ((Get-ItemProperty -Path $vcKey -Name Installed -ErrorAction SilentlyContinue).Installed -eq 1)
+    if (-not $hasVc) {
+        $vc = "$DownloadsDir\vc_redist.x64.exe"
+        $vcAvailable = (Test-TrustedPath $vc) -and (Test-MicrosoftSignedBinary $vc)
+        if (-not $vcAvailable) {
+            $vcAvailable = Invoke-BitsDownload 'https://aka.ms/vs/17/release/vc_redist.x64.exe' $vc 'VC++ Redistributable'
+        }
+        if ($vcAvailable) {
+            if (-not (Test-TrustedPath $vc) -or -not (Test-MicrosoftSignedBinary $vc)) {
+                throw 'VC++ runtime installer failed trust/signature verification.'
+            }
+            Invoke-WithStatus "Installing VC++ Redistributable" "Installed VC++ Redistributable" {
+                param($exe)
+                $process = Start-Process $exe -ArgumentList '/install','/quiet','/norestart' -Wait -PassThru
+                if ($process.ExitCode -notin 0, 3010) { throw "VC++ runtime installer exited with code $($process.ExitCode)." }
+            } @($vc)
+        }
+    }
+}
+
+function Save-WingetReleaseAsset {
+    param($Asset, [string]$Destination)
+    if (@($Asset).Count -ne 1 -or $Asset.digest -notmatch '^sha256:[0-9a-f]{64}$' -or
+        $Asset.browser_download_url -notlike 'https://github.com/microsoft/winget-cli/releases/download/*') {
+        throw "Missing verified WinGet release metadata for $Destination."
+    }
+    if (-not (Invoke-BitsDownload $Asset.browser_download_url $Destination $Asset.name)) { throw "Download failed: $($Asset.name)" }
+    $hash = (Get-FileHash -LiteralPath $Destination -Algorithm SHA256 -ErrorAction Stop).Hash
+    if ("sha256:$hash" -ne $Asset.digest) { throw "SHA-256 mismatch: $($Asset.name)" }
+}
+
+function Publish-PortableWinget {
+    param([string]$Bundle, [string[]]$Dependencies, [string]$Work, [string]$Destination)
+    $unpacked = Join-Path $Work 'bundle'
+    $staged = Join-Path $Work 'portable'
+    [IO.Compression.ZipFile]::ExtractToDirectory($Bundle, $unpacked)
+    $engine = @(Get-ChildItem -LiteralPath $unpacked -File -Filter '*x64*.msix' | Where-Object Name -NotMatch 'stub')
+    if ($engine.Count -ne 1) { throw 'Cannot identify one x64 WinGet engine package.' }
+    [IO.Compression.ZipFile]::ExtractToDirectory($engine[0].FullName, $staged)
+    foreach ($dependency in $Dependencies) {
+        # Each AppX has its own manifest and metadata. Merge missing runtime
+        # files only after that dependency has fully extracted.
+        $expanded = Join-Path $Work ([guid]::NewGuid().ToString('N'))
+        [IO.Compression.ZipFile]::ExtractToDirectory($dependency, $expanded)
+        foreach ($file in Get-ChildItem -LiteralPath $expanded -Recurse -File) {
+            $target = Join-Path $staged $file.FullName.Substring($expanded.Length + 1)
+            if ([IO.File]::Exists($target)) { continue }
+            $null = [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($target))
+            [IO.File]::Copy($file.FullName, $target)
+        }
+    }
+    if (-not (Test-WingetExecutable (Join-Path $staged 'winget.exe'))) { throw 'Staged WinGet failed its permissions, signature or version check.' }
+    # Both paths are under C:\Tools. Directory.Move publishes the complete
+    # tree in one rename and refuses to overwrite an existing installation.
+    [IO.Directory]::Move($staged, $Destination)
+    $script:PortableWingetDirectory = $Destination
+    return (Join-Path $Destination 'winget.exe')
+}
+
+# Older servers may reject AppX registration of the Windows App Runtime.
+# Extract verified x64 packages privately and run the candidate's version check.
+function Install-PortableWinget {
+    Write-Log 'Trying portable WinGet from verified Microsoft release packages'
+    $work = $null
+    try {
+        Install-WingetRuntime
+        $attempt = [guid]::NewGuid().ToString('N')
+        $work = (New-Item -ItemType Directory -Path (Join-Path $DownloadsDir "winget-bootstrap-$attempt") -ErrorAction Stop).FullName
+        $release = Invoke-RestMethod 'https://api.github.com/repos/microsoft/winget-cli/releases/latest' -Headers @{ 'User-Agent' = 'PowerShell' } -TimeoutSec 15 -ErrorAction Stop
+        $bundle = Join-Path $work 'winget.msixbundle'
+        $depsZip = Join-Path $work 'winget-deps.zip'
+        Save-WingetReleaseAsset ($release.assets | Where-Object name -EQ 'Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle') $bundle
+        Save-WingetReleaseAsset ($release.assets | Where-Object name -EQ 'DesktopAppInstaller_Dependencies.zip') $depsZip
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $depsRoot = Join-Path $work 'dependencies'
+        [IO.Compression.ZipFile]::ExtractToDirectory($depsZip, $depsRoot)
+        $depsPath = Join-Path $depsRoot 'x64'
+        if (-not (Test-Path -LiteralPath $depsPath)) { $depsPath = $depsRoot }
+        $deps = @(Get-ChildItem -LiteralPath $depsPath -File | Where-Object { $_.Extension -in '.appx', '.msix' } | Select-Object -ExpandProperty FullName)
+
+        return (Publish-PortableWinget $bundle $deps $work (Join-Path $InstallDir "winget-ready-$attempt"))
+    }
+    catch {
+        Write-Log "Portable WinGet setup failed: $($_.Exception.Message)" ERROR
+        return $null
+    } finally {
+        if ($work -and (Test-Path -LiteralPath $work)) {
+            Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction Continue
+        }
+    }
+}
+
+# On Server 2019/2022 the portable path avoids AppX deployment entirely.
+# Server 2025 starts at build 26100 and supports the packaged repair client.
+function Initialize-Winget {
+    param([int]$Build)
+    $path = Get-WingetPath
+    if ($path) { return $path }
+
+    if ($Build -ge 26100) {
+        try {
+            if (-not (Get-Module -Name Microsoft.WinGet.Client)) {
+                if (-not (Get-Module -ListAvailable -Name Microsoft.WinGet.Client)) {
+                    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+                    Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope CurrentUser -ErrorAction Stop | Out-Null
+                    Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction Stop
+                    Install-Module -Name Microsoft.WinGet.Client -Scope CurrentUser -Repository PSGallery -Force -ErrorAction Stop
+                }
+                Import-Module Microsoft.WinGet.Client -ErrorAction Stop
+            }
+            Invoke-WithStatus "Running Repair-WinGetPackageManager on build $Build (this may lag)" 'Completed WinGet package manager repair' {
+                Microsoft.WinGet.Client\Repair-WinGetPackageManager -AllUsers -Latest -Force -ErrorAction Stop | Out-Null
+            }
+            $path = Get-WingetPath
+            if ($path) { return $path }
+            Install-WingetLocal
+            $path = Get-WingetPath
+            if ($path) { return $path }
+        } catch { Write-Warning "Packaged WinGet repair failed: $_" }
+    } else {
+        Write-Log "Server build $Build uses the portable WinGet setup."
+    }
+    return (Install-PortableWinget)
+}
+
+# WFC setup stays open unless told to close. A WinGet manifest may also
+# launch the tray UI. Supply the same vendor switches on both install paths.
+function Invoke-FirewallControlSetup {
+    param([string]$FilePath, [string[]]$WingetArguments)
+    $setupArgs = if (Get-Service -Name wfcs -ErrorAction SilentlyContinue) { '-update -close' } else { '-install -close' }
+    $start = [Diagnostics.ProcessStartInfo]::new()
+    $start.FileName = $FilePath
+    $start.UseShellExecute = $false
+    $start.Arguments = if ($WingetArguments) {
+        ($WingetArguments -join ' ') + ' --override "' + $setupArgs + '"'
+    } else { $setupArgs }
+
+    # Wait for setup (or WinGet) to return its exit code. Tray processes can
+    # outlive the installer and should never hold up the remaining packages.
+    $process = [Diagnostics.Process]::Start($start)
+    try {
+        $process.WaitForExit()
+        return $process.ExitCode
+    } finally { $process.Dispose() }
+}
+
+# MAIN EXECUTION: helpers above are ready; the shed scripts are fetched before
+# WinGet bootstrap and before any standalone tool or application install.
+try {
+    # 0. Fetch the shed scripts before WinGet bootstrap or any tool installation.
+    Write-RunHeading 'Competition scripts'
+    Write-Log "Checking for shed-hardening, shed-scraper, and shed-dns in $InstallDir."
+    $scriptBranch = if ($Branch) { 'shed-branch' } else { 'master' }
+    $repo = "https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/$scriptBranch/windows"
+    foreach ($script in @("shed-hardening.ps1", "shed-scraper.ps1", "shed-dns.ps1")) {
+        $target = "$InstallDir\$script"
+        if (-not (Test-Path $target)) {
+            $downloadSucceeded = Invoke-BitsDownload "$repo/$script" $target
+            if (-not $downloadSucceeded) { Write-Warning "Could not fetch $script via BITS." }
+        }
+    }
+
+    if ($isMSSQL -and -not $isDC) {
+        $dockerChoice = Read-Host 'Install Docker CE on this SQL host and defer any required reboot? [Y/N] (Enter = N)'
+        if ($dockerChoice.Trim() -in @('y', 'yes')) {
+            $Downloads.Add(@{
+                Name = 'Docker'
+                Url  = 'https://raw.githubusercontent.com/microsoft/Windows-Containers/Main/helpful_tools/Install-DockerCE/install-docker-ce.ps1'
+            })
+        }
+    }
+
+    Write-RunHeading 'WinGet setup'
+    $wingetPath = Initialize-Winget -Build ([Environment]::OSVersion.Version.Build)
+
+    if ($wingetPath) {
+        Write-Log "WinGet executable: $wingetPath" SUCCESS
+        # Ensure winget directory is in current session path
+        $wDir = Split-Path -Parent $wingetPath
+        if ($wDir -and $env:Path -notlike "*$wDir*") { $env:Path = "$wDir;$env:Path" }
+
+        try {
+            Set-InstallConsoleColors
+            $null = & $wingetPath --version --no-vt
+            # Initialize / update community source index
+            Write-Log "Initializing winget package source"
+            & $wingetPath source update --disable-interactivity --no-vt 2>&1 | Out-Null
+        } catch {
+            Write-Warning "Could not execute winget version check: $($_.Exception.Message)"
+        } finally { Set-InstallConsoleColors }
+    }
+    else {
+        Write-Log "WinGet is unavailable. Direct installers will be used where available." WARN
+    }
+
+    #----------------------------------------------------------
+    # SEQUENTIAL INSTALLATION & DOWNLOAD PIPELINE
+    #----------------------------------------------------------
+    # The result table begins here. It covers standalone tools and package
+    # installs, not every prior bootstrap or later post-install operation.
+    $jobResults = [System.Collections.Generic.List[PSCustomObject]]::new()
+
+    # 1. Process Standalone Tool Downloads & Extractions
+    Write-RunHeading 'Standalone tools'
+    foreach ($d in $Downloads) {
+        $name = $d.Name
+        $url = $d.Url
+        $installArgs = $d.InstallArgs
+
+        $filename = Split-Path -Leaf $url
+        if (-not $filename -or $filename -notlike "*.*") {
+            $filename = if ($installArgs) { "$name.exe" } else { "$name.dat" }
+        }
+        $outFile = Join-Path $DownloadsDir $filename
+
+        # A stale file may exist from an earlier run. Never use its existence
+        # as evidence that the current download succeeded.
+        $downloadSucceeded = Invoke-BitsDownload $url $outFile "$name ($filename)"
+
+        if ($downloadSucceeded -and (Test-Path -LiteralPath $outFile) -and (Get-Item -LiteralPath $outFile).Length -gt 0) {
+            # Extract archive if zip
+            if ($filename -like "*.zip") {
+                $extractPath = Join-Path $InstallDir $name
+                Write-Log "[$name] Extracting archive to $extractPath"
+                try {
+                    Expand-FastArchive -Path $outFile -DestinationPath $extractPath
+                    Write-Log "[$name] Archive extracted successfully." SUCCESS
+                    $jobResults.Add([PSCustomObject]@{
+                        JobName = $name
+                        Status  = "Success"
+                        Details = "Extracted to $extractPath"
+                    })
+                } catch {
+                    Write-Warning "[$name] Archive extraction failed: $($_.Exception.Message)"
+                    $jobResults.Add([PSCustomObject]@{
+                        JobName = $name
+                        Status  = "Failed"
+                        Details = "Extraction error: $($_.Exception.Message)"
+                    })
+                    continue
+                }
+                if ($name -eq 'Sysinternals') {
+                    foreach ($key in @('HKCU:\Software\Sysinternals', 'HKLM:\SOFTWARE\Sysinternals')) {
+                        try {
+                            if (-not (Test-Path $key)) { New-Item -Path $key -Force -ErrorAction Stop | Out-Null }
+                            Set-ItemProperty -Path $key -Name 'EulaAccepted' -Value 1 -Type DWord -Force -ErrorAction Stop
+                            Write-Log "Sysinternals EULA accepted at $key." SUCCESS
+                        } catch { Write-Warning "Could not record Sysinternals EULA acceptance at ${key}: $_" }
+                    }
+                }
+            }
+            elseif ($name -eq 'Docker') {
+                try {
+                    $windowsPowerShell = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+                    $proc = Start-Process -FilePath $windowsPowerShell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$outFile`" -NoRestart" -Wait -PassThru
+                    if ($proc.ExitCode -notin 0, 3010) { throw "Installer exited with code $($proc.ExitCode)." }
+                    $dockerService = Get-Service -Name docker -ErrorAction SilentlyContinue
+                    if ($dockerService.Status -ne 'Running') {
+                        throw 'Docker service is missing or stopped. Check whether Containers requires a reboot, then rerun setup.'
+                    }
+                    $jobResults.Add([PSCustomObject]@{ JobName=$name; Status='Success'; Details='Docker service verified running' })
+                } catch {
+                    Write-Warning "Docker installation needs attention: $_"
+                    $jobResults.Add([PSCustomObject]@{ JobName=$name; Status='Failed'; Details=$_.Exception.Message })
+                }
+            }
+            # Wait for the interactive installer before starting the next tool.
+            elseif ($installArgs) {
+                try {
+                    Write-Log "Complete the $name setup wizard to continue."
+                    $proc = Start-Process -FilePath $outFile -ArgumentList $installArgs -Wait -PassThru -ErrorAction Stop
+                    if ($proc.ExitCode -eq 1 -and $name -eq 'Npcap') { throw 'Npcap setup was canceled.' }
+                    if ($proc.ExitCode -notin 0, 3010) { throw "Installer exited with code $($proc.ExitCode)." }
+                    $jobResults.Add([PSCustomObject]@{
+                        JobName = $name
+                        Status  = "Success"
+                        Details = $(if ($proc.ExitCode -eq 3010) { 'Installed; reboot required' } else { 'Installed' })
+                    })
+                } catch {
+                    Write-Warning "[$name] Installation failed: $($_.Exception.Message)"
+                    $jobResults.Add([PSCustomObject]@{
+                        JobName = $name
+                        Status  = "Failed"
+                        Details = "$($_.Exception.Message)"
+                    })
+                }
+            }
+            else {
+                $jobResults.Add([PSCustomObject]@{
+                    JobName = $name
+                    Status  = "Success"
+                    Details = "Downloaded to $outFile"
+                })
+            }
+        } else {
+            $jobResults.Add([PSCustomObject]@{
+                JobName = $name
+                Status  = "Failed"
+                Details = "Download failed"
+            })
+        }
+    }
+
+    # 2. Process WinGet Package Installations
+    Write-RunHeading 'Application packages'
+    if ($wingetPath) {
+        # These are package identifiers, not executable names. Keep --exact
+        # matching for normal installs; WFC has a deliberate second-attempt name fallback.
+        $packages = @('Mozilla.Firefox', '7zip.7zip', 'BiniSoft.WindowsFirewallControl', 'Malwarebytes.Malwarebytes')
+        Write-Log "Installing packages sequentially via winget: $($packages -join ', ')"
+
+        $maxRetries = 2
+        $retryDelay = 3
+
+        foreach ($pkgId in $packages) {
+            Write-Log "[$pkgId] Starting WinGet installation"
+            $installed = $false
+            $lastCode = 0
+
+            for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
+                Write-Log "[$pkgId] (Attempt $attempt/$maxRetries) Running winget install"
+                
+                # Malwarebytes is interactive so the operator can manually work through it
+                if ($pkgId -match 'Malwarebytes') {
+                    $wingetArgs = @('install', '--id', $pkgId, '--exact', '--source', 'winget', '--accept-package-agreements', '--accept-source-agreements')
+                } elseif ($attempt -eq 2 -and $pkgId -match 'WindowsFirewallControl') {
+                    # Broaden search if exact ID was not found on first attempt
+                    # Start-Process flattens argument arrays; retain native quotes
+                    # around this multiword name in the resulting command line.
+                    $wingetArgs = @('install', '--name', '"Windows Firewall Control"', '--silent', '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity')
+                } else {
+                    $wingetArgs = @('install', '--id', $pkgId, '--exact', '--source', 'winget', '--silent', '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity')
+                }
+                
+                # WinGet's VT reset sequences can restore the console's original
+                # blue background. Plain native output retains our black theme.
+                $wingetArgs += '--no-vt'
+                Set-InstallConsoleColors
+                try {
+                    if ($pkgId -eq 'BiniSoft.WindowsFirewallControl') {
+                        $lastCode = Invoke-FirewallControlSetup $wingetPath $wingetArgs
+                    } else {
+                        $proc = Start-Process -FilePath $wingetPath -ArgumentList $wingetArgs -NoNewWindow -Wait -PassThru
+                        $lastCode = $proc.ExitCode
+                    }
+                } catch {
+                    $lastCode = -1
+                } finally { Set-InstallConsoleColors }
+
+                # 0 is success; 3010 is success with a restart requested.
+                # Verification below tries winget list, but exit-code success is
+                # still recorded even when the list verification cannot confirm the package.
+                if ($lastCode -in 0, 3010) {
+                    # Validate installation via winget list
+                    $isVerified = $false
+                    try {
+                        $listOut = & $wingetPath list --id $pkgId --exact --disable-interactivity --no-vt 2>&1
+                        if ($LASTEXITCODE -eq 0 -and "$listOut" -match [regex]::Escape($pkgId)) {
+                            $isVerified = $true
+                        }
+                    } catch {} finally { Set-InstallConsoleColors }
+
+                    if ($isVerified) {
+                        Write-Log "[$pkgId] Installation verified by WinGet" SUCCESS
+                        $details = "Installed & verified via winget"
+                    } else {
+                        Write-Log "[$pkgId] Installer returned success (exit code $lastCode). WinGet could not verify the package." SUCCESS
+                        $details = "Installed via winget"
+                    }
+
+                    if ($lastCode -eq 3010) { $details += '. Restart required.' }
+                    $installed = $true
+                    $jobResults.Add([PSCustomObject]@{
+                        JobName = $pkgId
+                        Status  = "Success"
+                        Details = $details
+                    })
+                    break
+                } else {
+                    if ($attempt -lt $maxRetries) {
+                        Write-Warning "[$pkgId] Winget returned code $lastCode. Retrying in ${retryDelay}s..."
+                        Start-Sleep -Seconds $retryDelay
+                    }
+                }
+            }
+
+            # Failure of one package does not undo previous installs. Only the
+            # listed products have a direct-installer fallback; others retain a failed result.
+            # Direct fallback if winget installation failed
+            if (-not $installed) {
+                Write-Warning "[$pkgId] Winget install failed (exit code $lastCode). Triggering direct fallback..."
+                if ($pkgId -match 'Firefox') {
+                    try {
+                        $targetExe = Join-Path $DownloadsDir "FirefoxInstaller.exe"
+                        $downloadSucceeded = Invoke-BitsDownload 'https://download.mozilla.org/?product=firefox-latest-ssl&os=win64&lang=en-US' $targetExe 'Firefox direct installer'
+                        if ($downloadSucceeded -and (Test-Path -LiteralPath $targetExe)) {
+                            $proc = Start-Process -FilePath $targetExe -ArgumentList '/S' -Wait -PassThru
+                            if ($proc.ExitCode -in 0, 3010) {
+                                Write-Log "[$pkgId] Firefox installed directly via silent installer" SUCCESS
+                                $installed = $true
+                                $jobResults.Add([PSCustomObject]@{
+                                    JobName = $pkgId
+                                    Status  = "Success"
+                                    Details = "Installed via direct installer"
+                                })
+                            }
+                        }
+                    } catch {
+                        Write-Warning "Firefox direct install failed: $($_.Exception.Message)"
+                    }
+                }
+                elseif ($pkgId -match '7zip') {
+                    try {
+                        $targetMsi = Join-Path $DownloadsDir "7z-x64.msi"
+                        $downloadSucceeded = Invoke-BitsDownload 'https://github.com/ip7z/7zip/releases/download/26.06/7z2606-x64.msi' $targetMsi '7-Zip direct MSI'
+                        if ($downloadSucceeded -and (Test-Path -LiteralPath $targetMsi)) {
+                            $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList "/i `"$targetMsi`" /qn /norestart" -Wait -PassThru
+                            if ($proc.ExitCode -in 0, 3010) {
+                                Write-Log "[$pkgId] 7-Zip installed directly via MSI" SUCCESS
+                                $installed = $true
+                                $jobResults.Add([PSCustomObject]@{
+                                    JobName = $pkgId
+                                    Status  = "Success"
+                                    Details = "Installed via direct MSI"
+                                })
+                            }
+                        }
+                    } catch {
+                        Write-Warning "7-Zip direct install failed: $($_.Exception.Message)"
+                    }
+                }
+                elseif ($pkgId -match 'WindowsFirewallControl') {
+                    try {
+                        $targetExe = Join-Path $DownloadsDir "wfc6setup.exe"
+                        $downloadSucceeded = Invoke-BitsDownload 'https://binisoft.org/download/wfc6setup.exe' $targetExe 'Windows Firewall Control installer'
+                        if ($downloadSucceeded -and (Test-Path -LiteralPath $targetExe)) {
+                            Invoke-WithStatus "Installing Windows Firewall Control" "Windows Firewall Control installed successfully" {
+                                $exitCode = Invoke-FirewallControlSetup $targetExe
+                                if ($exitCode -notin 0, 3010) {
+                                    $exitCode = Invoke-FirewallControlSetup $targetExe
+                                }
+                                if ($exitCode -notin 0, 3010) { throw "Firewall Control installer failed (exit $exitCode)." }
+                            }
+                            Write-Log "[$pkgId] Windows Firewall Control installed directly" SUCCESS
+                            $installed = $true
+                            $jobResults.Add([PSCustomObject]@{
+                                JobName = $pkgId
+                                Status  = "Success"
+                                Details = "Installed via direct installer"
+                            })
+                        }
+                    } catch {
+                        Write-Warning "Windows Firewall Control direct install failed: $($_.Exception.Message)"
+                    }
+                }
+            }
+
+            if (-not $installed) {
+                Write-Log "[$pkgId] Installation failed (code $lastCode)." ERROR
+                $jobResults.Add([PSCustomObject]@{
+                    JobName = $pkgId
+                    Status  = "Failed"
+                    Details = "Exit code $lastCode"
+                })
+            }
+        }
+    }
+    else {
+        Write-Warning "winget unavailable. Falling back to direct silent installers..."
+        # Firefox Direct Fallback
+        $targetExe = Join-Path $DownloadsDir "FirefoxInstaller.exe"
+        $downloadSucceeded = Invoke-BitsDownload 'https://download.mozilla.org/?product=firefox-latest-ssl&os=win64&lang=en-US' $targetExe 'Firefox installer'
+        if ($downloadSucceeded -and (Test-Path -LiteralPath $targetExe)) {
+            $proc = Start-Process -FilePath $targetExe -ArgumentList '/S' -Wait -PassThru
+            if ($proc.ExitCode -in 0, 3010) {
+                Write-Log "Firefox installed directly" SUCCESS
+                $jobResults.Add([PSCustomObject]@{
+                    JobName = 'Firefox'
+                    Status  = "Success"
+                    Details = "Installed via direct silent installer"
+                })
+            } else {
+                Write-Log "Firefox direct installer failed with code $($proc.ExitCode)" ERROR
+                $jobResults.Add([PSCustomObject]@{
+                    JobName = 'Firefox'
+                    Status  = "Failed"
+                    Details = "Exit code $($proc.ExitCode)"
+                })
+            }
+        } else {
+            $jobResults.Add([PSCustomObject]@{ JobName = 'Firefox'; Status = 'Failed'; Details = 'BITS download failed' })
+        }
+
+        # Windows Firewall Control Direct Fallback
+        $wfcExe = Join-Path $DownloadsDir "wfc6setup.exe"
+        $downloadSucceeded = Invoke-BitsDownload 'https://binisoft.org/download/wfc6setup.exe' $wfcExe 'Windows Firewall Control installer'
+        if ($downloadSucceeded -and (Test-Path -LiteralPath $wfcExe)) {
+            try {
+                $exitCode = Invoke-FirewallControlSetup $wfcExe
+                if ($exitCode -notin 0, 3010) { throw "Installer exited with code $exitCode." }
+                $jobResults.Add([PSCustomObject]@{ JobName = 'BiniSoft.WindowsFirewallControl'; Status = 'Success'; Details = "Installed directly (exit code $exitCode)" })
+            } catch {
+                $jobResults.Add([PSCustomObject]@{ JobName = 'BiniSoft.WindowsFirewallControl'; Status = 'Failed'; Details = $_.Exception.Message })
+            }
+        } else {
+            $jobResults.Add([PSCustomObject]@{ JobName = 'BiniSoft.WindowsFirewallControl'; Status = 'Failed'; Details = 'BITS download failed' })
+        }
+    }
+
+    # This summarizes recorded package/tool outcomes. Review earlier warnings
+    # too, because optional/bootstrap/post-install work may not be included.
+    # 3. Final Status Output
+    $successCount = ($jobResults | Where-Object { $_.Status -eq 'Success' }).Count
+    $failCount = ($jobResults | Where-Object { $_.Status -eq 'Failed' }).Count
+    $totalCount = $jobResults.Count
+
+    Write-RunHeading 'Installation results'
+    $jobResults | Format-Table @{Name='Item'; Expression={$_.JobName}}, Status, Details -AutoSize -Wrap | Out-String | Write-Host
+
+    if ($failCount -eq 0) {
+        Write-Log "All $totalCount listed operations succeeded." SUCCESS
+    }
+    else {
+        Write-Log "Listed operations: $successCount succeeded, $failCount failed." ERROR
+    }
+
+    # Post-install: Add Tools, Sysinternals & winget directory to system PATH if not already present
+    try {
+        $sysinternalsDir = "$InstallDir\Sysinternals"
+        $wingetDir = if ($wingetPath -and (Split-Path -Parent $wingetPath) -eq $script:PortableWingetDirectory) { $script:PortableWingetDirectory }
+        $machinePath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
+        $machineEntries = @($machinePath -split ';' | Where-Object { $_ -and $_.TrimEnd('\') -notin $script:RejectedWingetDirectories })
+        $pathsToAdd = @($InstallDir, $sysinternalsDir, $wingetDir) | Where-Object { $_ -and (Test-TrustedPath $_) -and $_ -notin $machineEntries }
+        $newPath = (@($machineEntries) + @($pathsToAdd) | Select-Object -Unique) -join ';'
+        if ($newPath -ne $machinePath) {
+            [System.Environment]::SetEnvironmentVariable("Path", $newPath, "Machine")
+            $processEntries = @($env:Path -split ';' | Where-Object { $_ -and $_.TrimEnd('\') -notin $script:RejectedWingetDirectories })
+            $env:Path = (@($newPath -split ';') + $processEntries | Select-Object -Unique) -join ';'
+            Write-Log "System PATH updated with $InstallDir" SUCCESS
+        }
+    } catch {}
+
+    Write-Log "Installation run finished."
+}
+catch {
+    Write-Log "Installation stopped: $($_.Exception.Message)" ERROR
+    Write-Host $_.ScriptStackTrace -ForegroundColor DarkGray
+}
+finally {
+    if (Test-Path -LiteralPath $script:TranscriptPath) { Write-Log "Transcript: $script:TranscriptPath" }
+    try { Stop-Transcript -ErrorAction SilentlyContinue | Out-Null } catch {}
+}
+
+Write-Host ""
+Read-Host "Press Enter to exit"
