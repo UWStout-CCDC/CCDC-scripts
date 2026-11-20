@@ -1208,8 +1208,8 @@ function Invoke-AccountReview {
     # verification appear successful or incomplete merely by switching servers.
     if ($DomainController) {
         Import-Module ActiveDirectory -ErrorAction Stop
-        # Pin reads/writes to one DC so replication delay does not spoil verification.
-        $script:AccountServer = (Get-ADDomain -ErrorAction Stop).PDCEmulator
+        # Target localhost so queries bypass inbound port 9389 blocks over loopback.
+        $script:AccountServer = 'localhost'
     }
     $inventory = Get-AccountInventory -DomainController $DomainController
     $administrator = @($inventory.Users | Where-Object SID -Match '-500$')
@@ -1361,8 +1361,8 @@ function Invoke-LockoutBaseline {
         if ($DomainController) {
             Import-Module ActiveDirectory -ErrorAction Stop
             $domain = Get-ADDomain -ErrorAction Stop
-            Set-ADDefaultDomainPasswordPolicy -Identity $domain.DNSRoot -Server $domain.PDCEmulator -LockoutThreshold 10 -LockoutDuration ([timespan]::FromMinutes(15)) -LockoutObservationWindow ([timespan]::FromMinutes(15)) -ErrorAction Stop
-            $policy = Get-ADDefaultDomainPasswordPolicy -Identity $domain.DNSRoot -Server $domain.PDCEmulator -ErrorAction Stop
+            Set-ADDefaultDomainPasswordPolicy -Identity $domain.DNSRoot -Server 'localhost' -LockoutThreshold 10 -LockoutDuration ([timespan]::FromMinutes(15)) -LockoutObservationWindow ([timespan]::FromMinutes(15)) -ErrorAction Stop
+            $policy = Get-ADDefaultDomainPasswordPolicy -Identity $domain.DNSRoot -Server 'localhost' -ErrorAction Stop
             if ($policy.LockoutThreshold -ne 10 -or $policy.LockoutDuration.TotalMinutes -ne 15 -or $policy.LockoutObservationWindow.TotalMinutes -ne 15) { throw 'Domain lockout policy read-back did not match.' }
         } else {
             Invoke-CheckedNativeCommand "$env:SystemRoot\System32\net.exe" @('accounts', '/lockoutthreshold:10', '/lockoutduration:15', '/lockoutwindow:15')

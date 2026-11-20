@@ -18,21 +18,22 @@ removed. AD/DNS essentials, related mail MX records, and explicit exceptions sta
 Other zones and the AD forest are retained.
 AD service records are re-registered through Netlogon, not fabricated.
 .NOTES
-FLOW: private workspace -> configuration -> audit -> optional recovery -> audit.
-Recovery starts DNS-related services; verifies local AD; saves a verified snapshot;
-shows a plan; then requires confirmation before zone/record/network changes.
-Client DNS/listener repairs and optional forwarders are explicitly selected.
+Run order
+  1. Enter the domain and network, then review the host addresses.
+  2. Read the local health checks. Enter finishes the audit.
+  3. Choose Repair or Rebuild to preview changes. Service startup and the final
+     recovery plan each require their own typed confirmation.
+  4. Review the next audit after DNS registration has had time to complete.
 
-C:\Tools\logs\dns-<run> holds checks, plans, transcripts and action events.
-C:\Tools\backups\dns-<run> holds CLIXML configuration/record snapshots and hashes.
-Snapshots are data for manual recovery, not an AD system-state/record ACL backup.
-Failed managed-record changes attempt to restore that node's original data/TTL.
-Unrelated removals remain recorded in the snapshots/audit for manual recovery.
-Earlier successful changes are not automatically rolled back.
+Reports and recovery
+  C:\Tools\logs\dns-<run> holds health checks, plans, the transcript, and action logs.
+  C:\Tools\backups\dns-<run> holds DNS configuration and record snapshots with hashes.
+  Snapshots support manual data recovery. AD system state and record ACLs require
+  separate backups. If a managed record change fails, the script attempts to
+  restore that node's data and TTL. Earlier changes can still be in effect.
 
-This first version does not delete zones, recreate forests, reinstall AD DS,
-change firewall rules, or reset all DNS settings. Use shed-hardening for firewall
-policy. AD registration is asynchronous: retry audit and test from another host.
+Use shed-hardening to review firewall policy. Confirm DNS reachability from
+another host after checking the local server.
 .EXAMPLE
 .\shed-dns.ps1
 #>
@@ -131,18 +132,30 @@ function Initialize-Directory {
 }
 
 
-# Log each decision and observed result; a requested change is not verification.
+
+# Console output and interactive configuration
+function Write-RunHeading {
+    param([string]$Title)
+    Write-Host
+    Write-Host "== $Title ==" -ForegroundColor Cyan -BackgroundColor Black
+}
+
 function Write-DnsLog {
-    param([string]$Message, [ValidateSet('INFO','WARN','ERROR','SUCCESS')][string]$Level='INFO')
-    Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] [$Level] $Message" -ForegroundColor (@{INFO='Cyan';WARN='Yellow';ERROR='Red';SUCCESS='Green'}[$Level])
+    param([string]$Message, [ValidateSet('INFO', 'WARN', 'ERROR', 'SUCCESS')][string]$Level = 'INFO')
+    $colors = @{ INFO = 'White'; WARN = 'Yellow'; ERROR = 'Red'; SUCCESS = 'Green' }
+    $line = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] [$Level] $Message"
+    Write-Host $line -ForegroundColor $colors[$Level] -BackgroundColor Black
 }
 function Read-DnsChoice {
-    param([string]$Prompt,[string[]]$Choices,[string]$Default)
+    param([string[]]$Prompt, [string[]]$Choices, [string]$Default)
+    Write-Host
+    foreach ($line in $Prompt) { Write-Host $line }
+    $question = if ($Default) { "Choice (Enter = $Default)" } else { 'Choice' }
     while ($true) {
-        $value=(Read-Host $Prompt).Trim()
-        if (-not $value) { $value=$Default }
-        if ($value -in $Choices) { return $value }
-        Write-Host "Enter one of: $($Choices -join ', ')."
+        $answer = (Read-Host $question).Trim()
+        if (-not $answer) { $answer = $Default }
+        if ($answer -in $Choices) { return $answer }
+        Write-Host "Choose one of $($Choices -join ', ')." -ForegroundColor Yellow -BackgroundColor Black
     }
 }
 # Exclude apex, wildcard, and underscore-prefixed AD service names from edits.
@@ -226,23 +239,42 @@ function New-DnsRecoveryConfiguration {
 }
 function Read-DnsRecoveryConfiguration {
     param($Context)
-    $prompt=if ($Context.Verified) {"AD DNS domain (Enter = $($Context.DomainName), verified locally)"} else {'AD DNS domain (required)'}
+    $prompt = if ($Context.Verified) {
+        "AD DNS domain (Enter = $($Context.DomainName), verified locally)"
+    } else {
+        'AD DNS domain (required)'
+    }
+
     while ($true) {
-        $answer=(Read-Host $prompt).Trim()
-        if (-not $answer -and $Context.Verified) {$answer=$Context.DomainName}
-        try {$domain=Get-DnsDomainInput $answer $Context;break} catch {Write-Warning $_}
+        $answer = (Read-Host $prompt).Trim()
+        if (-not $answer -and $Context.Verified) { $answer = $Context.DomainName }
+        try {
+            $domain = Get-DnsDomainInput $answer $Context
+            break
+        } catch { Write-Warning $_ }
     }
     while ($true) {
-        $answer=Read-Host 'Internal IPv4 network in CIDR notation (/8, /16 or /24, e.g. 192.168.50.0/24)'
-        try {$network=Get-DnsRecoveryNetwork $answer;break} catch {Write-Warning $_}
+        $answer = Read-Host 'Internal IPv4 network in CIDR notation (/8, /16 or /24, e.g. 192.168.50.0/24)'
+        try {
+            $network = Get-DnsRecoveryNetwork $answer
+            break
+        } catch { Write-Warning $_ }
     }
-    Write-Host "Domain $domain | Network $($network.NetworkId) | Reverse zone $($network.ReverseZone)"
+
+    Write-RunHeading 'Suggested host addresses'
+    Write-Host "Domain        $domain"
+    Write-Host "Network       $($network.NetworkId)"
+    Write-Host "Reverse zone  $($network.ReverseZone)"
     $offsets=[ordered]@{ecomm=10;mail=15;splunk=20;'ad-dns'=100;mssql=120;vyos=254}
     $records=@(foreach ($entry in $offsets.GetEnumerator()) {
         [PSCustomObject]@{Name=$entry.Key;IPAddress=($network.BaseAddress -replace '0$', [string]$entry.Value)}
     })
     $records | Format-Table Name,IPAddress -AutoSize | Out-String | Write-Host
-    if ((Read-DnsChoice '[K] Keep table, [E] Edit names/IPs (default K)' @('K','E') 'K') -eq 'E') {
+    if ((Read-DnsChoice @(
+        'Review the proposed DNS records'
+        '  [K] Keep this table'
+        '  [E] Edit hostnames and IP addresses'
+    ) @('K','E') 'K') -eq 'E') {
         foreach ($record in $records) {
             if ($record.Name -ne 'ad-dns') {
                 $value=Read-Host "Hostname for $($record.Name) (Enter keeps it)"
@@ -575,7 +607,7 @@ function Read-DnsForwarderInput {
     param([string]$ServerAddress)
     $text=Read-Host 'Optional replacement upstream DNS IPs, comma separated (blank keeps existing forwarders)'
     if (-not $text) {return}
-    foreach ($value in @($text -split ',' | ForEach-Object {$_.Trim()} | Select-Object -Unique)) {
+    foreach ($value in @($text -split ',' | ForEach-Object {$_.Trim()} | Where-Object {$_} | Select-Object -Unique)) {
         $ip=$null
         if (-not [Net.IPAddress]::TryParse($value,[ref]$ip) -or [Net.IPAddress]::IsLoopback($ip) -or
             $ip.ToString() -eq $ServerAddress -or ($ip.IsIPv4MappedToIPv6 -and $ip.MapToIPv4().ToString() -eq $ServerAddress)) {throw "Invalid/self-referencing upstream DNS IP: $value"}
@@ -642,69 +674,146 @@ function Invoke-DnsNativeTool {
 }
 # Real answers are checked independently of stored records, through the DNS
 # server IP using DNS-only lookups over default transport and explicit TCP.
+# Use the same status wording in the console summary and the exported checks.
+function New-DnsHealthCheck {
+    param([string]$Check, [bool]$Passed, [string]$Details)
+    [PSCustomObject]@{
+        Check = $Check
+        Status = if ($Passed) { 'Pass' } else { 'Needs attention' }
+        Details = $Details
+    }
+}
+
 function Get-DnsHealthChecks {
-    param($Snapshot,$Configuration)
-    foreach ($errorText in $Snapshot.Errors) {[PSCustomObject]@{Check='Inventory';Status='Needs attention';Details=$errorText}}
+    param($Snapshot, $Configuration)
+
+    foreach ($errorText in $Snapshot.Errors) {
+        New-DnsHealthCheck 'Inventory' $false $errorText
+    }
     foreach ($service in $Snapshot.Services) {
-        [PSCustomObject]@{Check="Service $($service.Name)";Status=$(if($service.Status -eq 'Running'){'Pass'}else{'Needs attention'});Details="$($service.Status), $($service.StartType)"}
+        New-DnsHealthCheck "Service $($service.Name)" ($service.Status -eq 'Running') "$($service.Status), $($service.StartType)"
     }
-    $local=@($Snapshot.Addresses | Where-Object {$_.IPAddress -eq $Configuration.ServerAddress -and $_.AddressState -eq 'Preferred'})
-    [PSCustomObject]@{Check='Server IPv4';Status=$(if($local.Count -eq 1){'Pass'}else{'Needs attention'});Details=$Configuration.ServerAddress}
-    foreach ($zoneName in @($Configuration.DomainName,$Configuration.ReverseZone)) {
-        $zone=@($Snapshot.Zones | Where-Object ZoneName -EQ $zoneName)
-        [PSCustomObject]@{Check="Zone $zoneName";Status=$(if($zone.Count -eq 1 -and $zone[0].IsDsIntegrated -and $zone[0].DynamicUpdate -eq 'Secure' -and -not $zone[0].IsPaused){'Pass'}else{'Needs attention'});Details=$(if($zone.Count){"$($zone[0].ZoneType), secure updates: $($zone[0].DynamicUpdate)"}else{'Missing'})}
-        $soa=@($Snapshot.ZoneRecords | Where-Object ZoneName -EQ $zoneName | ForEach-Object {$_.Records} | Where-Object RecordType -EQ SOA)
-        $masters=@($soa | ForEach-Object {([string]$_.RecordData.PrimaryServer).TrimEnd('.')})
-        $known=@(@($Configuration.ControllerNames) + @($Configuration.HostName,"ad-dns.$($Configuration.DomainName)"))
-        [PSCustomObject]@{Check="SOA master $zoneName";Status=$(if($masters.Count -eq 1 -and $masters[0] -in $known){'Pass'}else{'Needs attention'});Details=($masters -join ', ')}
+
+    $local = @($Snapshot.Addresses | Where-Object {
+        $_.IPAddress -eq $Configuration.ServerAddress -and $_.AddressState -eq 'Preferred'
+    })
+    New-DnsHealthCheck 'Server IPv4' ($local.Count -eq 1) $Configuration.ServerAddress
+
+    $knownMasters = @($Configuration.ControllerNames) + @($Configuration.HostName, "ad-dns.$($Configuration.DomainName)")
+    foreach ($zoneName in @($Configuration.DomainName, $Configuration.ReverseZone)) {
+        $zone = @($Snapshot.Zones | Where-Object ZoneName -EQ $zoneName)
+        $zoneReady = $zone.Count -eq 1 -and $zone[0].IsDsIntegrated -and
+            $zone[0].DynamicUpdate -eq 'Secure' -and -not $zone[0].IsPaused
+        $details = if ($zone.Count) { "$($zone[0].ZoneType), secure updates: $($zone[0].DynamicUpdate)" } else { 'Missing' }
+        New-DnsHealthCheck "Zone $zoneName" $zoneReady $details
+
+        $masters = @($Snapshot.ZoneRecords | Where-Object ZoneName -EQ $zoneName |
+            ForEach-Object { $_.Records } | Where-Object RecordType -EQ SOA |
+            ForEach-Object { ([string]$_.RecordData.PrimaryServer).TrimEnd('.') })
+        New-DnsHealthCheck "SOA master $zoneName" ($masters.Count -eq 1 -and $masters[0] -in $knownMasters) ($masters -join ', ')
     }
-    $listeners=@($Snapshot.Settings.ListeningIPAddress | ForEach-Object {[string]$_})
-    [PSCustomObject]@{Check='DNS listen addresses';Status=$(if($Snapshot.Settings -and (-not $listeners.Count -or $Configuration.ServerAddress -in $listeners)){'Pass'}else{'Needs attention'});Details=$(if($listeners.Count){$listeners -join ', '}else{'All interfaces, if server settings were readable'})}
-    [PSCustomObject]@{Check='Upstream forwarding';Status='Review';Details="Configured upstream IPs: $(@($Snapshot.Forwarders.IPAddress) -join ', '); external resolution/recursion is not validated by internal-host checks."}
+
+    $listeners = @($Snapshot.Settings.ListeningIPAddress | ForEach-Object { [string]$_ })
+    $listening = $Snapshot.Settings -and (-not $listeners.Count -or $Configuration.ServerAddress -in $listeners)
+    $details = if (-not $Snapshot.Settings) { 'Server settings unavailable' }
+        elseif ($listeners.Count) { $listeners -join ', ' }
+        else { 'All interfaces' }
+    New-DnsHealthCheck 'DNS listen addresses' $listening $details
+
+    [PSCustomObject]@{
+        Check = 'Upstream forwarding'
+        Status = 'Review'
+        Details = "Configured upstream IPs: $(@($Snapshot.Forwarders.IPAddress) -join ', '). Verify external resolution separately."
+    }
     foreach ($adapter in $local) {
-        $resolver=@($Snapshot.Resolvers | Where-Object InterfaceIndex -EQ $adapter.InterfaceIndex)
-        [PSCustomObject]@{Check="Client DNS adapter $($adapter.InterfaceIndex)";Status=$(if(@($resolver.ServerAddresses).Count -eq 1 -and $Configuration.ServerAddress -in @($resolver.ServerAddresses)){'Pass'}else{'Needs attention'});Details=(@($resolver.ServerAddresses) -join ', ')}
+        $resolver = @($Snapshot.Resolvers | Where-Object InterfaceIndex -EQ $adapter.InterfaceIndex)
+        $addresses = @($resolver.ServerAddresses)
+        $pointsToServer = $addresses.Count -eq 1 -and $Configuration.ServerAddress -in $addresses
+        New-DnsHealthCheck "Client DNS adapter $($adapter.InterfaceIndex)" $pointsToServer ($addresses -join ', ')
     }
-    $queries=@(
-        foreach ($record in $Configuration.Records) {[PSCustomObject]@{Name="$($record.Name).$($Configuration.DomainName)";Type='A';Expected=$record.IPAddress}}
-        foreach ($record in $Configuration.PtrRecords) {[PSCustomObject]@{Name="$($record.Name).$($Configuration.ReverseZone)";Type='PTR';Expected=$record.Target}}
-        [PSCustomObject]@{Name="_ldap._tcp.dc._msdcs.$($Configuration.DomainName)";Type='SRV';Expected=$Configuration.HostName+'.:389'}
-        [PSCustomObject]@{Name="_kerberos._tcp.dc._msdcs.$($Configuration.DomainName)";Type='SRV';Expected=$Configuration.HostName+'.:88'}
+
+    # Probe each managed name and the two AD locator records through both transports.
+    $queries = @(
+        foreach ($record in $Configuration.Records) {
+            [PSCustomObject]@{ Name = "$($record.Name).$($Configuration.DomainName)"; Type = 'A'; Expected = $record.IPAddress }
+        }
+        foreach ($record in $Configuration.PtrRecords) {
+            [PSCustomObject]@{ Name = "$($record.Name).$($Configuration.ReverseZone)"; Type = 'PTR'; Expected = $record.Target }
+        }
+        [PSCustomObject]@{ Name = "_ldap._tcp.dc._msdcs.$($Configuration.DomainName)"; Type = 'SRV'; Expected = "$($Configuration.HostName).:389" }
+        [PSCustomObject]@{ Name = "_kerberos._tcp.dc._msdcs.$($Configuration.DomainName)"; Type = 'SRV'; Expected = "$($Configuration.HostName).:88" }
     )
-    $running=@($Snapshot.Services | Where-Object {$_.Name -eq 'DNS' -and $_.Status -eq 'Running'}).Count -eq 1
+    $dnsRunning = @($Snapshot.Services | Where-Object { $_.Name -eq 'DNS' -and $_.Status -eq 'Running' }).Count -eq 1
     foreach ($query in $queries) {
         Write-DnsLog "Checking $($query.Type) $($query.Name)..."
-        foreach ($transport in @('Default','TCP')) {
-            $status='Needs attention';$details='DNS service is not running; query skipped.'
-            if ($running) {
-                try {
-                    $options=@{Name=$query.Name;Type=$query.Type;Server=$Configuration.ServerAddress;DnsOnly=$true;NoHostsFile=$true;QuickTimeout=$true;ErrorAction='Stop'}
-                    if ($transport -eq 'TCP') {$options.TcpOnly=$true}
-                    $answers=@(Resolve-DnsName @options)
-                    $values=@(foreach ($answer in $answers) {
-                        if ([string]$answer.Type -ne $query.Type) {continue}
-                        switch ($query.Type) {
-                            'A' {[string]$answer.IPAddress}
-                            'PTR' {([string]$answer.NameHost).TrimEnd('.').ToLowerInvariant()+'.'}
-                            'SRV' {([string]$answer.NameTarget).TrimEnd('.').ToLowerInvariant()+'.:'+([string]$answer.Port)}
-                        }
-                    })
-                    $expectedPresent=$query.Expected -in $values
-                    if ($expectedPresent -and ($query.Type -eq 'SRV' -or @($values | Sort-Object -Unique).Count -eq 1)) {$status='Pass'}
-                    $details="Expected $($query.Expected); observed $($values -join ', ')"
-                } catch {$details=$_.Exception.Message}
+        foreach ($transport in @('Default', 'TCP')) {
+            $checkName = "$transport $($query.Type) $($query.Name)"
+            if (-not $dnsRunning) {
+                New-DnsHealthCheck $checkName $false 'DNS service is stopped. Query skipped.'
+                continue
             }
-            [PSCustomObject]@{Check="$transport $($query.Type) $($query.Name)";Status=$status;Details=$details}
+            $options = @{
+                Name = $query.Name
+                Type = $query.Type
+                Server = $Configuration.ServerAddress
+                DnsOnly = $true
+                NoHostsFile = $true
+                QuickTimeout = $true
+                ErrorAction = 'Stop'
+            }
+            if ($transport -eq 'TCP') { $options.TcpOnly = $true }
+            try {
+                $answers = @(Resolve-DnsName @options)
+                $values = @(foreach ($answer in $answers) {
+                    if ([string]$answer.Type -ne $query.Type) { continue }
+                    switch ($query.Type) {
+                        'A'   { [string]$answer.IPAddress }
+                        'PTR' { ([string]$answer.NameHost).TrimEnd('.').ToLowerInvariant() + '.' }
+                        'SRV' { ([string]$answer.NameTarget).TrimEnd('.').ToLowerInvariant() + '.:' + [string]$answer.Port }
+                    }
+                })
+                # SRV records can advertise additional domain controllers.
+                $passed = $query.Expected -in $values -and
+                    ($query.Type -eq 'SRV' -or @($values | Sort-Object -Unique).Count -eq 1)
+                New-DnsHealthCheck $checkName $passed "Expected $($query.Expected); observed $($values -join ', ')"
+            } catch {
+                New-DnsHealthCheck $checkName $false $_.Exception.Message
+            }
         }
     }
 }
+
+# Keep the full check list in the CSV. Show the operator what needs investigation first.
+function Show-DnsHealthSummary {
+    param([object[]]$Checks, [string]$ReportPath)
+    $passed = @($Checks | Where-Object Status -EQ 'Pass').Count
+    $issues = @($Checks | Where-Object Status -EQ 'Needs attention')
+    $review = @($Checks | Where-Object Status -EQ 'Review')
+
+    Write-RunHeading 'DNS audit results'
+    Write-Host "$passed passed   |   $($issues.Count) need attention   |   $($review.Count) for review"
+    if ($issues.Count) {
+        Write-DnsLog 'Checks that need attention' WARN
+        $issues | Format-Table Check, Details -Wrap | Out-String | Write-Host
+    }
+    if ($review.Count) {
+        Write-Host 'For manual review'
+        $review | Format-Table Check, Details -Wrap | Out-String | Write-Host
+    }
+    Write-DnsLog "All check results: $ReportPath"
+}
+
 # Recovery always refreshes inventory after service startup and before preview.
 # Canceling either confirmation leaves the subsequent phase untouched.
 function Invoke-DnsRecovery {
     param($Configuration,[string]$BackupDirectory,[string]$ReportDirectory,[bool]$Rebuild)
+    $mode = if ($Rebuild) { 'Rebuild' } else { 'Repair' }
+    Write-RunHeading "$mode DNS on $($Configuration.HostName)"
     $partial=Get-DnsRecoverySnapshot
     $null=Save-DnsRecoverySnapshot $partial $BackupDirectory 'before-services'
-    if ((Read-Host 'Type START DNS SERVICES to enable/start DNS-related services (not AD DS); Enter cancels') -cne 'START DNS SERVICES') {return}
+    Write-Host 'This step sets DNS, Netlogon, Kdc, Dnscache, and ADWS to Automatic and starts them if needed.'
+    Write-Host 'You will review the DNS records and network settings in a separate step.'
+    if ((Read-Host 'Type START DNS SERVICES to continue (Enter cancels)') -cne 'START DNS SERVICES') { return }
     Enable-DnsRecoveryServices
     $context=Get-DnsDomainContext
     if ($context.DomainName -ne $Configuration.DomainName -or ($Configuration.ContextVerified -and $context.ForestName -ne $Configuration.ForestName) -or $context.HostName -ne $Configuration.HostName) {
@@ -728,22 +837,50 @@ function Invoke-DnsRecovery {
     $recordPlan | Select-Object Action,Zone,Name,Type,Expected,Existing | Export-Csv -LiteralPath "$prefix-records.csv" -NoTypeInformation -Encoding UTF8 -ErrorAction Stop
     $cleanupPlan | Select-Object Action,Zone,Name,Type,Value,Reason,Data | Export-Csv -LiteralPath "$prefix-cleanup.csv" -NoTypeInformation -Encoding UTF8 -ErrorAction Stop
     $cleanupPlan | Export-Clixml -LiteralPath "$prefix-cleanup.xml" -Depth 12 -ErrorAction Stop
-    $zonePlan | Format-Table Action,Zone,Scope -AutoSize | Out-String | Write-Host
-    $recordPlan | Format-Table Action,Zone,Name,Type,Expected,Existing -AutoSize | Out-String | Write-Host
-    $cleanupPlan | Where-Object Action -EQ Remove | Format-Table Zone,Name,Type,Value,Reason -Wrap | Out-String -Width 180 | Write-Host
-    if (@($cleanupPlan | Where-Object {$_.Action -eq 'Remove' -and $_.Type -eq 'TXT'}).Count) {
-        Write-DnsLog 'TXT records are listed for removal. Preserve required SPF/DKIM/DMARC owner names with explicit exceptions, or choose audit only.' WARN
+    $managedChanges = @($recordPlan | Where-Object Action -NE 'Keep')
+    $removals = @($cleanupPlan | Where-Object Action -EQ 'Remove')
+
+    Write-RunHeading 'Zones to check or create'
+    $zonePlan | Format-Table Zone, Action, Scope -AutoSize -Wrap | Out-String | Write-Host
+
+    Write-RunHeading 'Managed record changes'
+    Write-Host "$($managedChanges.Count) proposed changes. $($recordPlan.Count - $managedChanges.Count) records already match."
+    if ($managedChanges.Count) {
+        $managedChanges | Format-Table Action, Type, Name, Zone, Existing, Expected -AutoSize -Wrap | Out-String | Write-Host
     }
-    Write-DnsLog "Audited unrelated records scheduled for removal: $(@($cleanupPlan | Where-Object Action -EQ Remove).Count). Full data: $prefix-cleanup.xml and .csv."
-    $removeUnrelated=(Read-DnsChoice '[D] Delete the audited unrelated records, [A] Audit them only (default D)' @('D','A') 'D') -eq 'D'
-    Write-DnsLog "Verified data snapshot: $($backup.File). Plans: $prefix*.csv"
-    $client=(Read-DnsChoice 'Point this server IPv4 adapter DNS at itself? (Y/n)' @('Y','N') 'Y') -eq 'Y'
-    $listener=(Read-DnsChoice 'Ensure the DNS listener includes this IP (may briefly restart DNS)? (Y/n)' @('Y','N') 'Y') -eq 'Y'
+    Write-DnsLog "Full managed record plan: $prefix-records.csv"
+
+    Write-RunHeading 'Unrelated records eligible for deletion'
+    Write-Host "$($removals.Count) records eligible."
+    if ($removals.Count) {
+        $removals | Format-Table Zone, Name, Type, Value, Reason -Wrap | Out-String | Write-Host
+    }
+    if (@($removals | Where-Object Type -EQ 'TXT').Count) {
+        Write-DnsLog 'The list includes TXT records. Check SPF, DKIM, and DMARC entries before approving deletion.' WARN
+    }
+    Write-DnsLog "Full cleanup plan: $prefix-cleanup.csv"
+    $removeUnrelated=(Read-DnsChoice @(
+        'Unrelated DNS records'
+        '  [A] Audit only'
+        '  [D] Include the listed records in the deletion plan'
+    ) @('A','D') 'A') -eq 'D'
+    Write-RunHeading 'DNS network settings'
+    Write-DnsLog "Verified recovery snapshot: $($backup.File)"
+    $client=(Read-DnsChoice 'Point this server IPv4 adapter DNS at itself? [Y/N]' @('Y','N') 'Y') -eq 'Y'
+    $listener=(Read-DnsChoice 'Ensure the DNS listener includes this IP (may briefly restart DNS)? [Y/N]' @('Y','N') 'Y') -eq 'Y'
     $forwarders=@(Read-DnsForwarderInput $Configuration.ServerAddress)
     $phrase=if ($Rebuild) {"REBUILD DNS RECORDS $($Configuration.DomainName)"}else{"REPAIR DNS $($Configuration.DomainName)"}
     if ($removeUnrelated) {$phrase += ' AND REMOVE UNRELATED'}
-    Write-DnsLog 'Managed A/PTR records will be repaired/rebuilt. Unrelated record deletion follows the displayed cleanup plan. Zones and the AD forest remain.'
-    if ((Read-Host "Type $phrase to apply this plan; Enter cancels") -cne $phrase) {return}
+    Write-RunHeading 'Confirm DNS changes'
+    Write-Host "$mode $($Configuration.DomainName) using the zones and records shown above."
+    $deleteCount = if ($removeUnrelated) { $removals.Count } else { 0 }
+    Write-Host "Unrelated records to delete: $deleteCount"
+    if ($client) { Write-Host "Set this adapter's DNS server to $($Configuration.ServerAddress)." }
+    if ($listener) { Write-Host "Include $($Configuration.ServerAddress) in the DNS listeners. DNS may restart." }
+    if ($forwarders.Count) { Write-Host "Replace upstream DNS forwarders with $($forwarders -join ', ')." }
+    Write-Host 'To apply the plan, type the following text exactly:'
+    Write-Host $phrase -ForegroundColor Yellow -BackgroundColor Black
+    if ((Read-Host 'Confirmation (Enter cancels)') -cne $phrase) { return }
     if ((Get-FileHash -LiteralPath $backup.File -Algorithm SHA256 -ErrorAction Stop).Hash -ne $backup.SHA256) {throw 'Snapshot changed after preview; recovery blocked.'}
     $actions=Join-Path $ReportDirectory "actions-$([guid]::NewGuid().ToString('N')).jsonl"
     $null=New-Item -ItemType File -Path $actions -ErrorAction Stop
@@ -790,6 +927,7 @@ $splash = @'
 Write-Host $splash -ForegroundColor Red -BackgroundColor Black
 
 try {
+    Write-RunHeading 'DNS configuration'
     try {$context=Get-DnsDomainContext}
     catch {
         Write-DnsLog "Local AD metadata is unavailable: $_. Audit remains available; recovery must verify AD before zone changes." WARN
@@ -800,9 +938,12 @@ try {
         catch {Write-DnsLog "Configuration needs correction: $_. Enter the table again." WARN}
     }
     $configuration | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $reports 'configuration.json') -Encoding UTF8 -ErrorAction Stop
-    $configuration.Records | Format-Table Name,IPAddress,Canonical -AutoSize | Out-String | Write-Host
-    $configuration.PtrRecords | Format-Table IPAddress,Target -AutoSize | Out-String | Write-Host
+    Write-RunHeading 'Forward lookups (hostname to IPv4)'
+    $configuration.Records | Format-Table Name, IPAddress -AutoSize | Out-String | Write-Host
+    Write-RunHeading 'Reverse lookups (IPv4 to hostname)'
+    $configuration.PtrRecords | Format-Table IPAddress, Target -AutoSize | Out-String | Write-Host
     while ($true) {
+        Write-RunHeading 'DNS health checks'
         $snapshot=Get-DnsRecoverySnapshot
         $null=Save-DnsRecoverySnapshot $snapshot $backups 'audit'
         $checks=@(Get-DnsHealthChecks $snapshot $configuration)
@@ -810,17 +951,29 @@ try {
         $auditPrefix=Join-Path $reports "record-audit-$([guid]::NewGuid().ToString('N'))"
         $auditPlan | Select-Object Action,Zone,Name,Type,Value,Reason,Data | Export-Csv -LiteralPath "$auditPrefix.csv" -NoTypeInformation -Encoding UTF8 -ErrorAction Stop
         $auditPlan | Export-Clixml -LiteralPath "$auditPrefix.xml" -Depth 12 -ErrorAction Stop
-        Write-DnsLog "$(@($auditPlan | Where-Object Action -EQ Remove).Count) unrelated record(s) found; read-only audit: $auditPrefix.csv"
+        Write-DnsLog "Unrelated records flagged for review: $(@($auditPlan | Where-Object Action -EQ Remove).Count)"
+        Write-DnsLog "Record inventory: $auditPrefix.csv"
         $checksPath=Join-Path $reports "checks-$([guid]::NewGuid().ToString('N')).csv"
         $checks | Export-Csv -LiteralPath $checksPath -NoTypeInformation -Encoding UTF8 -ErrorAction Stop
-        $checks | Format-Table Check,Status,Details -Wrap | Out-String -Width 180 | Write-Host
-        Write-DnsLog "$(@($checks | Where-Object Status -NE 'Pass').Count) checks need attention/review. Report: $checksPath"
+        Show-DnsHealthSummary $checks $checksPath
         Write-DnsLog 'These are local DNS checks. Verify from another host; review firewall scope with shed-hardening.'
-        $choice=Read-DnsChoice '[A] Audit again, [R] Repair, [B] Rebuild managed records, [D] Run dcdiag DNS basic test, [Q] Finish (default Q)' @('A','R','B','D','Q') 'Q'
+        $choice=Read-DnsChoice @(
+            'Choose a DNS action'
+            '  [A] Audit again'
+            '  [R] Repair missing or incorrect managed records'
+            '  [B] Rebuild all managed records, including matching ones'
+            '  [D] Run the dcdiag basic DNS test'
+            '  [Q] Finish'
+        ) @('A','R','B','D','Q') 'Q'
         if ($choice -eq 'Q') {break}
         try {
             if ($choice -in @('R','B')) {Invoke-DnsRecovery $configuration $backups $reports ($choice -eq 'B')}
             elseif ($choice -eq 'D') {Invoke-DnsNativeTool 'dcdiag.exe' @('/test:DNS','/DnsBasic','/v') (Join-Path $reports "dcdiag-$([guid]::NewGuid().ToString('N')).log")}
         } catch {Write-DnsLog "Recovery/diagnostic needs attention: $_. Earlier changes may remain; review $backups and $reports." ERROR}
     }
-} finally {Stop-Transcript -ErrorAction Stop | Out-Null}
+} finally {
+    Write-RunHeading 'DNS reports'
+    Write-DnsLog "Reports and transcript: $reports"
+    Write-DnsLog "Recovery snapshots: $backups"
+    Stop-Transcript -ErrorAction Stop | Out-Null
+}
