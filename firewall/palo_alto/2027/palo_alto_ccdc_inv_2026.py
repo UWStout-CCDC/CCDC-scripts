@@ -219,20 +219,13 @@ commands += f"""
 # ---------------------------------------------------------------------
 delete rulebase nat
 
-# 1:1 Bi-Directional Static NAT for each scored server
-set rulebase nat rules Ecomm-StaticNAT nat-type ipv4 from {int_zone} to {ext_zone} source EcommPriv destination any service any source-translation static-ip bi-directional yes translated-address EcommPub
-set rulebase nat rules Email-StaticNAT nat-type ipv4 from {int_zone} to {ext_zone} source EmailPriv destination any service any source-translation static-ip bi-directional yes translated-address EmailPub
-set rulebase nat rules Splunk-StaticNAT nat-type ipv4 from {int_zone} to {ext_zone} source SplunkPriv destination any service any source-translation static-ip bi-directional yes translated-address SplunkPub
-set rulebase nat rules AD-StaticNAT nat-type ipv4 from {int_zone} to {ext_zone} source ADPriv destination any service any source-translation static-ip bi-directional yes translated-address ADPub
-set rulebase nat rules MSSQL-StaticNAT nat-type ipv4 from {int_zone} to {ext_zone} source MSSQLPriv destination any service any source-translation static-ip bi-directional yes translated-address MSSQLPub
-
-# General Outbound PAT for Workstations & remaining internal traffic
-set rulebase nat rules LAN-OutboundPAT nat-type ipv4 from {int_zone} to {ext_zone} source LAN destination any service any source-translation dynamic-ip-and-port interface-address interface {ext_interface}
 
 # ---------------------------------------------------------------------
 # Security Rules (Rulebase)
 # Note: In PAN-OS with NAT, destination address matches pre-NAT IP (Public IP),
 #       and destination zone matches post-NAT zone ({int_zone}).
+# Note 2: NAT is handled upstream (VyOS). This firewall sees the PRIVATE (172.20.240.x)
+#       destination addresses, so rules match the *Priv objects.
 #
 # Per Architecture Guidelines:
 # - App-ID rules strictly enforce Layer 7 application classification ('service application-default' or specific ports).
@@ -289,26 +282,26 @@ commands += f"""
 
 # 1. Rocky Ecom: Web & SSH (App-ID)
 # Covers: ecomm-http (web-browsing:80), ecomm-https (ssl:443), ecomm-ssh (ssh:22)
-set rulebase security rules AllowEcomm-AppID action allow from {ext_zone} to {int_zone} source any destination EcommPub application [ web-browsing ssl ssh ] service application-default {inbound_threat_cmd}
+set rulebase security rules AllowEcomm-AppID action allow from {ext_zone} to {int_zone} source any destination EcommPriv application [ web-browsing ssl ssh ] service application-default {inbound_threat_cmd}
 
 # 2. Ubuntu Email: Mail protocols & Roundcube Webmail (App-ID)
 # Covers: webmail-smtp (smtp:25,587), webmail-pop3 (pop3:110), webmail-imap (imap:143),
 #         webmail-roundcube (web-browsing:80, ssl:443), webmail-ssh (ssh:22), and SSL wrapper ports (ssl:465,993,995)
-set rulebase security rules AllowEmail-AppID action allow from {ext_zone} to {int_zone} source any destination EmailPub application [ smtp pop3 imap web-browsing ssl ssh ] service application-default {inbound_threat_cmd}
+set rulebase security rules AllowEmail-AppID action allow from {ext_zone} to {int_zone} source any destination EmailPriv application [ smtp pop3 imap web-browsing ssl ssh ] service application-default {inbound_threat_cmd}
 
 # 3. Debian Splunk: SSH, Web GUI & REST Mgmt API (App-ID)
 # Covers: splunk-ssh (ssh:22), splunk-web (8000), splunk-mgmt (8089), splunk-query (8000/8089)
-set rulebase security rules AllowSplunk-SSH-AppID action allow from {ext_zone} to {int_zone} source any destination SplunkPub application [ ssh ] service application-default {inbound_threat_cmd}
-set rulebase security rules AllowSplunk-WebMgmt-AppID action allow from {ext_zone} to {int_zone} source any destination SplunkPub application [ splunk web-browsing ssl ] service [ svc-splunk-web svc-splunk-mgmt ] {inbound_threat_cmd}
+set rulebase security rules AllowSplunk-SSH-AppID action allow from {ext_zone} to {int_zone} source any destination SplunkPriv application [ ssh ] service application-default {inbound_threat_cmd}
+set rulebase security rules AllowSplunk-WebMgmt-AppID action allow from {ext_zone} to {int_zone} source any destination SplunkPriv application [ splunk web-browsing ssl ] service [ svc-splunk-web svc-splunk-mgmt ] {inbound_threat_cmd}
 
 # 4. Windows 2022 AD: Active Directory & Domain Services (App-ID)
 # Covers: ad-dns (dns:53), ad-winrm (windows-remote-management:5985,5986), LDAP/LDAPS (ldap/ssl:389,636),
 #         Kerberos (kerberos:88), SMB (ms-ds-smb:445), RPC (msrpc:135), AD Replication (active-directory, ms-dc-replication)
-set rulebase security rules AllowAD-AppID action allow from {ext_zone} to {int_zone} source any destination ADPub application [ active-directory ms-dc-replication dns windows-remote-management ldap kerberos ms-ds-smb msrpc ssl ] service application-default {inbound_threat_cmd}
+set rulebase security rules AllowAD-AppID action allow from {ext_zone} to {int_zone} source any destination ADPriv application [ active-directory ms-dc-replication dns windows-remote-management ldap kerberos ms-ds-smb msrpc ssl ] service application-default {inbound_threat_cmd}
 
 # 5. Windows 2019 MSSQL: Database, RDP & SMB (App-ID)
 # Covers: mssql-mssql (mssql-db-base, mssql-db:1433), mssql-rdp (ms-rdp:3389), mssql-smb (ms-ds-smb:445), NetBIOS Session (netbios-ss:139)
-set rulebase security rules AllowMSSQL-AppID action allow from {ext_zone} to {int_zone} source any destination MSSQLPub application [ mssql-db-base mssql-db ms-rdp ms-ds-smb netbios-ss ] service application-default {inbound_threat_cmd}
+set rulebase security rules AllowMSSQL-AppID action allow from {ext_zone} to {int_zone} source any destination MSSQLPriv application [ mssql-db-base mssql-db ms-rdp ms-ds-smb netbios-ss ] service application-default {inbound_threat_cmd}
 
 # 6. Windows 2022 AD Time Synchronization (App-ID)
 # Allows internal LAN systems and external clients to sync NTP time with AD (172.20.240.100)
@@ -325,11 +318,11 @@ if enable_custom_fallback:
 #   set rulebase security rules <RuleName> disabled no ; commit
 # only if synthetic scoring engine fails App-ID classification.
 # =====================================================================
-set rulebase security rules AllowEcomm-CustomFallback action allow from {ext_zone} to {int_zone} source any destination EcommPub service [ svc-http svc-https svc-ssh ] application any disabled yes
-set rulebase security rules AllowEmail-CustomFallback action allow from {ext_zone} to {int_zone} source any destination EmailPub service [ svc-smtp svc-pop3 svc-imap svc-http svc-https svc-ssh ] application any disabled yes
-set rulebase security rules AllowSplunk-CustomFallback action allow from {ext_zone} to {int_zone} source any destination SplunkPub service [ svc-splunk-web svc-splunk-mgmt svc-ssh ] application any disabled yes
-set rulebase security rules AllowAD-CustomFallback action allow from {ext_zone} to {int_zone} source any destination ADPub service grp-ad-services application any disabled yes
-set rulebase security rules AllowMSSQL-CustomFallback action allow from {ext_zone} to {int_zone} source any destination MSSQLPub service [ svc-mssql svc-rdp svc-smb ] application any disabled yes
+set rulebase security rules AllowEcomm-CustomFallback action allow from {ext_zone} to {int_zone} source any destination EcommPriv service [ svc-http svc-https svc-ssh ] application any disabled yes
+set rulebase security rules AllowEmail-CustomFallback action allow from {ext_zone} to {int_zone} source any destination EmailPriv service [ svc-smtp svc-pop3 svc-imap svc-http svc-https svc-ssh ] application any disabled yes
+set rulebase security rules AllowSplunk-CustomFallback action allow from {ext_zone} to {int_zone} source any destination SplunkPriv service [ svc-splunk-web svc-splunk-mgmt svc-ssh ] application any disabled yes
+set rulebase security rules AllowAD-CustomFallback action allow from {ext_zone} to {int_zone} source any destination ADPriv service grp-ad-services application any disabled yes
+set rulebase security rules AllowMSSQL-CustomFallback action allow from {ext_zone} to {int_zone} source any destination MSSQLPriv service [ svc-mssql svc-rdp svc-smb ] application any disabled yes
 set rulebase security rules AllowNTP-To-AD-CustomFallback action allow from any to {int_zone} source any destination [ ADPub ADPriv ] service svc-ntp application any disabled yes
 """
 
@@ -411,7 +404,7 @@ set profiles dos-protection CCDC_Protection type aggregate flood tcp-syn enable 
 set rulebase dos rules Ecomm-DOS from [ {ext_zone} ]
 set rulebase dos rules Ecomm-DOS to [ {int_zone} ]
 set rulebase dos rules Ecomm-DOS source [ any ]
-set rulebase dos rules Ecomm-DOS destination [ EcommPub ]
+set rulebase dos rules Ecomm-DOS destination [ EcommPriv ]
 set rulebase dos rules Ecomm-DOS service [ any ]
 set rulebase dos rules Ecomm-DOS action protect
 set rulebase dos rules Ecomm-DOS protection aggregate profile CCDC_Protection
@@ -419,7 +412,7 @@ set rulebase dos rules Ecomm-DOS protection aggregate profile CCDC_Protection
 set rulebase dos rules Email-DOS from [ {ext_zone} ]
 set rulebase dos rules Email-DOS to [ {int_zone} ]
 set rulebase dos rules Email-DOS source [ any ]
-set rulebase dos rules Email-DOS destination [ EmailPub ]
+set rulebase dos rules Email-DOS destination [ EmailPriv ]
 set rulebase dos rules Email-DOS service [ any ]
 set rulebase dos rules Email-DOS action protect
 set rulebase dos rules Email-DOS protection aggregate profile CCDC_Protection
@@ -427,7 +420,7 @@ set rulebase dos rules Email-DOS protection aggregate profile CCDC_Protection
 set rulebase dos rules Splunk-DOS from [ {ext_zone} ]
 set rulebase dos rules Splunk-DOS to [ {int_zone} ]
 set rulebase dos rules Splunk-DOS source [ any ]
-set rulebase dos rules Splunk-DOS destination [ SplunkPub ]
+set rulebase dos rules Splunk-DOS destination [ SplunkPriv ]
 set rulebase dos rules Splunk-DOS service [ any ]
 set rulebase dos rules Splunk-DOS action protect
 set rulebase dos rules Splunk-DOS protection aggregate profile CCDC_Protection
@@ -435,7 +428,7 @@ set rulebase dos rules Splunk-DOS protection aggregate profile CCDC_Protection
 set rulebase dos rules AD-DOS from [ {ext_zone} ]
 set rulebase dos rules AD-DOS to [ {int_zone} ]
 set rulebase dos rules AD-DOS source [ any ]
-set rulebase dos rules AD-DOS destination [ ADPub ]
+set rulebase dos rules AD-DOS destination [ ADPriv ]
 set rulebase dos rules AD-DOS service [ any ]
 set rulebase dos rules AD-DOS action protect
 set rulebase dos rules AD-DOS protection aggregate profile CCDC_Protection
@@ -443,7 +436,7 @@ set rulebase dos rules AD-DOS protection aggregate profile CCDC_Protection
 set rulebase dos rules MSSQL-DOS from [ {ext_zone} ]
 set rulebase dos rules MSSQL-DOS to [ {int_zone} ]
 set rulebase dos rules MSSQL-DOS source [ any ]
-set rulebase dos rules MSSQL-DOS destination [ MSSQLPub ]
+set rulebase dos rules MSSQL-DOS destination [ MSSQLPriv ]
 set rulebase dos rules MSSQL-DOS service [ any ]
 set rulebase dos rules MSSQL-DOS action protect
 set rulebase dos rules MSSQL-DOS protection aggregate profile CCDC_Protection
