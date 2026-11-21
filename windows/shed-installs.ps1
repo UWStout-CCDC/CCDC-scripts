@@ -36,6 +36,10 @@ DOWNLOADS AND OUTPUT
 FAILURES
   There is no automatic rollback. Results are tracked per tool/package; some
   setup/post-install errors are handled separately and are not rows in that table.
+.NOTES
+Version: 1.2
+Release: Post-invitationals updates.
+
 .PARAMETER Branch
 Download missing shed scripts from shed-branch. The default branch is master.
 .EXAMPLE
@@ -135,7 +139,7 @@ $splash = @'
             ___                    +--------------------------------------------+
     `=/~~~~~   ~\                  |             shed-installs.ps1              |
      | ,      ,_ `\_/~\-           |    made for MWCCDC 2026-27' qualifiers     |
-     >/'>/ ~|||`\( ,~\-            |                                            |
+     >/'>/ ~|||`\( ,~\-            |     v1.2 - post-invitationals updates      |
      |  |   `||   \;               |                                            |
 \\\\//\\\/TX\\//\\\\|//            |  <------------ that's kayne                |
                                    +--------------------------------------------+

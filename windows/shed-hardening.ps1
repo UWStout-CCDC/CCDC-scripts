@@ -13,8 +13,9 @@ Other users lose non-protected memberships. On AD, cleanup repairs ordinary
 users' non-protected primary groups by moving those users to Domain Users.
 OS-issued service identities may retain non-administrative application groups;
 these exceptions are audited and never exempt ordinary service usernames.
-Enter scoring login wildcards (use *.* for lastname.firstname), optional exact
-scoring names, and existing service usernames at the account prompts. Then choose
+Choose a common scoring-name format (jsmith, smithj, john.smith, and others), or
+enter login wildcards (use *.* for lastname.firstname). Review matches and enter optional exact
+scoring names and existing service usernames at the account prompts. Then choose
 Preview, Audit, Disable, or Remove. Preview changes only the account/group step;
 other hardening still runs. Windows services identify the AD-DNS or MSSQL profile.
 Installed AD CS web enrollment applies only to AD-DNS. SQL ports/Browser apply only to MSSQL.
@@ -32,6 +33,9 @@ MSSQL exposes configured SQL TCP ports, SMB TCP 445, RDP TCP/UDP 3389, and ping.
 Optional SQL Browser UDP 1434 is internal only. External TCP/UDP guards apply
 regardless of the old-rule cleanup choice. Both profiles block inbound ADWS and DHCP from all sources.
 .NOTES
+Version: 1.2
+Release: Post-invitationals updates.
+
 READING GUIDE
   Setup prepares the console, elevation checks, C:\Tools folders, and transcript.
   The function library defines menus, firewall audits, service handling, and
@@ -482,20 +486,57 @@ function Test-InternalFirewallScope {
 # PersistentStore is locally editable; ActiveStore also reflects GPO/other policy sources.
 function Get-FirewallAuditInventory {
     $id = 0
+    $auditTimer = [Diagnostics.Stopwatch]::StartNew()
+    $filterTypes = @('Address', 'Port', 'Application', 'Service', 'Interface', 'Security')
     foreach ($store in @('PersistentStore', 'ActiveStore')) {
         $rules = if ($store -eq 'ActiveStore') {
             @(Get-NetFirewallRule -PolicyStore ActiveStore -TracePolicyStore -ErrorAction Stop)
         } else { @(Get-NetFirewallRule -PolicyStore PersistentStore -ErrorAction Stop) }
         Write-Log "Auditing $($rules.Count) firewall rules and associated filters from $store..."
+        if (-not $rules.Count) { continue }
+        # Fetch each filter table once for this store. Rule and filter InstanceIDs
+        # normally match; never join by display name or reuse another store's data.
+        # Keep duplicates visible so a collision cannot select a different policy's filter.
+        $ruleCounts = @{}
         foreach ($rule in $rules) {
-            # Read every associated filter; incomplete inventories stop cleanup.
-            $address = $rule | Get-NetFirewallAddressFilter -ErrorAction Stop
-            $port = $rule | Get-NetFirewallPortFilter -ErrorAction Stop
-            $application = $rule | Get-NetFirewallApplicationFilter -ErrorAction Stop
-            $service = $rule | Get-NetFirewallServiceFilter -ErrorAction Stop
-            $interface = $rule | Get-NetFirewallInterfaceFilter -ErrorAction Stop
-            $security = $rule | Get-NetFirewallSecurityFilter -ErrorAction Stop
-            if (-not $address -or -not $port -or -not $application -or -not $service) { throw "Incomplete firewall filters for $($rule.Name)." }
+            $key = [string]$rule.InstanceID
+            if ($key) { $ruleCounts[$key] = 1 + [int]$ruleCounts[$key] }
+        }
+        $filterTables = @{}
+        foreach ($type in $filterTypes) {
+            Write-Log "Loading $type filters from $store..."
+            $table = @{}
+            foreach ($filter in @(& "Get-NetFirewall${type}Filter" -PolicyStore $store -ErrorAction Stop)) {
+                $key = [string]$filter.InstanceID
+                if (-not $key) { continue }
+                if ($table.ContainsKey($key)) { $table[$key] = @($table[$key]) + @($filter) }
+                else { $table[$key] = @($filter) }
+            }
+            $filterTables[$type] = $table
+        }
+        $fallbacks = 0
+        foreach ($rule in $rules) {
+            $filters = @{}
+            foreach ($type in $filterTypes) {
+                $key = [string]$rule.InstanceID
+                $found = @()
+                if ($key -and $ruleCounts[$key] -eq 1 -and $filterTables[$type].ContainsKey($key)) {
+                    $found = @($filterTables[$type][$key])
+                }
+                if ($found.Count -ne 1) {
+                    # Missing IDs, provider variations, and duplicate IDs need the
+                    # actual rule association. Do not guess or silently omit a filter.
+                    $fallbacks++
+                    $found = @($rule | & "Get-NetFirewall${type}Filter" -ErrorAction Stop)
+                }
+                if ($found.Count -ne 1 -or -not $found[0]) {
+                    throw "Incomplete or ambiguous $type filter for $($rule.Name) in $store."
+                }
+                $filters[$type] = $found[0]
+            }
+            $address = $filters.Address; $port = $filters.Port
+            $application = $filters.Application; $service = $filters.Service
+            $interface = $filters.Interface; $security = $filters.Security
             $id++
             if ($id % 100 -eq 0) { Write-Log "Audited $id firewall rule records..." }
             [PSCustomObject]@{
@@ -511,7 +552,9 @@ function Get-FirewallAuditInventory {
                 RuleObject = $rule; Filters = @($address, $port, $application, $service, $interface, $security)
             }
         }
+        Write-Log "Audited $($rules.Count) rules from $store; $fallbacks individual filter lookups needed."
     }
+    Write-Log "Firewall audit complete: $id rule records in $([math]::Round($auditTimer.Elapsed.TotalSeconds, 1)) seconds."
 }
 
 # Save a readable CSV plus CLIXML retaining the original rule/filter objects.
@@ -674,6 +717,12 @@ function Invoke-OldFirewallRuleReview {
     # IDs refer to this saved inventory; display names can be duplicated.
     $conflicts = @(Get-FirewallScopeConflicts $legacy $PlannedRules $Network)
     $conflicts | Export-Csv -LiteralPath "$ReportPrefix-conflicts-before.csv" -NoTypeInformation -ErrorAction Stop
+    $scoringBlocks = @(Get-ScoredFirewallBlockConflicts $legacy $PlannedRules)
+    $scoringBlocks | Export-Csv -LiteralPath "$ReportPrefix-scored-blocks-before.csv" -NoTypeInformation -ErrorAction Stop
+    if ($scoringBlocks.Count) {
+        Write-Log "$($scoringBlocks.Count) potential scored-service Block conflicts. Review with S by exact local ID; GPO entries are report-only." WARN
+        $scoringBlocks | Format-Table ID,DisplayName,Store,ScoredRule,Protocol,LocalPort -AutoSize | Out-String | Write-Host
+    }
     $local = @($legacy | Where-Object CanChange)
     Write-Log "Old firewall inventory: $ReportPrefix-before.csv. Local rules: $($local.Count); potential scope conflicts (local/effective): $($conflicts.Count)."
     $local | Format-Table ID, DisplayName, Enabled, Direction, Action, Protocol, @{N='Ports';E={$_.LocalPort -join ','}}, @{N='Sources';E={$_.RemoteAddress -join ','}} -AutoSize | Out-String | Write-Host
@@ -944,11 +993,12 @@ function Get-AccountInventory {
     # AD primary groups must be read explicitly because MemberOf omits them.
     if ($DomainController) {
         $users = @(Get-ADUser -Filter * -Server $script:AccountServer -Properties Enabled, LastLogonDate,
-            PasswordLastSet, MemberOf, PrimaryGroupID, 'msDS-SecondaryKrbTgtNumber' -ErrorAction Stop |
+            PasswordLastSet, MemberOf, PrimaryGroupID, GivenName, Surname, 'msDS-SecondaryKrbTgtNumber' -ErrorAction Stop |
             ForEach-Object {
                 [PSCustomObject]@{
                     Name = $_.SamAccountName; Identity = $_.DistinguishedName; SID = [string]$_.SID
                     Enabled = $_.Enabled; LastLogon = $_.LastLogonDate; PasswordLastSet = $_.PasswordLastSet
+                    GivenName = $_.GivenName; Surname = $_.Surname
                     MemberOf = @($_.MemberOf); PrimaryGroupID = $_.PrimaryGroupID
                     IsKerberos = ([string]$_.SID -match '-502$' -or [int]$_.'msDS-SecondaryKrbTgtNumber' -gt 0)
                 }
@@ -965,6 +1015,7 @@ function Get-AccountInventory {
             [PSCustomObject]@{
                 Name = $_.Name; Identity = $_.Name; SID = [string]$_.SID
                 Enabled = $_.Enabled; LastLogon = $_.LastLogon; PasswordLastSet = $_.PasswordLastSet
+                GivenName = $null; Surname = $null
                 MemberOf = @(); PrimaryGroupID = $null; IsKerberos = $false
             }
         })
@@ -1009,6 +1060,109 @@ function Get-AccountCategory {
         if ($User.Name -like $pattern) { return 'Scoring' }
     }
     return 'Other'
+}
+
+# Shared definitions keep the menu, AD comparisons, and fallback shapes aligned.
+# The examples below use John Smith. No punctuation is stripped from AD names.
+function Get-ScoringNameFormats {
+    @(
+        [PSCustomObject]@{ Key = 'I'; Label = 'First initial + last name'; Example = 'jsmith'; Left = 'FirstInitial'; Right = 'Last'; Separator = '' }
+        [PSCustomObject]@{ Key = 'L'; Label = 'Last name + first initial'; Example = 'smithj'; Left = 'Last'; Right = 'FirstInitial'; Separator = '' }
+        [PSCustomObject]@{ Key = 'A'; Label = 'First name + last initial'; Example = 'johns'; Left = 'First'; Right = 'LastInitial'; Separator = '' }
+        [PSCustomObject]@{ Key = 'C'; Label = 'First name + last name'; Example = 'johnsmith'; Left = 'First'; Right = 'Last'; Separator = '' }
+        [PSCustomObject]@{ Key = 'F'; Label = 'First name.last name'; Example = 'john.smith'; Left = 'First'; Right = 'Last'; Separator = '.' }
+        [PSCustomObject]@{ Key = 'B'; Label = 'Last name.first name'; Example = 'smith.john'; Left = 'Last'; Right = 'First'; Separator = '.' }
+        [PSCustomObject]@{ Key = 'U'; Label = 'First name_last name'; Example = 'john_smith'; Left = 'First'; Right = 'Last'; Separator = '_' }
+        [PSCustomObject]@{ Key = 'V'; Label = 'Last name_first name'; Example = 'smith_john'; Left = 'Last'; Right = 'First'; Separator = '_' }
+    )
+}
+
+# A username alone cannot prove name order or scoring status. Prefer AD name
+# fields; without both fields, show only shape matches as unverified candidates.
+function Get-ScoringNameCandidates {
+    param([object[]]$Users, [string]$AdministratorSid, [string]$Convention = 'I')
+    $format = Get-ScoringNameFormats | Where-Object Key -EQ $Convention
+    if (-not $format) { throw "Unknown scoring-name format: $Convention" }
+    $shape = if ($format.Separator) {
+        '^[a-z]+' + [regex]::Escape($format.Separator) + '[a-z]+$'
+    } else {
+        '^[a-z]{2,}$'
+    }
+    foreach ($user in $Users) {
+        if ((Get-AccountCategory $user $AdministratorSid @() @() @()) -ne 'Other') { continue }
+        $firstName = ([string]$user.GivenName).Trim()
+        $lastName = ([string]$user.Surname).Trim()
+        if ($firstName -and $lastName) {
+            $parts = @{
+                First = $firstName; Last = $lastName
+                FirstInitial = $firstName.Substring(0, 1); LastInitial = $lastName.Substring(0, 1)
+            }
+            $expected = $parts[$format.Left] + $format.Separator + $parts[$format.Right]
+            if ($user.Name -ine $expected) { continue }
+            $basis = "Matches AD name fields ($($format.Example) format)"
+        } else {
+            if ($user.Name -notmatch $shape) { continue }
+            $basis = 'Unverified: username shape only; name fields missing'
+        }
+        [PSCustomObject]@{
+            Name = $user.Name; Enabled = $user.Enabled
+            GivenName = $firstName; Surname = $lastName; MatchBasis = $basis
+        }
+    }
+}
+
+# Freeze confirmed preset matches as exact names. Do not carry a broad name
+# pattern into cleanup, where it could silently protect unrelated service logins.
+function Read-ScoringFilter {
+    param([object[]]$Users, [string]$AdministratorSid)
+    $formats = @(Get-ScoringNameFormats)
+    $menu = @('Choose how to find scoring accounts (examples use John Smith).')
+    $menu += @($formats | ForEach-Object { "  [$($_.Key)] $($_.Label) ($($_.Example))" })
+    $menu += @(
+        '  [W] Custom wildcards (*.* for lastname.firstname, score_*)'
+        '  [N] Exact names only; enter them at the next prompt'
+    )
+    $mode = Read-MenuChoice -Prompt $menu -Choices @($formats.Key + @('W', 'N')) -Default 'W'
+    if ($mode -eq 'W') {
+        $patterns = @(Split-AccountInput @(Read-Host 'Scoring login wildcard(s), comma-separated (blank = none)'))
+        foreach ($pattern in $patterns) {
+            $null = [System.Management.Automation.WildcardPattern]::new($pattern).IsMatch('')
+        }
+        return [PSCustomObject]@{ Patterns = $patterns; Names = @() }
+    }
+    if ($mode -eq 'N') { return [PSCustomObject]@{ Patterns = @(); Names = @() } }
+
+    $format = $formats | Where-Object Key -EQ $mode
+    Write-Log "Selected scoring-name format: $($format.Label) ($($format.Example))."
+    $candidates = @(Get-ScoringNameCandidates $Users $AdministratorSid $mode | Sort-Object Name)
+    if (-not $candidates.Count) {
+        Write-Log 'No candidates found for this format. Enter exact scoring names at the next prompt.' 'WARN'
+        return [PSCustomObject]@{ Patterns = @(); Names = @() }
+    }
+    Write-Log 'These are candidates, not verified scoring identities. Review service logins such as mail carefully.' 'WARN'
+    Write-Log 'When AD name fields are missing, the username shape cannot distinguish first/last name order.'
+    $candidates | Format-Table Name, Enabled, GivenName, Surname, MatchBasis -AutoSize -Wrap | Out-String | Write-Host
+    do {
+        $excluded = @(Split-AccountInput @(Read-Host 'Exclude candidate login(s), comma-separated exact names (for example mail; blank = none)'))
+        $unknown = @($excluded | Where-Object { $_ -notin @($candidates.Name) })
+        if ($unknown.Count) {
+            Write-Log "Not in the candidate list: $($unknown -join ', '). Re-enter exclusions using exact login names." 'WARN'
+            continue
+        }
+        $selected = @($candidates | Where-Object { $_.Name -notin $excluded })
+        Write-Log "Selected scoring logins ($($selected.Count)): $($selected.Name -join ', ')"
+        $answer = Read-MenuChoice -Prompt @(
+            'Use this list to protect accounts from disablement/deletion? Group cleanup still applies.'
+            '  [Y] Use this list'
+            '  [R] Revise exclusions'
+            '  [N] Skip this list; enter exact names at the next prompt'
+        ) -Choices @('Y', 'R', 'N') -Default 'N'
+    } while ($unknown.Count -or $answer -eq 'R')
+    if ($answer -eq 'Y') {
+        return [PSCustomObject]@{ Patterns = @(); Names = @($selected.Name) }
+    }
+    Write-Log 'Candidate list skipped. No scoring accounts were selected by this filter.'
+    return [PSCustomObject]@{ Patterns = @(); Names = @() }
 }
 
 # Identify OS service memberships that can remain for application access.
@@ -1223,8 +1377,9 @@ function Invoke-AccountReview {
 
     # *.* matches any login with a dot, including dotted service accounts.
     # Exact service/scoring names provide exceptions to account cleanup, not to group cleanup.
-    $Patterns = @(Split-AccountInput @(Read-Host 'Scoring login wildcard(s), comma-separated (score_* or *.* for lastname.firstname; blank = none)'))
-    $ScoringNames = @(Split-AccountInput @(Read-Host 'Additional exact scoring login name(s), comma-separated (blank = none)'))
+    $filter = Read-ScoringFilter $inventory.Users $administratorSid
+    $Patterns = @($filter.Patterns)
+    $ScoringNames = @(Split-AccountInput @($filter.Names + @(Read-Host 'Additional exact scoring login name(s), comma-separated (blank = none)')))
     $ServiceNames = @(Split-AccountInput @(Read-Host 'Existing service login name(s) you created, comma-separated (blank = none; does not create accounts)'))
     foreach ($pattern in $Patterns) {
         # Validate all patterns before making any group/account changes.
@@ -1339,6 +1494,76 @@ function Invoke-SmbSigningBaseline {
     }
 }
 
+# Inventory explicit Defender exclusions; SQL/AD role exclusions can be legitimate.
+# No blanket reset. Preserve the complete preference snapshot before offering edits.
+function Invoke-DefenderExclusionReview {
+    param([string]$ReportDirectory)
+    try {
+        $before = Get-MpPreference -ErrorAction Stop
+        $prefix = Join-Path $ReportDirectory "defender-exclusions-$([guid]::NewGuid())"
+        $before | Export-Clixml -LiteralPath "$prefix-before.xml" -ErrorAction Stop
+        $rows = @(foreach ($type in @('ExclusionPath','ExclusionProcess','ExclusionExtension','ExclusionIpAddress','AttackSurfaceReductionOnlyExclusions')) {
+            foreach ($value in @($before.$type)) {
+                if ($null -ne $value -and [string]$value -ne '') { [PSCustomObject]@{ID=0;Type=$type;Value=[string]$value} }
+            }
+        })
+        for ($i=0; $i -lt $rows.Count; $i++) { $rows[$i].ID=$i+1 }
+        $rows | Export-Csv -LiteralPath "$prefix-before.csv" -NoTypeInformation -ErrorAction Stop
+        Write-Log "Explicit Defender exclusions: $($rows.Count). Snapshot: $prefix-before.xml. Hidden/GPO/automatic role exclusions may require separate policy review."
+        if (-not $rows.Count) { return }
+        $rows | Format-Table ID,Type,Value -AutoSize -Wrap | Out-String | Write-Host
+        Write-Log 'AD/SQL exclusions may be needed. Remove only entries you have investigated; this does not disable BITS or remove installer transfers.' 'WARN'
+        $inputIds = Read-Host 'Exclusion IDs to review for removal, comma-separated (Enter = audit only)'
+        if ([string]::IsNullOrWhiteSpace($inputIds)) { return }
+        $ids = @($inputIds -split ',' | ForEach-Object { $_.Trim() } | Select-Object -Unique)
+        if (@($ids | Where-Object { $_ -notmatch '^\d+$' -or $_ -notin @($rows.ID | ForEach-Object { [string]$_ }) }).Count) { throw 'Invalid exclusion ID; no exclusions changed.' }
+        foreach ($row in @($rows | Where-Object { [string]$_.ID -in $ids })) {
+            if ((Read-Host "Type REMOVE $($row.ID) to remove $($row.Type) = $($row.Value)") -cne "REMOVE $($row.ID)") { continue }
+            $outcome = 'Failed'
+            try {
+                $current = Get-MpPreference -ErrorAction Stop
+                if ($row.Value -cnotin @($current.($row.Type))) { throw 'Exclusion changed since preview; rescan before changing it.' }
+                # Write the exact recovery parameter/value before mutation.
+                $row | Export-Clixml -LiteralPath "$prefix-selected-$($row.ID).xml" -ErrorAction Stop
+                $parameters = @{ErrorAction='Stop'}
+                $parameters[$row.Type] = @($row.Value)
+                Remove-MpPreference @parameters
+                $after = Get-MpPreference -ErrorAction Stop
+                if ($row.Value -in @($after.($row.Type))) { throw 'Exclusion still present. A policy or tamper protection may be preventing the change.' }
+                $outcome = 'Removed and verified'
+                Write-Log "Defender exclusion $($row.ID): $outcome" SUCCESS
+            } catch { $outcome = "Failed: $_"; Write-Log "Defender exclusion $($row.ID): $outcome" ERROR }
+            [PSCustomObject]@{ID=$row.ID;Type=$row.Type;Value=$row.Value;Outcome=$outcome} |
+                Export-Csv -LiteralPath "$prefix-results.csv" -Append -NoTypeInformation -ErrorAction Stop
+        }
+    } catch { Write-Log "Defender exclusion review incomplete: $_" ERROR }
+}
+
+# Existing Block rules can override the scored Allow rules even when scope checks
+# pass. This conservative overlap report is triage, not reachability verification.
+function Get-ScoredFirewallBlockConflicts {
+    param([object[]]$Inventory, [object[]]$PlannedRules)
+    $scored = @($PlannedRules | Where-Object { $_.Scope -eq 'Scored' -and $_.Action -eq 'Allow' })
+    foreach ($rule in $Inventory) {
+        if (-not $rule.Enabled -or $rule.Direction -ne 'Inbound' -or $rule.Action -ne 'Block') { continue }
+        foreach ($target in $scored) {
+            $sameProtocol = $rule.Protocol -in @('Any','256') -or $rule.Protocol -eq $target.Protocol -or
+                ($rule.Protocol -eq '6' -and $target.Protocol -eq 'TCP') -or
+                ($rule.Protocol -eq '17' -and $target.Protocol -eq 'UDP') -or
+                ($rule.Protocol -eq '1' -and $target.Protocol -eq 'ICMPv4')
+            if (-not $sameProtocol) { continue }
+            $ports = if ($target.LocalPort) { @($target.LocalPort -split ',') } else { @('Any') }
+            if (-not (Test-FirewallPortOverlap $rule.LocalPort $ports)) { continue }
+            [PSCustomObject]@{
+                ID=$rule.ID;Name=$rule.Name;DisplayName=$rule.DisplayName;Store=$rule.Store
+                SourceType=$rule.SourceType;CanChange=$rule.CanChange;ScoredRule=$target.Name
+                Protocol=$rule.Protocol;LocalPort=$rule.LocalPort -join ',';RemoteAddress=$rule.RemoteAddress -join ','
+                Note='Possible overlap. Check addresses, profiles, ICMP types, application/service/interface filters and GPO before disabling.'
+            }
+        }
+    }
+}
+
 # Verify requested Defender preferences and actual real-time protection state.
 # Missing cmdlets, passive mode, and tamper-protected changes remain visible.
 function Invoke-DefenderBaseline {
@@ -1387,10 +1612,16 @@ function Invoke-WinRmBaseline {
                 @{ Path = 'WSMan:\localhost\Service\AllowUnencrypted'; Value = $false },
                 @{ Path = 'WSMan:\localhost\Service\Auth\Basic'; Value = $false },
                 @{ Path = 'WSMan:\localhost\Client\Auth\Basic'; Value = $false },
-                @{ Path = 'WSMan:\localhost\Service\CbtHardeningLevel'; Value = 'Strict' }
+                @{ Path = 'WSMan:\localhost\Service\Auth\CbtHardeningLevel'; Value = 'Strict' }
             )) {
-                Set-Item -LiteralPath $setting.Path -Value $setting.Value -Force -ErrorAction Stop
-                if ([string](Get-Item -LiteralPath $setting.Path -ErrorAction Stop).Value -ne [string]$setting.Value) { throw "WinRM setting read-back failed: $($setting.Path)" }
+                try {
+                    Set-Item -LiteralPath $setting.Path -Value $setting.Value -Force -ErrorAction Stop
+                    if ([string](Get-Item -LiteralPath $setting.Path -ErrorAction Stop).Value -ne [string]$setting.Value) {
+                        throw 'The value read back differs from the requested value.'
+                    }
+                } catch {
+                    throw "Could not apply or verify WinRM setting '$($setting.Path)': $_"
+                }
             }
             $service = Get-ServiceState WinRM
             if ($service.Status -ne 'Running' -or $service.StartType -ne 'Automatic') { throw 'WinRM service state does not match AD-DNS policy.' }
@@ -1567,9 +1798,9 @@ function Test-PasswordMatch {
 $splash = @'
 
             ___                    +--------------------------------------------+
-    `=/~~~~~   ~\                  |            shed-hardening.ps1              |
+    `=/~~~~~   ~\                  |             shed-hardening.ps1             |
      | ,      ,_ `\_/~\-           |    made for MWCCDC 2026-27' qualifiers     |
-     >/'>/ ~|||`\( ,~\-            |                                            |
+     >/'>/ ~|||`\( ,~\-            |     v1.2 - post-invitationals updates      |
      |  |   `||   \;               |                                            |
 \\\\//\\\/TX\\//\\\\|//            |  <------------ that's kayne                |
                                    +--------------------------------------------+
@@ -1970,6 +2201,9 @@ try {
     Invoke-OldFirewallRuleReview -Inventory $beforeFirewall -PlannedRules $firewallRules -ManagedNames $managedRuleNames -ReportPrefix $firewallReportPrefix -BackupPath $fwBackup -Network $internalNetwork
     $afterFirewall = @(Get-FirewallAuditInventory)
     Save-FirewallAuditInventory $afterFirewall "$firewallReportPrefix-after"
+    $scoredBlockIssues = @(Get-ScoredFirewallBlockConflicts @($afterFirewall | Where-Object Store -EQ ActiveStore) $firewallRules)
+    $scoredBlockIssues | Export-Csv -LiteralPath "$firewallReportPrefix-scored-blocks-remaining.csv" -NoTypeInformation -ErrorAction Stop
+    if ($scoredBlockIssues.Count) { Write-Log "SCORING REACHABILITY NEEDS REVIEW: $($scoredBlockIssues.Count) possible effective Block conflicts. See $firewallReportPrefix-scored-blocks-remaining.csv." WARN }
     $blockIssues = @(Get-FirewallBlockRuleIssues $afterFirewall $firewallRules $internalNetwork)
     $blockIssues | Export-Csv -LiteralPath "$firewallReportPrefix-block-issues.csv" -NoTypeInformation -ErrorAction Stop
     if ($blockIssues.Count) {
@@ -2044,6 +2278,7 @@ if (Test-Path $hostsFile) {
 Write-RunHeading 'Defender, account lockout, and SMB signing'
 Write-Log 'Applying and verifying Defender, account lockout, and SMB signing on this host...'
 Invoke-DefenderBaseline
+Invoke-DefenderExclusionReview -ReportDirectory $BackupDir
 Invoke-LockoutBaseline -DomainController $script:isDC -ReportDirectory $BackupDir
 Invoke-SmbSigningBaseline
 

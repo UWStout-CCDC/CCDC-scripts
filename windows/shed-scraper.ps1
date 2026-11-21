@@ -8,8 +8,13 @@ removes WMI subscriptions, disables tasks, or stops processes/services. Reports
 are saved before an optional review menu. Blank answers keep everything.
 Shortcuts, images, links, Windows/application files, validly signed files, and
 files referenced by processes/services/autoruns/tasks are not quarantined.
-Quarantine and task disablement require separate, exact confirmations and backups.
+Quarantine, task disablement, and IFEO Debugger removal require separate, exact
+confirmations and recovery records. Launch with powershell.exe -NoProfile -File
+to avoid loading potentially poisoned profiles.
 .NOTES
+Version: 1.2
+Release: Post-invitationals updates.
+
 READING GUIDE
   Helpers below handle logging, path/evidence checks, dependency refresh, and the
   optional action menu. Main execution starts at the elevation/directory setup.
@@ -23,7 +28,8 @@ DEFAULTS AND ACTIONS
   recovery directories. File scope defaults to user/temp hotspots; final menus
   default to Finish. Choosing REVIEW or seeing a REVIEW label changes nothing.
   Each eligible file/task needs its ID plus QUARANTINE <ID> or DISABLE <ID>.
-  Shortcuts/images are not quarantine candidates; registry/WMI stay report-only.
+  Shortcuts/images are not quarantine candidates. WMI and most registry values
+  stay report-only. A separate reviewed action can remove one IFEO Debugger value.
 
 REPORTS AND RECOVERY
   C:\Tools\logs\scraper-<run> holds audit.log, findings.csv/findings.xml,
@@ -433,8 +439,9 @@ function Start-ScraperReview {
             '  [L] List findings'
             '  [Q] Review one file for quarantine'
             '  [T] Review one scheduled task for disablement'
+            '  [D] Review one IFEO Debugger value for removal'
             '  [F] Finish'
-        ) -Choices @('L', 'Q', 'T', 'F') -Default 'F'
+        ) -Choices @('L', 'Q', 'T', 'D', 'F') -Default 'F'
         if ($choice -eq 'F') { return }
         if ($choice -eq 'L') { $script:Findings | Format-Table ID, Category, Severity, Name, Path -AutoSize -Wrap | Out-String | Write-Host; continue }
         $idInput = Read-Host 'Exact finding ID (blank cancels)'
@@ -443,9 +450,248 @@ function Start-ScraperReview {
         $finding = $script:Findings | Where-Object ID -EQ $id | Select-Object -First 1
         if (-not $finding) { Write-Host 'No finding has that ID.'; continue }
         if ($choice -eq 'Q') { Invoke-ScraperQuarantine $finding $Context $QuarantineDirectory }
+        elseif ($choice -eq 'D') { Invoke-ScraperDebuggerRemoval $finding }
         else { Invoke-ScraperTaskDisable $finding $TaskBackupDirectory }
         Save-ScraperReports
     }
+}
+
+# Draft defensive coverage for launch hijacks and policy sabotage. All collection
+# is read-only; only the separate IFEO action below can remove one reviewed value.
+function Read-ScraperRegistryEvidence {
+    param($Context, [string]$Path, [string[]]$ValueNames = @())
+    try {
+        if (-not (Test-Path -LiteralPath $Path -ErrorAction Stop)) { return }
+        $key = Get-Item -LiteralPath $Path -ErrorAction Stop
+        foreach ($name in @($key.GetValueNames())) {
+            if ($ValueNames.Count -and $name -notin $ValueNames) { continue }
+            $kind = [string]$key.GetValueKind($name)
+            $value = $key.GetValue($name, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+            $text = if ($value -is [array]) { $value -join ' | ' } else { [string]$value }
+            $Context.References.Add($text)
+            $finding = Add-ScraperFinding 'RegistryPolicy' $name $Path "$kind`: $text" 'REVIEW'
+            # Only IFEO Debugger values qualify. Never offer entire-key deletion,
+            # security-package removal, or automated AppLocker/WDAC removal.
+            if ($name -eq 'Debugger' -and $kind -in @('String','ExpandString') -and
+                $key.Name -match '^HKEY_LOCAL_MACHINE\\SOFTWARE\\(WOW6432Node\\)?Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\') {
+                $finding.Category = 'IFEODebugger'
+                $script:RegistryTargets[$finding.ID] = [PSCustomObject]@{Path=$Path; Name=$name; Value=$value; Kind=$kind}
+            }
+        }
+    } catch {
+        $Context.DependenciesComplete = $false
+        $null = Add-ScraperFinding 'CollectionGap' 'Registry read failed' $Path ([string]$_) 'WARN'
+    }
+}
+
+function Get-ScraperLaunchEvidence {
+    param($Context)
+    Write-ScraperActivity 'Reading executable launch and security policy hooks' -Stage 'Launch hijacks and policy sabotage'
+    foreach ($base in @('HKLM:\SOFTWARE', 'HKLM:\SOFTWARE\WOW6432Node')) {
+        foreach ($suffix in @(
+            'Microsoft\Windows NT\CurrentVersion\Image File Execution Options',
+            'Microsoft\Windows NT\CurrentVersion\SilentProcessExit',
+            'Microsoft\Active Setup\Installed Components',
+            'Policies\Microsoft\Windows\Safer\CodeIdentifiers',
+            'Policies\Microsoft\Windows\SrpV2'
+        )) {
+            $root = "$base\$suffix"
+            try {
+                if (-not (Test-Path -LiteralPath $root -ErrorAction Stop)) { continue }
+                Read-ScraperRegistryEvidence $Context $root
+                $count = 0
+                foreach ($key in @(Get-ChildItem -LiteralPath $root -Recurse -ErrorAction Stop)) {
+                    $count++
+                    if ($count -gt 2000) { throw 'More than 2000 policy keys: inspect this subtree separately.' }
+                    Read-ScraperRegistryEvidence $Context $key.PSPath
+                }
+            } catch {
+                $Context.DependenciesComplete = $false
+                $null = Add-ScraperFinding 'CollectionGap' 'Policy enumeration failed' $root ([string]$_) 'WARN'
+            }
+        }
+        Read-ScraperRegistryEvidence $Context "$base\Microsoft\Windows NT\CurrentVersion\Windows" @('AppInit_DLLs','LoadAppInit_DLLs','RequireSignedAppInit_DLLs')
+    }
+    foreach ($spec in @(
+        @{Path='HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager'; Names=@('BootExecute')},
+        @{Path='HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\AppCertDlls'; Names=@()},
+        @{Path='HKLM:\SYSTEM\CurrentControlSet\Control\Lsa'; Names=@('Security Packages','Authentication Packages','Notification Packages','RunAsPPL','LimitBlankPasswordUse')},
+        @{Path='HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\WDigest'; Names=@('UseLogonCredential')},
+        @{Path='HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon\SpecialAccounts\UserList'; Names=@()},
+        @{Path='HKLM:\SYSTEM\CurrentControlSet\Services\W32Time\Parameters'; Names=@('Type','NtpServer')},
+        @{Path='HKLM:\SYSTEM\CurrentControlSet\Services\NTDS\Parameters'; Names=@('LDAPServerIntegrity','LdapEnforceChannelBinding','TCP/IP Port')},
+        @{Path='HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp'; Names=@('PortNumber','SecurityLayer','UserAuthentication')}
+    )) { Read-ScraperRegistryEvidence $Context $spec.Path $spec.Names }
+    foreach ($hive in @('HKLM:', 'HKCU:')) {
+        Read-ScraperRegistryEvidence $Context "$hive\Software\Microsoft\Command Processor" @('AutoRun')
+        foreach ($suffix in @('ScriptBlockLogging','ModuleLogging','Transcription')) {
+            Read-ScraperRegistryEvidence $Context "$hive\Software\Policies\Microsoft\Windows\PowerShell\$suffix"
+        }
+    }
+    # No profile is dot-sourced. A valid Microsoft signature alone cannot detect
+    # cmd.exe copied over utilman.exe; compare embedded OriginalFilename too.
+    foreach ($name in @('sethc.exe','utilman.exe','osk.exe','Magnify.exe','Narrator.exe')) {
+        $path = Join-Path $env:SystemRoot "System32\$name"
+        try {
+            if (-not (Test-Path -LiteralPath $path -ErrorAction Stop)) { continue }
+            if (Test-ScraperLinkedPath $path) { throw 'Linked system binary requires offline inspection.' }
+            $file = Get-Item -LiteralPath $path -ErrorAction Stop
+            $evidence = Get-ScraperFileEvidence $path
+            $original = [string]$file.VersionInfo.OriginalFilename
+            $severity = if ($evidence.Signature -ne 'Valid' -or [IO.Path]::GetFileName($original) -ine $name) { 'WARN' } else { 'INFO' }
+            $null = Add-ScraperFinding 'SystemBinary' $name $path "Embedded original filename: $original. A signature is not proof this is the correct binary. Use trusted Windows servicing media/SFC for recovery." $severity $evidence.Hash $evidence.Signature $evidence.Signer
+        } catch { $null = Add-ScraperFinding 'CollectionGap' $name $path ([string]$_) 'WARN' }
+    }
+    $profileDirs = @((Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0'))
+    try {
+        if ($env:ProgramFiles) { $profileDirs += @(Get-ChildItem -LiteralPath (Join-Path $env:ProgramFiles 'PowerShell') -Directory -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName) }
+        foreach ($profile in @(Get-CimInstance Win32_UserProfile -ErrorAction Stop)) {
+            if ($profile.LocalPath) {
+                $profileDirs += (Join-Path $profile.LocalPath 'Documents\WindowsPowerShell'), (Join-Path $profile.LocalPath 'Documents\PowerShell')
+            }
+        }
+        foreach ($directory in @($profileDirs | Select-Object -Unique)) {
+            if (-not (Test-Path -LiteralPath $directory -ErrorAction Stop)) { continue }
+            if (Test-ScraperLinkedPath $directory) { throw "Linked profile directory skipped: $directory" }
+            foreach ($file in @(Get-ChildItem -LiteralPath $directory -Filter '*profile.ps1' -File -Force -ErrorAction Stop)) {
+                if (Test-ScraperLinkedPath $file.FullName) { continue }
+                if ($file.Length -gt 1MB) { throw "Profile too large for this draft: $($file.FullName)" }
+                $content = Get-Content -LiteralPath $file.FullName -Raw -ErrorAction Stop
+                $Context.References.Add([string]$content)
+                $evidence = Get-ScraperFileEvidence $file.FullName
+                $null = Add-ScraperFinding 'PowerShellProfile' $file.Name $file.FullName $content 'REVIEW' $evidence.Hash $evidence.Signature $evidence.Signer
+            }
+        }
+    } catch { $Context.DependenciesComplete = $false; $null = Add-ScraperFinding 'CollectionGap' 'PowerShell profiles' 'Profiles' ([string]$_) 'WARN' }
+    try {
+        $output = & "$env:SystemRoot\System32\bitsadmin.exe" /list /allusers /verbose 2>&1 | Out-String
+        if ($LASTEXITCODE -ne 0) { throw "BITS enumeration exit $LASTEXITCODE`: $output" }
+        $Context.References.Add($output)
+        $null = Add-ScraperFinding 'BITS' 'All-user jobs and notification commands' 'BITS' $output 'REVIEW'
+    } catch { $Context.DependenciesComplete = $false; $null = Add-ScraperFinding 'CollectionGap' 'BITS inventory' 'BITS' ([string]$_) 'WARN' }
+    foreach ($log in @('Security','System','Application','Microsoft-Windows-PowerShell/Operational','Microsoft-Windows-TaskScheduler/Operational')) {
+        try {
+            $info = Get-WinEvent -ListLog $log -ErrorAction Stop
+            $severity = if (-not $info.IsEnabled -or $info.MaximumSizeInBytes -lt 32MB) { 'REVIEW' } else { 'INFO' }
+            $null = Add-ScraperFinding 'EventLogConfiguration' $log $log "Enabled=$($info.IsEnabled); MaxBytes=$($info.MaximumSizeInBytes); Records=$($info.RecordCount); Mode=$($info.LogMode). Small/empty logs are review leads, not proof of tampering." $severity
+        } catch { $null = Add-ScraperFinding 'CollectionGap' $log $log ([string]$_) 'WARN' }
+    }
+    try {
+        $output = & "$env:SystemRoot\System32\auditpol.exe" /get /category:* /r 2>&1 | Out-String
+        if ($LASTEXITCODE -ne 0) { throw $output }
+        $null = Add-ScraperFinding 'AuditPolicy' 'Effective audit policy' 'auditpol' $output 'REVIEW'
+    } catch { $null = Add-ScraperFinding 'CollectionGap' 'Audit policy' 'auditpol' ([string]$_) 'WARN' }
+    Write-ScraperLog 'Other users\profile hives, redirected Documents, credential-provider COM registrations, and offline/rootkit integrity remain outside this draft coverage.' 'WARN'
+}
+
+function Invoke-ScraperDebuggerRemoval {
+    param($Finding)
+    if ($Finding.Category -ne 'IFEODebugger' -or -not $script:RegistryTargets.ContainsKey($Finding.ID)) {
+        Write-ScraperLog 'Only a collected IFEO Debugger value can use this action.' 'WARN'; return
+    }
+    $target = $script:RegistryTargets[$Finding.ID]
+    $Finding | Format-List ID,Name,Path,Details | Out-String | Write-Host
+    if ((Read-Host "Type REMOVE DEBUGGER $($Finding.ID) to remove ONLY this value (legitimate debuggers also use IFEO)") -cne "REMOVE DEBUGGER $($Finding.ID)") { return }
+    try {
+        $key = Get-Item -LiteralPath $target.Path -ErrorAction Stop
+        $current = $key.GetValue($target.Name, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+        if ($current -cne $target.Value -or [string]$key.GetValueKind($target.Name) -ne $target.Kind) { throw 'Value changed since collection. Rescan before changing it.' }
+        $data = [PSCustomObject]@{ID=$Finding.ID; Path=$target.Path; Name=$target.Name; Value=$current; Kind=$target.Kind}
+        # Durable write before removal, including unexpanded value and registry type.
+        Add-ScraperAction 'RemoveIFEODebugger' 'Prepared' $data
+        Remove-ItemProperty -LiteralPath $target.Path -Name $target.Name -ErrorAction Stop
+        $after = Get-Item -LiteralPath $target.Path -ErrorAction Stop
+        if ($target.Name -in @($after.GetValueNames())) { throw 'Debugger value remains after removal.' }
+        $Finding.Action = 'IFEO Debugger value removed; key retained'
+        Add-ScraperAction 'RemoveIFEODebugger' 'Completed' $data
+        Write-ScraperLog 'Debugger value removed and verified. Recovery value/type are in actions.jsonl.' 'SUCCESS'
+    } catch {
+        $Finding.Action = "Removal needs review: $_"
+        Write-ScraperLog $Finding.Action 'ERROR'
+    }
+}
+
+# Direct AD permissions survive group cleanup. Preserve and report all ACEs on
+# these high-impact objects; never remove delegates based on a guessed allowlist.
+function Get-ScraperRoleEvidence {
+    param($Context)
+    Write-ScraperActivity 'Reading direct AD/SQL permissions' -Stage 'Role-specific compromise review'
+    $dc = Get-Service NTDS -ErrorAction SilentlyContinue
+    if ($dc) {
+        try {
+            Import-Module ActiveDirectory -ErrorAction Stop
+            $domain = Get-ADDomain -Server localhost -ErrorAction Stop
+            foreach ($dn in @($domain.DistinguishedName, "CN=AdminSDHolder,CN=System,$($domain.DistinguishedName)")) {
+                $object = Get-ADObject -Identity $dn -Server localhost -Properties nTSecurityDescriptor -ErrorAction Stop
+                $acl = $object.nTSecurityDescriptor
+                if (-not $acl) { throw "No readable security descriptor on $dn" }
+                $detail = $acl.Access | Select-Object IdentityReference,ActiveDirectoryRights,AccessControlType,ObjectType,InheritedObjectType,InheritanceType,IsInherited | ConvertTo-Json -Depth 4
+                $null = Add-ScraperFinding 'ADPermissions' $dn $dn "Review delegation, GenericAll/WriteDacl/WriteOwner, and replication extended rights. Group removal does not revoke these ACEs.`n$detail" 'REVIEW'
+            }
+            foreach ($name in @('SYSVOL','NETLOGON')) {
+                $share = Get-SmbShare -Name $name -ErrorAction Stop
+                $acl = Get-Acl -LiteralPath $share.Path -ErrorAction Stop
+                $null = Add-ScraperFinding 'ShareACL' $name $share.Path ($acl.Sddl) 'REVIEW'
+            }
+        } catch { $null = Add-ScraperFinding 'CollectionGap' 'AD permissions/SYSVOL' 'AD' ([string]$_) 'WARN' }
+    }
+    # SQL Windows and SQL logins are separate databases of identities. Use only
+    # fixed SELECT statements, integrated authentication, and short query timeouts.
+    $sqlRoot = 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\Instance Names\SQL'
+    try {
+        if (-not (Test-Path -LiteralPath $sqlRoot -ErrorAction Stop)) { return }
+        $instances = Get-Item -LiteralPath $sqlRoot -ErrorAction Stop
+        foreach ($name in $instances.GetValueNames()) {
+            $instanceId = [string]$instances.GetValue($name)
+            $path = "HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\$instanceId\MSSQLServer"
+            foreach ($suffix in @('','\Parameters','\SuperSocketNetLib\Tcp','\SuperSocketNetLib\Tcp\IPAll')) {
+                Read-ScraperRegistryEvidence $Context "$path$suffix"
+            }
+            $auditSql = Read-ScraperChoice -Prompt @(
+                "Query SQL instance $name using integrated authentication?"
+                'The queries are SELECT-only, but existing server LOGON triggers can run when connecting.'
+                '  [Y] Connect and collect role/database/job/trigger metadata'
+                '  [N] Keep registry evidence only'
+            ) -Choices @('Y','N') -Default 'N'
+            if ($auditSql -ne 'Y') {
+                $null = Add-ScraperFinding 'CollectionGap' "SQL instance $name metadata skipped" $path 'Connection-based review was declined. SQL permissions/jobs/triggers remain unverified.' 'REVIEW'
+                continue
+            }
+            $connection = $null
+            try {
+                $builder = New-Object System.Data.SqlClient.SqlConnectionStringBuilder
+                $builder.DataSource = if ($name -eq 'MSSQLSERVER') { '.' } else { ".\$name" }
+                $builder.IntegratedSecurity = $true; $builder.ConnectTimeout = 3
+                $builder.ApplicationName = 'Blue team read-only review'
+                $connection = New-Object System.Data.SqlClient.SqlConnection $builder.ConnectionString
+                $connection.Open()
+                $queries = [ordered]@{
+                    Databases = 'SELECT name,state_desc,user_access_desc,is_read_only FROM sys.databases'
+                    ServerRoles = 'SELECT r.name AS role_name,m.name AS member_name,m.type_desc,m.is_disabled FROM sys.server_role_members rm JOIN sys.server_principals r ON r.principal_id=rm.role_principal_id JOIN sys.server_principals m ON m.principal_id=rm.member_principal_id'
+                    Config = "SELECT name,value,value_in_use FROM sys.configurations WHERE name IN ('xp_cmdshell','Ole Automation Procedures','clr enabled','show advanced options')"
+                    Triggers = 'SELECT t.name,t.is_disabled,t.type_desc,m.definition FROM sys.server_triggers t LEFT JOIN sys.server_sql_modules m ON m.object_id=t.object_id'
+                    AgentJobs = 'SELECT j.name,j.enabled,s.step_id,s.subsystem,s.command FROM msdb.dbo.sysjobs j JOIN msdb.dbo.sysjobsteps s ON s.job_id=j.job_id'
+                }
+                foreach ($entry in $queries.GetEnumerator()) {
+                    $command = $connection.CreateCommand()
+                    try {
+                        $command.CommandTimeout = 5; $command.CommandText = $entry.Value
+                        $reader = $command.ExecuteReader()
+                        try { $table = New-Object System.Data.DataTable; $table.Load($reader) } finally { $reader.Dispose() }
+                        $records = @(foreach ($row in $table.Rows) {
+                            $fields = [ordered]@{}
+                            foreach ($column in $table.Columns) { $fields[$column.ColumnName] = $row[$column.ColumnName] }
+                            [PSCustomObject]$fields
+                        })
+                        $null = Add-ScraperFinding 'SQLReview' "$name/$($entry.Key)" $builder.DataSource ($records | ConvertTo-Json -Depth 5) 'REVIEW'
+                    } catch { $null = Add-ScraperFinding 'CollectionGap' "$name/$($entry.Key)" 'SQL' ([string]$_) 'WARN' }
+                    finally { $command.Dispose() }
+                }
+                $null = Add-ScraperFinding 'SQLReview' 'Metadata visibility' $builder.DataSource 'Results are limited to the current Windows login permissions. Empty results are not proof that no hidden logins, jobs, or triggers exist.' 'REVIEW'
+            } catch { $null = Add-ScraperFinding 'CollectionGap' "SQL instance $name" $path ([string]$_) 'WARN' }
+            finally { if ($connection) { $connection.Dispose() } }
+        }
+    } catch { $null = Add-ScraperFinding 'CollectionGap' 'SQL instances' $sqlRoot ([string]$_) 'WARN' }
 }
 
 # Kept in each standalone script so downloaded copies need no companion module.
@@ -562,6 +808,7 @@ $script:ActionsFile = Join-Path $reportDirectory 'actions.jsonl'
 $null = New-Item -ItemType File -Path $script:ActionsFile
 $script:Findings = [Collections.Generic.List[object]]::new()
 $script:TaskTargets = @{}
+$script:RegistryTargets = @{}
 $script:ReadOrActionErrors = 0
 # Context carries the protected directories and observed dependency references.
 # DependenciesComplete is a sticky safety flag: a failed dependency read blocks quarantine.
@@ -577,7 +824,7 @@ $splash = @'
             ___                    +--------------------------------------------+
     `=/~~~~~   ~\                  |              shed-scraper.ps1              |
      | ,      ,_ `\_/~\-           |    made for MWCCDC 2026-27' qualifiers     |
-     >/'>/ ~|||`\( ,~\-            |                                            |
+     >/'>/ ~|||`\( ,~\-            |     v1.2 - post-invitationals updates      |
      |  |   `||   \;               |                                            |
 \\\\//\\\/TX\\//\\\\|//            |  <------------ that's kayne                |
                                    +--------------------------------------------+
@@ -594,6 +841,10 @@ foreach ($class in @('Win32_Process', 'Win32_Service')) {
         Write-ScraperActivity "Querying $class" -Immediate
         $instances = @(Get-CimInstance -ClassName $class -ErrorAction Stop)
         foreach ($item in $instances) {
+            if ($class -eq 'Win32_Service') {
+                $detail = $item | Select-Object Name,DisplayName,PathName,StartName,StartMode,State | ConvertTo-Json -Compress
+                $null = Add-ScraperFinding 'ServiceConfiguration' $item.Name $item.PathName $detail 'REVIEW'
+            }
             $references = if ($class -eq 'Win32_Process') { @($item.ExecutablePath, $item.CommandLine) } else { @($item.PathName) }
             foreach ($reference in $references) { if ($reference) { $context.References.Add([Environment]::ExpandEnvironmentVariables($reference)) } }
         }
@@ -715,6 +966,10 @@ foreach ($class in @('CommandLineEventConsumer', 'ActiveScriptEventConsumer', '_
         }
     } catch { $context.DependenciesComplete = $false; Write-ScraperLog "Could not inventory WMI $class`: $_" 'WARN' }
 }
+Save-ScraperReports
+
+Get-ScraperLaunchEvidence $context
+Get-ScraperRoleEvidence $context
 Save-ScraperReports
 
 # 6. Walk selected locations without following links or collecting the same file twice.

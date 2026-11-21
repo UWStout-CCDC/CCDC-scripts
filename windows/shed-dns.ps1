@@ -18,6 +18,9 @@ removed. AD/DNS essentials, related mail MX records, and explicit exceptions sta
 Other zones and the AD forest are retained.
 AD service records are re-registered through Netlogon, not fabricated.
 .NOTES
+Version: 1.2
+Release: Post-invitationals updates.
+
 Run order
   1. Enter the domain and network, then review the host addresses.
   2. Read the local health checks. Enter finishes the audit.
@@ -684,6 +687,53 @@ function New-DnsHealthCheck {
     }
 }
 
+# Additional sabotage triage is separate from the record-rebuild plan. A disabled
+# recursive resolver or a conditional forwarder can be legitimate; never delete
+# these or reset root hints/scavenging without an approved environment baseline.
+function Get-DnsSabotageReview {
+    param($Snapshot, [string]$ReportDirectory)
+    $evidence = [Collections.Generic.List[object]]::new()
+    foreach ($command in @('Get-DnsServerRecursion','Get-DnsServerRootHint','Get-DnsServerScavenging')) {
+        try {
+            $value = @(& $command -ComputerName localhost -ErrorAction Stop)
+            $evidence.Add([PSCustomObject]@{Check=$command;Data=$value;Error=''})
+            [PSCustomObject]@{Check=$command;Status='Review';Details=($value | Format-List * | Out-String).Trim()}
+        } catch {
+            $evidence.Add([PSCustomObject]@{Check=$command;Data=@();Error=[string]$_})
+            [PSCustomObject]@{Check=$command;Status='Needs attention';Details="Collection failed: $_"}
+        }
+    }
+    foreach ($zone in $Snapshot.Zones) {
+        if ([string]$zone.ZoneType -eq 'Forwarder') {
+            $evidence.Add([PSCustomObject]@{Check="Conditional forwarder $($zone.ZoneName)";Data=$zone;Error=''})
+            [PSCustomObject]@{Check="Conditional forwarder $($zone.ZoneName)";Status='Review';Details='Verify zone name and master servers against trusted configuration; unrelated conditional zones can redirect external queries.'}
+        }
+        if ([string]$zone.ZoneType -eq 'Primary') {
+            try {
+                $aging = Get-DnsServerZoneAging -ComputerName localhost -Name $zone.ZoneName -ErrorAction Stop
+                $evidence.Add([PSCustomObject]@{Check="Aging $($zone.ZoneName)";Data=$aging;Error=''})
+                [PSCustomObject]@{Check="Aging $($zone.ZoneName)";Status='Review';Details=($aging | Format-List * | Out-String).Trim()}
+            } catch {
+                [PSCustomObject]@{Check="Aging $($zone.ZoneName)";Status='Needs attention';Details="Collection failed: $_"}
+                $evidence.Add([PSCustomObject]@{Check="Aging $($zone.ZoneName)";Data=@();Error=[string]$_})
+            }
+        }
+    }
+    foreach ($zone in $Snapshot.ZoneRecords) {
+        foreach ($record in $zone.Records) {
+            if ($record.RecordType -notin @('A','AAAA')) { continue }
+            $address = if ($record.RecordType -eq 'A') { $record.RecordData.IPv4Address } else { $record.RecordData.IPv6Address }
+            $ip = $null
+            if ([Net.IPAddress]::TryParse([string]$address,[ref]$ip) -and [Net.IPAddress]::IsLoopback($ip)) {
+                [PSCustomObject]@{Check="Loopback record $($record.HostName).$($zone.ZoneName)";Status='Review';Details="Points to $address. Review wildcard/scored-host poisoning; some localhost records are legitimate."}
+            }
+        }
+    }
+    $path = Join-Path $ReportDirectory "dns-server-policy-$([guid]::NewGuid()).xml"
+    $evidence.ToArray() | Export-Clixml -LiteralPath $path -Depth 12 -ErrorAction Stop
+    Write-DnsLog "Server recursion/root-hint/aging/conditional-forwarder evidence: $path"
+}
+
 function Get-DnsHealthChecks {
     param($Snapshot, $Configuration)
 
@@ -919,7 +969,7 @@ $splash = @'
             ___                    +--------------------------------------------+
     `=/~~~~~   ~\                  |                shed-dns.ps1                |
      | ,      ,_ `\_/~\-           |    made for MWCCDC 2026-27' qualifiers     |
-     >/'>/ ~|||`\( ,~\-            |                                            |
+     >/'>/ ~|||`\( ,~\-            |     v1.2 - post-invitationals updates      |
      |  |   `||   \;               |                                            |
 \\\\//\\\/TX\\//\\\\|//            |  <------------ that's kayne                |
                                    +--------------------------------------------+
@@ -946,7 +996,7 @@ try {
         Write-RunHeading 'DNS health checks'
         $snapshot=Get-DnsRecoverySnapshot
         $null=Save-DnsRecoverySnapshot $snapshot $backups 'audit'
-        $checks=@(Get-DnsHealthChecks $snapshot $configuration)
+        $checks=@(Get-DnsHealthChecks $snapshot $configuration) + @(Get-DnsSabotageReview $snapshot $reports)
         $auditPlan=@(Get-DnsUnrelatedRecordPlan $snapshot $configuration)
         $auditPrefix=Join-Path $reports "record-audit-$([guid]::NewGuid().ToString('N'))"
         $auditPlan | Select-Object Action,Zone,Name,Type,Value,Reason,Data | Export-Csv -LiteralPath "$auditPrefix.csv" -NoTypeInformation -Encoding UTF8 -ErrorAction Stop
