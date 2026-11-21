@@ -8,7 +8,8 @@ Run elevated in Windows PowerShell. Setup prepares C:\Tools and a transcript;
 helper functions are defined before main installation begins.
 
 MAIN FLOW
-  Step 0 downloads missing shed-hardening.ps1, shed-scraper.ps1, and shed-dns.ps1 first.
+  Step 0 downloads missing shed-hardening.ps1, shed-scraper.ps1, shed-dns.ps1,
+  and shed-recovery.ps1 first.
   WinGet setup then reuses an existing copy or tries modern/legacy bootstrapping.
   Step 1 downloads standalone tools and extracts/runs their payloads.
   The Sysinternals EULA is accepted immediately after the suite is extracted.
@@ -688,10 +689,10 @@ function Invoke-FirewallControlSetup {
 try {
     # 0. Fetch the shed scripts before WinGet bootstrap or any tool installation.
     Write-RunHeading 'Competition scripts'
-    Write-Log "Checking for shed-hardening, shed-scraper, and shed-dns in $InstallDir."
+    Write-Log "Checking for shed-hardening, shed-scraper, shed-dns, and shed-recovery in $InstallDir."
     $scriptBranch = if ($Branch) { 'shed-branch' } else { 'master' }
     $repo = "https://raw.githubusercontent.com/UWStout-CCDC/CCDC-scripts/$scriptBranch/windows"
-    foreach ($script in @("shed-hardening.ps1", "shed-scraper.ps1", "shed-dns.ps1")) {
+    foreach ($script in @("shed-hardening.ps1", "shed-scraper.ps1", "shed-dns.ps1", "shed-recovery.ps1")) {
         $target = "$InstallDir\$script"
         if (-not (Test-Path $target)) {
             $downloadSucceeded = Invoke-BitsDownload "$repo/$script" $target
